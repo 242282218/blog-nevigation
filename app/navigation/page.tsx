@@ -48,7 +48,9 @@ export default function NavigationPage() {
                     <h2 className="text-2xl font-mono font-bold flex items-center gap-3 text-gray-800">
                         <span className="text-link">##</span> 工具分类 (Categories)
                     </h2>
-                    <span className="text-xs font-mono bg-link-50 text-link px-2 py-1 rounded border border-link-100 hidden sm:block">bookmarks.db</span>
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs font-mono bg-link-50 text-link px-2 py-1 rounded border border-link-100 hidden sm:block">bookmarks.db</span>
+                    </div>
                 </div>
 
                 <div className="space-y-12">

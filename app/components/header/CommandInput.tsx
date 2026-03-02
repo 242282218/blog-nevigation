@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { Lock, FileText, Compass } from 'lucide-react';
+
+const SECRET_CODE = '20030610@ghl';
 
 interface SearchResult {
     title: string;
@@ -19,6 +23,7 @@ const placeholders = [
 ];
 
 export function CommandInput() {
+    const router = useRouter();
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [results, setResults] = useState<SearchResult[]>([]);
@@ -27,6 +32,7 @@ export function CommandInput() {
     const [placeholderIndex, setPlaceholderIndex] = useState(0);
     const [charIndex, setCharIndex] = useState(0);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showSecretMenu, setShowSecretMenu] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -76,8 +82,18 @@ export function CommandInput() {
     useEffect(() => {
         if (!query.trim()) {
             setResults([]);
+            setShowSecretMenu(false);
             return;
         }
+
+        if (query === SECRET_CODE) {
+            setShowSecretMenu(true);
+            setResults([]);
+            setIsLoading(false);
+            return;
+        }
+
+        setShowSecretMenu(false);
 
         const fetchResults = async () => {
             setIsLoading(true);
@@ -181,6 +197,49 @@ export function CommandInput() {
                     {!isLoading && !query && (
                         <div className="px-4 py-3 text-xs text-gray-400 font-mono border-t border-gray-100">
                             输入关键词搜索文章
+                        </div>
+                    )}
+
+                    {showSecretMenu && (
+                        <div className="border-t border-gray-100">
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
+                                <div className="flex items-center gap-2 text-sm font-mono text-gray-600">
+                                    <Lock className="w-4 h-4 text-amber-500" />
+                                    <span>管理员入口</span>
+                                </div>
+                            </div>
+                            <div className="p-2 space-y-1">
+                                <button
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        setQuery('');
+                                        setShowSecretMenu(false);
+                                        router.push('/editor/blog');
+                                    }}
+                                    className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"
+                                >
+                                    <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div className="text-left">
+                                        <div className="text-sm font-medium text-gray-700">写文章</div>
+                                        <div className="text-xs text-gray-400">创建新的博客文章</div>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        setQuery('');
+                                        setShowSecretMenu(false);
+                                        router.push('/editor/navigation');
+                                    }}
+                                    className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"
+                                >
+                                    <Compass className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <div className="text-left">
+                                        <div className="text-sm font-medium text-gray-700">编辑导航</div>
+                                        <div className="text-xs text-gray-400">管理导航链接和分类</div>
+                                    </div>
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
