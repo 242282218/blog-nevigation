@@ -1,0 +1,3 @@
+upstream_url: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/src/ui-ux-pro-max
+last_synced: 2026-02-26
+notes: "由于来源仓库特异化组织，仅移植了所需的核心字典和脚本目录。翻译了 frontmatter 中的 description 并补充了 short-description。其余规则保持原样。"

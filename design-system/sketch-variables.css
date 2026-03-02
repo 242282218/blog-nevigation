@@ -1,0 +1,651 @@
+/**
+ * Sketch UI Design System - CSS Variables
+ * 手绘/涂鸦/拼贴风格设计系统 - CSS 变量定义
+ * 
+ * 使用说明：
+ * 1. 将此文件导入到全局 CSS 中
+ * 2. 使用 var(--sketch-*) 格式引用变量
+ * 3. 配合 Tailwind 配置使用
+ */
+
+/* ============================================
+   字体导入
+   ============================================ */
+@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Indie+Flower&family=Kalam:wght@300;400;700&family=Nunito:wght@300;400;500;600;700&family=Patrick+Hand&family=Quicksand:wght@300;400;500;600;700&display=swap');
+
+/* ============================================
+   根元素变量定义
+   ============================================ */
+:root {
+  /* ------------------------------------------
+     颜色系统 - 纸张色系
+     ------------------------------------------ */
+  --sketch-paper-white: #FAFAF8;
+  --sketch-paper-cream: #F5F1E8;
+  --sketch-paper-aged: #EDE8D0;
+  --sketch-paper-kraft: #C4A77D;
+  --sketch-paper-graph: #F0F4F0;
+
+  /* ------------------------------------------
+     颜色系统 - 铅笔色系
+     ------------------------------------------ */
+  --sketch-pencil-light: #9CA3AF;
+  --sketch-pencil-medium: #6B7280;
+  --sketch-pencil-dark: #4A4A4A;
+
+  /* ------------------------------------------
+     颜色系统 - 墨迹色系
+     ------------------------------------------ */
+  --sketch-ink-black: #1A1A1A;
+  --sketch-ink-charcoal: #2D2D2D;
+
+  /* ------------------------------------------
+     颜色系统 - 蜡笔彩色系
+     ------------------------------------------ */
+  --sketch-crayon-red: #E85D4E;
+  --sketch-crayon-orange: #F4A261;
+  --sketch-crayon-yellow: #E9C46A;
+  --sketch-crayon-green: #2A9D8F;
+  --sketch-crayon-blue: #4A90E2;
+  --sketch-crayon-purple: #9B59B6;
+  --sketch-crayon-pink: #E87EA1;
+
+  /* ------------------------------------------
+     语义化颜色
+     ------------------------------------------ */
+  --sketch-color-primary: var(--sketch-crayon-blue);
+  --sketch-color-secondary: var(--sketch-crayon-purple);
+  --sketch-color-success: var(--sketch-crayon-green);
+  --sketch-color-warning: var(--sketch-crayon-yellow);
+  --sketch-color-error: var(--sketch-crayon-red);
+  --sketch-color-background: var(--sketch-paper-white);
+  --sketch-color-surface: var(--sketch-paper-cream);
+  --sketch-color-text: var(--sketch-ink-black);
+  --sketch-color-text-muted: var(--sketch-pencil-medium);
+  --sketch-color-border: var(--sketch-pencil-light);
+
+  /* ------------------------------------------
+     字体系统
+     ------------------------------------------ */
+  --sketch-font-heading: 'Caveat', cursive;
+  --sketch-font-subheading: 'Patrick Hand', cursive;
+  --sketch-font-body: 'Quicksand', sans-serif;
+  --sketch-font-accent: 'Indie Flower', cursive;
+  --sketch-font-code: 'Kalam', cursive;
+  --sketch-font-fallback: system-ui, -apple-system, sans-serif;
+
+  /* ------------------------------------------
+     字体大小
+     ------------------------------------------ */
+  --sketch-text-xs: 0.75rem;      /* 12px */
+  --sketch-text-sm: 0.875rem;     /* 14px */
+  --sketch-text-base: 1rem;       /* 16px */
+  --sketch-text-lg: 1.125rem;     /* 18px */
+  --sketch-text-xl: 1.25rem;      /* 20px */
+  --sketch-text-2xl: 1.5rem;      /* 24px */
+  --sketch-text-3xl: 1.75rem;     /* 28px */
+  --sketch-text-4xl: 2.25rem;     /* 36px */
+  --sketch-text-5xl: 3rem;        /* 48px */
+  --sketch-text-6xl: 4rem;        /* 64px */
+
+  /* ------------------------------------------
+     行高
+     ------------------------------------------ */
+  --sketch-leading-none: 1;
+  --sketch-leading-tight: 1.25;
+  --sketch-leading-snug: 1.375;
+  --sketch-leading-normal: 1.5;
+  --sketch-leading-relaxed: 1.625;
+  --sketch-leading-loose: 1.75;
+
+  /* ------------------------------------------
+     字间距
+     ------------------------------------------ */
+  --sketch-tracking-tighter: -0.05em;
+  --sketch-tracking-tight: -0.025em;
+  --sketch-tracking-normal: 0;
+  --sketch-tracking-wide: 0.025em;
+  --sketch-tracking-wider: 0.05em;
+
+  /* ------------------------------------------
+     字重
+     ------------------------------------------ */
+  --sketch-font-light: 300;
+  --sketch-font-normal: 400;
+  --sketch-font-medium: 500;
+  --sketch-font-semibold: 600;
+  --sketch-font-bold: 700;
+
+  /* ------------------------------------------
+     间距系统
+     ------------------------------------------ */
+  --sketch-space-0: 0;
+  --sketch-space-px: 1px;
+  --sketch-space-xs: 0.25rem;     /* 4px */
+  --sketch-space-sm: 0.5rem;      /* 8px */
+  --sketch-space-md: 1rem;        /* 16px */
+  --sketch-space-lg: 1.5rem;      /* 24px */
+  --sketch-space-xl: 2.5rem;      /* 40px */
+  --sketch-space-2xl: 4rem;       /* 64px */
+  --sketch-space-3xl: 6rem;       /* 96px */
+
+  /* ------------------------------------------
+     圆角系统
+     ------------------------------------------ */
+  --sketch-radius-none: 0;
+  --sketch-radius-sm: 4px;
+  --sketch-radius-md: 8px;
+  --sketch-radius-lg: 12px;
+  --sketch-radius-xl: 16px;
+  --sketch-radius-full: 9999px;
+  /* 不规则有机圆角 - 手绘风格核心 */
+  --sketch-radius-organic: 255px 15px 225px 15px / 15px 225px 15px 255px;
+  --sketch-radius-organic-sm: 12px 15px 14px 16px / 16px 14px 15px 12px;
+
+  /* ------------------------------------------
+     阴影系统
+     ------------------------------------------ */
+  --sketch-shadow-none: none;
+  --sketch-shadow-sm: 1px 2px 0 0 rgba(0, 0, 0, 0.05);
+  --sketch-shadow-md: 2px 3px 0 0 rgba(0, 0, 0, 0.08);
+  --sketch-shadow-lg: 3px 4px 0 0 rgba(0, 0, 0, 0.1), 4px 5px 0 0 rgba(0, 0, 0, 0.05);
+  --sketch-shadow-xl: 4px 6px 0 0 rgba(0, 0, 0, 0.1), 5px 7px 0 0 rgba(0, 0, 0, 0.08), 6px 8px 0 0 rgba(0, 0, 0, 0.05);
+  /* 手绘风格阴影 - 多层偏移 */
+  --sketch-shadow-sketch: 3px 4px 0 0 rgba(0, 0, 0, 0.1), 4px 5px 0 0 rgba(0, 0, 0, 0.08), 5px 6px 0 0 rgba(0, 0, 0, 0.05);
+  /* 蜡笔彩色阴影 */
+  --sketch-shadow-crayon: 4px 4px 0 0 var(--sketch-crayon-color, var(--sketch-crayon-blue)), 6px 6px 0 0 rgba(0, 0, 0, 0.1);
+
+  /* ------------------------------------------
+     过渡动画
+     ------------------------------------------ */
+  --sketch-duration-fast: 150ms;
+  --sketch-duration-normal: 200ms;
+  --sketch-duration-slow: 300ms;
+
+  --sketch-ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --sketch-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --sketch-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --sketch-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --sketch-ease-sketch: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+
+  /* ------------------------------------------
+     变换
+     ------------------------------------------ */
+  --sketch-rotate-slight-left: -1deg;
+  --sketch-rotate-slight-right: 1deg;
+  --sketch-rotate-medium-left: -2deg;
+  --sketch-rotate-medium-right: 2deg;
+
+  /* ------------------------------------------
+     边框
+     ------------------------------------------ */
+  --sketch-border-width-thin: 1px;
+  --sketch-border-width-normal: 2px;
+  --sketch-border-width-thick: 3px;
+
+  /* ------------------------------------------
+     Z-Index 层级
+     ------------------------------------------ */
+  --sketch-z-dropdown: 1000;
+  --sketch-z-sticky: 1020;
+  --sketch-z-fixed: 1030;
+  --sketch-z-modal-backdrop: 1040;
+  --sketch-z-modal: 1050;
+  --sketch-z-popover: 1060;
+  --sketch-z-tooltip: 1070;
+  --sketch-z-toast: 1080;
+
+  /* ------------------------------------------
+     透明度
+     ------------------------------------------ */
+  --sketch-opacity-0: 0;
+  --sketch-opacity-25: 0.25;
+  --sketch-opacity-50: 0.5;
+  --sketch-opacity-75: 0.75;
+  --sketch-opacity-100: 1;
+  --sketch-opacity-disabled: 0.5;
+  --sketch-opacity-hover: 0.8;
+}
+
+/* ============================================
+   基础样式重置与设置
+   ============================================ */
+
+/* 全局字体设置 */
+.sketch-theme {
+  font-family: var(--sketch-font-body);
+  color: var(--sketch-color-text);
+  background-color: var(--sketch-color-background);
+  line-height: var(--sketch-leading-relaxed);
+}
+
+/* 标题字体 */
+.sketch-theme h1,
+.sketch-theme h2,
+.sketch-h1,
+.sketch-h2 {
+  font-family: var(--sketch-font-heading);
+  font-weight: var(--sketch-font-bold);
+  line-height: var(--sketch-leading-tight);
+}
+
+.sketch-theme h3,
+.sketch-theme h4,
+.sketch-h3,
+.sketch-h4 {
+  font-family: var(--sketch-font-subheading);
+  font-weight: var(--sketch-font-semibold);
+  line-height: var(--sketch-leading-snug);
+}
+
+.sketch-theme h5,
+.sketch-theme h6,
+.sketch-h5,
+.sketch-h6 {
+  font-family: var(--sketch-font-body);
+  font-weight: var(--sketch-font-semibold);
+  line-height: var(--sketch-leading-normal);
+}
+
+/* 代码字体 */
+.sketch-theme code,
+.sketch-theme pre,
+.sketch-code {
+  font-family: var(--sketch-font-code);
+}
+
+/* ============================================
+   实用工具类
+   ============================================ */
+
+/* 纸张背景 */
+.sketch-bg-paper {
+  background-color: var(--sketch-paper-white);
+}
+
+.sketch-bg-cream {
+  background-color: var(--sketch-paper-cream);
+}
+
+.sketch-bg-aged {
+  background-color: var(--sketch-paper-aged);
+}
+
+.sketch-bg-kraft {
+  background-color: var(--sketch-paper-kraft);
+}
+
+/* 文字颜色 */
+.sketch-text-ink {
+  color: var(--sketch-ink-black);
+}
+
+.sketch-text-charcoal {
+  color: var(--sketch-ink-charcoal);
+}
+
+.sketch-text-pencil {
+  color: var(--sketch-pencil-medium);
+}
+
+.sketch-text-muted {
+  color: var(--sketch-pencil-light);
+}
+
+/* 蜡笔彩色文字 */
+.sketch-text-red { color: var(--sketch-crayon-red); }
+.sketch-text-orange { color: var(--sketch-crayon-orange); }
+.sketch-text-yellow { color: var(--sketch-crayon-yellow); }
+.sketch-text-green { color: var(--sketch-crayon-green); }
+.sketch-text-blue { color: var(--sketch-crayon-blue); }
+.sketch-text-purple { color: var(--sketch-crayon-purple); }
+.sketch-text-pink { color: var(--sketch-crayon-pink); }
+
+/* 边框样式 */
+.sketch-border {
+  border: var(--sketch-border-width-normal) solid var(--sketch-color-border);
+}
+
+.sketch-border-dashed {
+  border: var(--sketch-border-width-normal) dashed var(--sketch-color-border);
+}
+
+.sketch-border-dotted {
+  border: var(--sketch-border-width-normal) dotted var(--sketch-color-border);
+}
+
+/* 不规则圆角 */
+.sketch-rounded-organic {
+  border-radius: var(--sketch-radius-organic);
+}
+
+.sketch-rounded-organic-sm {
+  border-radius: var(--sketch-radius-organic-sm);
+}
+
+/* 阴影 */
+.sketch-shadow {
+  box-shadow: var(--sketch-shadow-sketch);
+}
+
+.sketch-shadow-crayon {
+  box-shadow: var(--sketch-shadow-crayon);
+}
+
+/* 旋转变换 */
+.sketch-rotate-left {
+  transform: rotate(var(--sketch-rotate-slight-left));
+}
+
+.sketch-rotate-right {
+  transform: rotate(var(--sketch-rotate-slight-right));
+}
+
+/* ============================================
+   组件样式
+   ============================================ */
+
+/* 手绘按钮 */
+.sketch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sketch-space-sm) var(--sketch-space-md);
+  font-family: var(--sketch-font-subheading);
+  font-size: var(--sketch-text-lg);
+  color: var(--sketch-color-text);
+  background-color: var(--sketch-paper-cream);
+  border: var(--sketch-border-width-normal) solid var(--sketch-ink-black);
+  border-radius: var(--sketch-radius-organic);
+  transform: rotate(var(--sketch-rotate-slight-left));
+  cursor: pointer;
+  transition: transform var(--sketch-duration-normal) var(--sketch-ease-default),
+              box-shadow var(--sketch-duration-normal) var(--sketch-ease-default);
+}
+
+.sketch-btn:hover {
+  transform: rotate(0deg) translateY(-2px);
+  box-shadow: var(--sketch-shadow-sketch);
+}
+
+.sketch-btn:active {
+  transform: rotate(0deg) translateY(1px);
+  box-shadow: var(--sketch-shadow-sm);
+}
+
+.sketch-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--sketch-paper-white), 0 0 0 5px var(--sketch-crayon-blue);
+}
+
+.sketch-btn:disabled {
+  opacity: var(--sketch-opacity-disabled);
+  border-style: dashed;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 主要按钮 */
+.sketch-btn-primary {
+  background-color: var(--sketch-crayon-blue);
+  color: white;
+  border-color: var(--sketch-ink-black);
+}
+
+/* 手绘卡片 */
+.sketch-card {
+  position: relative;
+  padding: var(--sketch-space-lg);
+  background-color: var(--sketch-paper-white);
+  border: var(--sketch-border-width-normal) solid var(--sketch-pencil-medium);
+  border-radius: var(--sketch-radius-organic-sm);
+  transform: rotate(-0.5deg);
+  transition: transform var(--sketch-duration-slow) var(--sketch-ease-default),
+              box-shadow var(--sketch-duration-slow) var(--sketch-ease-default);
+}
+
+.sketch-card:hover {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: var(--sketch-shadow-lg);
+}
+
+/* 胶带效果 */
+.sketch-tape {
+  position: relative;
+}
+
+.sketch-tape::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 80px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* 手绘输入框 */
+.sketch-input {
+  width: 100%;
+  padding: var(--sketch-space-sm) var(--sketch-space-md);
+  font-family: var(--sketch-font-body);
+  font-size: var(--sketch-text-base);
+  color: var(--sketch-color-text);
+  background-color: var(--sketch-paper-white);
+  border: var(--sketch-border-width-normal) solid var(--sketch-pencil-light);
+  border-radius: var(--sketch-radius-organic-sm);
+  transition: border-color var(--sketch-duration-normal) var(--sketch-ease-default),
+              border-width var(--sketch-duration-fast) var(--sketch-ease-default);
+}
+
+.sketch-input::placeholder {
+  color: var(--sketch-pencil-light);
+}
+
+.sketch-input:focus {
+  outline: none;
+  border-color: var(--sketch-crayon-blue);
+  border-width: var(--sketch-border-width-thick);
+}
+
+.sketch-input:disabled {
+  opacity: var(--sketch-opacity-disabled);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+/* 手绘链接 */
+.sketch-link {
+  position: relative;
+  color: var(--sketch-crayon-blue);
+  text-decoration: none;
+  font-weight: var(--sketch-font-medium);
+}
+
+.sketch-link::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background-color: var(--sketch-crayon-blue);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform var(--sketch-duration-slow) var(--sketch-ease-default);
+}
+
+.sketch-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.sketch-link:visited {
+  color: var(--sketch-crayon-purple);
+}
+
+/* 荧光笔高亮 */
+.sketch-highlight {
+  background: linear-gradient(
+    transparent 60%,
+    rgba(233, 196, 106, 0.4) 60%
+  );
+}
+
+/* 手绘下划线 */
+.sketch-underline {
+  position: relative;
+  display: inline-block;
+}
+
+.sketch-underline::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: -2px;
+  right: -2px;
+  height: 3px;
+  background: linear-gradient(
+    to right,
+    var(--sketch-crayon-blue) 0%,
+    var(--sketch-crayon-blue) 45%,
+    transparent 45%,
+    transparent 55%,
+    var(--sketch-crayon-blue) 55%,
+    var(--sketch-crayon-blue) 100%
+  );
+  border-radius: 2px;
+  transform: rotate(-1deg);
+}
+
+/* ============================================
+   纹理背景
+   ============================================ */
+
+/* 方格纸背景 */
+.sketch-graph-paper {
+  background-color: var(--sketch-paper-white);
+  background-image: 
+    linear-gradient(var(--sketch-pencil-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sketch-pencil-light) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-blend-mode: multiply;
+}
+
+/* 横线纸背景 */
+.sketch-lined-paper {
+  background-color: var(--sketch-paper-white);
+  background-image: repeating-linear-gradient(
+    transparent,
+    transparent 31px,
+    var(--sketch-pencil-light) 31px,
+    var(--sketch-pencil-light) 32px
+  );
+}
+
+/* 点阵纸背景 */
+.sketch-dot-paper {
+  background-color: var(--sketch-paper-white);
+  background-image: radial-gradient(
+    var(--sketch-pencil-light) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+}
+
+/* ============================================
+   可访问性
+   ============================================ */
+
+/* 焦点可见性 */
+.sketch-focus:focus-visible {
+  outline: none;
+  box-shadow: 
+    0 0 0 3px var(--sketch-paper-white),
+    0 0 0 6px var(--sketch-crayon-blue);
+  border-radius: var(--sketch-radius-organic);
+}
+
+/* 减少动画 */
+@media (prefers-reduced-motion: reduce) {
+  .sketch-btn,
+  .sketch-card,
+  .sketch-input,
+  .sketch-link::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  
+  .sketch-btn:hover,
+  .sketch-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}
+
+/* 触摸目标大小 */
+.sketch-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ============================================
+   动画关键帧
+   ============================================ */
+
+@keyframes sketch-wiggle {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+@keyframes sketch-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes sketch-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* 动画类 */
+.sketch-animate-wiggle {
+  animation: sketch-wiggle 0.3s ease-in-out;
+}
+
+.sketch-animate-bounce {
+  animation: sketch-bounce 0.4s var(--sketch-ease-sketch);
+}
+
+.sketch-animate-shake {
+  animation: sketch-shake 0.3s ease-in-out;
+}
+
+/* ============================================
+   打印样式
+   ============================================ */
+
+@media print {
+  .sketch-theme {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .sketch-shadow,
+  .sketch-shadow-crayon,
+  .sketch-card:hover {
+    box-shadow: none !important;
+  }
+  
+  .sketch-btn,
+  .sketch-card,
+  .sketch-input {
+    border: 1pt solid black !important;
+    transform: none !important;
+  }
+}

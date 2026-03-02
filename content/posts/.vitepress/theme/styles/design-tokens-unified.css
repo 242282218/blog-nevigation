@@ -1,0 +1,700 @@
+/**
+ * Design Token System - Unified Naming Convention
+ * 命名规范: --dt-{category}-{property}-{variant}
+ * 支持浅色/深色模式切换
+ * 
+ * @description 统一视觉风格的设计令牌系统
+ * @version 2.0.0
+ * @created 2026-03-01
+ */
+
+/* ============================================
+   1. 颜色系统 - Color System
+   ============================================ */
+:root {
+  /* === 基础色板 - Blue === */
+  --dt-color-blue-50: #eff6ff;
+  --dt-color-blue-100: #dbeafe;
+  --dt-color-blue-200: #bfdbfe;
+  --dt-color-blue-300: #93c5fd;
+  --dt-color-blue-400: #60a5fa;
+  --dt-color-blue-500: #3b82f6;
+  --dt-color-blue-600: #2563eb;
+  --dt-color-blue-700: #1d4ed8;
+  --dt-color-blue-800: #1e40af;
+  --dt-color-blue-900: #1e3a8a;
+  --dt-color-blue-950: #172554;
+
+  /* === 基础色板 - Cyan === */
+  --dt-color-cyan-50: #ecfeff;
+  --dt-color-cyan-100: #cffafe;
+  --dt-color-cyan-200: #a5f3fc;
+  --dt-color-cyan-300: #67e8f9;
+  --dt-color-cyan-400: #22d3ee;
+  --dt-color-cyan-500: #06b6d4;
+  --dt-color-cyan-600: #0891b2;
+  --dt-color-cyan-700: #0e7490;
+  --dt-color-cyan-800: #155e75;
+  --dt-color-cyan-900: #164e63;
+  --dt-color-cyan-950: #042f2e;
+
+  /* === 基础色板 - Sky === */
+  --dt-color-sky-50: #f0f9ff;
+  --dt-color-sky-100: #e0f2fe;
+  --dt-color-sky-200: #bae6fd;
+  --dt-color-sky-300: #7dd3fc;
+  --dt-color-sky-400: #38bdf8;
+  --dt-color-sky-500: #0ea5e9;
+  --dt-color-sky-600: #0284c7;
+  --dt-color-sky-700: #0369a1;
+  --dt-color-sky-800: #075985;
+  --dt-color-sky-900: #0c4a6e;
+
+  /* === 基础色板 - Gray === */
+  --dt-color-gray-50: #f9fafb;
+  --dt-color-gray-100: #f3f4f6;
+  --dt-color-gray-200: #e5e7eb;
+  --dt-color-gray-300: #d1d5db;
+  --dt-color-gray-400: #9ca3af;
+  --dt-color-gray-500: #6b7280;
+  --dt-color-gray-600: #4b5563;
+  --dt-color-gray-700: #374151;
+  --dt-color-gray-800: #1f2937;
+  --dt-color-gray-900: #111827;
+  --dt-color-gray-950: #030712;
+
+  /* === 纯色 === */
+  --dt-color-white: #ffffff;
+  --dt-color-black: #000000;
+
+  /* === 功能色 === */
+  --dt-color-success: #10b981;
+  --dt-color-warning: #f59e0b;
+  --dt-color-error: #ef4444;
+  --dt-color-info: #3b82f6;
+
+  /* === 语义色 - 浅色模式 === */
+  /* 品牌色 */
+  --dt-color-brand-1: var(--dt-color-blue-500);
+  --dt-color-brand-2: var(--dt-color-blue-400);
+  --dt-color-brand-3: var(--dt-color-blue-600);
+  --dt-color-brand-soft: rgba(59, 130, 246, 0.16);
+
+  /* 背景色 */
+  --dt-color-bg-deep: #ffffff;
+  --dt-color-bg-primary: var(--dt-color-white);
+  --dt-color-bg-secondary: var(--dt-color-gray-50);
+  --dt-color-bg-tertiary: var(--dt-color-gray-100);
+  --dt-color-bg-elevated: var(--dt-color-white);
+  --dt-color-bg-overlay: rgba(0, 0, 0, 0.5);
+
+  /* 文字色 */
+  --dt-color-text-1: #111827;
+  --dt-color-text-2: #374151;
+  --dt-color-text-3: #6b7280;
+  --dt-color-text-inverse: var(--dt-color-white);
+  --dt-color-text-brand: var(--dt-color-brand-1);
+
+  /* 边框色 */
+  --dt-color-border-default: var(--dt-color-gray-200);
+  --dt-color-border-light: var(--dt-color-gray-100);
+  --dt-color-border-strong: var(--dt-color-gray-300);
+  --dt-color-border-brand: var(--dt-color-brand-1);
+
+  /* 交互色 */
+  --dt-color-interactive-default: var(--dt-color-brand-1);
+  --dt-color-interactive-hover: var(--dt-color-brand-2);
+  --dt-color-interactive-active: var(--dt-color-brand-3);
+  --dt-color-interactive-focus: var(--dt-color-brand-1);
+  --dt-color-interactive-on-brand: var(--dt-color-white);
+
+  /* === 渐变 === */
+  --dt-gradient-brand: linear-gradient(135deg, var(--dt-color-blue-400), var(--dt-color-sky-500), var(--dt-color-cyan-400));
+  --dt-gradient-brand-soft: linear-gradient(135deg, var(--dt-color-blue-400), var(--dt-color-cyan-500));
+  --dt-gradient-brand-dark: linear-gradient(135deg, var(--dt-color-blue-600), var(--dt-color-sky-700));
+  --dt-gradient-hero: linear-gradient(180deg, var(--dt-color-blue-100) 0%, var(--dt-color-bg-deep) 100%);
+}
+
+/* 深色模式 */
+.dark,
+[data-theme="dark"] {
+  /* 品牌色 - 深色模式调整 */
+  --dt-color-brand-1: var(--dt-color-blue-500);
+  --dt-color-brand-2: var(--dt-color-blue-300);
+  --dt-color-brand-3: var(--dt-color-blue-600);
+  --dt-color-brand-soft: rgba(59, 130, 246, 0.22);
+
+  /* 背景色 */
+  --dt-color-bg-deep: #050505;
+  --dt-color-bg-primary: var(--dt-color-gray-950);
+  --dt-color-bg-secondary: #0a0a0a;
+  --dt-color-bg-tertiary: var(--dt-color-gray-900);
+  --dt-color-bg-elevated: var(--dt-color-gray-900);
+  --dt-color-bg-overlay: rgba(0, 0, 0, 0.7);
+
+  /* 文字色 */
+  --dt-color-text-1: var(--dt-color-white);
+  --dt-color-text-2: #e5e7eb;
+  --dt-color-text-3: #9ca3af;
+
+  /* 边框色 */
+  --dt-color-border-default: rgba(255, 255, 255, 0.1);
+  --dt-color-border-light: rgba(255, 255, 255, 0.05);
+  --dt-color-border-strong: rgba(255, 255, 255, 0.15);
+
+  /* 渐变 */
+  --dt-gradient-brand: linear-gradient(135deg, var(--dt-color-blue-300), var(--dt-color-sky-400), var(--dt-color-cyan-400));
+  --dt-gradient-brand-soft: linear-gradient(135deg, var(--dt-color-blue-400), var(--dt-color-cyan-500));
+  --dt-gradient-hero: linear-gradient(180deg, var(--dt-color-blue-950) 0%, var(--dt-color-bg-deep) 100%);
+}
+
+/* ============================================
+   2. 字体系统 - Typography System
+   ============================================ */
+:root {
+  /* 字体家族 */
+  --dt-font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --dt-font-family-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  --dt-font-family-serif: Georgia, 'Times New Roman', Times, serif;
+
+  /* 字体大小 - 基础 */
+  --dt-font-size-xs: 0.75rem;
+  --dt-font-size-sm: 0.875rem;
+  --dt-font-size-base: 1rem;
+  --dt-font-size-lg: 1.125rem;
+  --dt-font-size-xl: 1.25rem;
+  --dt-font-size-2xl: 1.5rem;
+  --dt-font-size-3xl: 1.875rem;
+  --dt-font-size-4xl: 2.25rem;
+  --dt-font-size-5xl: 3rem;
+  --dt-font-size-6xl: 3.75rem;
+
+  /* 字体大小 - 标题 */
+  --dt-font-size-heading-h1: var(--dt-font-size-4xl);
+  --dt-font-size-heading-h2: var(--dt-font-size-3xl);
+  --dt-font-size-heading-h3: var(--dt-font-size-2xl);
+  --dt-font-size-heading-h4: var(--dt-font-size-xl);
+  --dt-font-size-heading-h5: var(--dt-font-size-lg);
+  --dt-font-size-heading-h6: var(--dt-font-size-base);
+
+  /* 字体粗细 */
+  --dt-font-weight-light: 300;
+  --dt-font-weight-regular: 400;
+  --dt-font-weight-medium: 500;
+  --dt-font-weight-semibold: 600;
+  --dt-font-weight-bold: 700;
+  --dt-font-weight-extrabold: 800;
+
+  /* 行高 */
+  --dt-font-lineheight-none: 1;
+  --dt-font-lineheight-tight: 1.25;
+  --dt-font-lineheight-snug: 1.375;
+  --dt-font-lineheight-normal: 1.5;
+  --dt-font-lineheight-relaxed: 1.625;
+  --dt-font-lineheight-loose: 2;
+
+  /* 字间距 */
+  --dt-font-letterspacing-tighter: -0.05em;
+  --dt-font-letterspacing-tight: -0.025em;
+  --dt-font-letterspacing-normal: 0;
+  --dt-font-letterspacing-wide: 0.025em;
+  --dt-font-letterspacing-wider: 0.05em;
+}
+
+/* ============================================
+   3. 间距系统 - Spacing System
+   ============================================ */
+:root {
+  /* 基础间距 (4px = 0.25rem 基准) */
+  --dt-space-0: 0;
+  --dt-space-px: 1px;
+  --dt-space-0-5: 0.125rem;
+  --dt-space-1: 0.25rem;
+  --dt-space-1-5: 0.375rem;
+  --dt-space-2: 0.5rem;
+  --dt-space-2-5: 0.625rem;
+  --dt-space-3: 0.75rem;
+  --dt-space-3-5: 0.875rem;
+  --dt-space-4: 1rem;
+  --dt-space-5: 1.25rem;
+  --dt-space-6: 1.5rem;
+  --dt-space-7: 1.75rem;
+  --dt-space-8: 2rem;
+  --dt-space-9: 2.25rem;
+  --dt-space-10: 2.5rem;
+  --dt-space-11: 2.75rem;
+  --dt-space-12: 3rem;
+  --dt-space-14: 3.5rem;
+  --dt-space-16: 4rem;
+  --dt-space-20: 5rem;
+  --dt-space-24: 6rem;
+  --dt-space-28: 7rem;
+  --dt-space-32: 8rem;
+
+  /* 语义间距 - 内边距 */
+  --dt-space-inset-xs: var(--dt-space-1);
+  --dt-space-inset-sm: var(--dt-space-2);
+  --dt-space-inset-md: var(--dt-space-4);
+  --dt-space-inset-lg: var(--dt-space-6);
+  --dt-space-inset-xl: var(--dt-space-8);
+
+  /* 语义间距 - 堆叠 (垂直) */
+  --dt-space-stack-xs: var(--dt-space-2);
+  --dt-space-stack-sm: var(--dt-space-4);
+  --dt-space-stack-md: var(--dt-space-6);
+  --dt-space-stack-lg: var(--dt-space-8);
+  --dt-space-stack-xl: var(--dt-space-12);
+
+  /* 语义间距 - 行内 (水平) */
+  --dt-space-inline-xs: var(--dt-space-2);
+  --dt-space-inline-sm: var(--dt-space-3);
+  --dt-space-inline-md: var(--dt-space-4);
+  --dt-space-inline-lg: var(--dt-space-6);
+  --dt-space-inline-xl: var(--dt-space-8);
+}
+
+/* ============================================
+   4. 圆角系统 - Border Radius System
+   ============================================ */
+:root {
+  /* 基础圆角 */
+  --dt-radius-none: 0;
+  --dt-radius-xs: 0.125rem;
+  --dt-radius-sm: 0.25rem;
+  --dt-radius-md: 0.375rem;
+  --dt-radius-lg: 0.5rem;
+  --dt-radius-xl: 0.75rem;
+  --dt-radius-2xl: 1rem;
+  --dt-radius-3xl: 1.5rem;
+  --dt-radius-4xl: 2rem;
+  --dt-radius-full: 9999px;
+
+  /* 语义圆角 */
+  --dt-radius-button: var(--dt-radius-md);
+  --dt-radius-button-pill: var(--dt-radius-full);
+  --dt-radius-card: var(--dt-radius-xl);
+  --dt-radius-input: var(--dt-radius-md);
+  --dt-radius-badge: var(--dt-radius-sm);
+  --dt-radius-avatar: var(--dt-radius-full);
+  --dt-radius-modal: var(--dt-radius-2xl);
+  --dt-radius-dropdown: var(--dt-radius-lg);
+  --dt-radius-tooltip: var(--dt-radius-md);
+  --dt-radius-nav: 50px;
+}
+
+/* ============================================
+   5. 阴影系统 - Shadow System
+   ============================================ */
+:root {
+  /* 基础阴影 - 浅色模式 */
+  --dt-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --dt-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --dt-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --dt-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --dt-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --dt-shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+
+  /* 内阴影 */
+  --dt-shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+
+  /* 语义阴影 */
+  --dt-shadow-card: var(--dt-shadow-sm);
+  --dt-shadow-card-hover: var(--dt-shadow-md);
+  --dt-shadow-dropdown: var(--dt-shadow-lg);
+  --dt-shadow-modal: var(--dt-shadow-2xl);
+  --dt-shadow-tooltip: var(--dt-shadow-md);
+  --dt-shadow-nav: 0 4px 30px rgba(0, 0, 0, 0.1);
+
+  /* 光晕效果 - 浅色模式 */
+  --dt-shadow-glow-brand: 0 0 30px rgba(59, 130, 246, 0.25);
+  --dt-shadow-glow-brand-lg: 0 0 50px rgba(59, 130, 246, 0.35);
+  --dt-shadow-glow-cyan: 0 0 30px rgba(6, 182, 212, 0.25);
+  --dt-shadow-glow-cyan-lg: 0 0 50px rgba(6, 182, 212, 0.35);
+  --dt-shadow-glow-mixed: 0 0 30px rgba(59, 130, 246, 0.15), 0 0 60px rgba(6, 182, 212, 0.15);
+  --dt-shadow-glow-text: 0 0 20px rgba(59, 130, 246, 0.5);
+  --dt-shadow-glow-text-cyan: 0 0 20px rgba(6, 182, 212, 0.5);
+
+  /* 特殊光晕 */
+  --dt-shadow-glow-hover: 0 0 40px rgba(59, 130, 246, 0.4);
+  --dt-shadow-glow-active: 0 0 20px rgba(59, 130, 246, 0.3);
+  --dt-shadow-glow-focus: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* 深色模式阴影 */
+.dark,
+[data-theme="dark"] {
+  --dt-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --dt-shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  --dt-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --dt-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+  --dt-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  --dt-shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+
+  /* 光晕效果 - 深色模式增强 */
+  --dt-shadow-glow-brand: 0 0 40px rgba(59, 130, 246, 0.35);
+  --dt-shadow-glow-brand-lg: 0 0 60px rgba(59, 130, 246, 0.45);
+  --dt-shadow-glow-cyan: 0 0 40px rgba(6, 182, 212, 0.35);
+  --dt-shadow-glow-cyan-lg: 0 0 60px rgba(6, 182, 212, 0.45);
+  --dt-shadow-glow-mixed: 0 0 40px rgba(59, 130, 246, 0.2), 0 0 80px rgba(6, 182, 212, 0.2);
+
+  /* 卡片阴影 - 深色模式 */
+  --dt-shadow-card-hover: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================
+   6. 动画系统 - Motion System
+   ============================================ */
+:root {
+  /* 动画时长 */
+  --dt-motion-duration-instant: 0ms;
+  --dt-motion-duration-fast: 150ms;
+  --dt-motion-duration-normal: 250ms;
+  --dt-motion-duration-slow: 350ms;
+  --dt-motion-duration-slower: 500ms;
+  --dt-motion-duration-slowest: 700ms;
+
+  /* 缓动函数 */
+  --dt-motion-ease-linear: linear;
+  --dt-motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --dt-motion-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --dt-motion-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --dt-motion-ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --dt-motion-ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --dt-motion-ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 预设过渡 */
+  --dt-motion-transition-fast: var(--dt-motion-duration-fast) var(--dt-motion-ease-out);
+  --dt-motion-transition-normal: var(--dt-motion-duration-normal) var(--dt-motion-ease-out);
+  --dt-motion-transition-slow: var(--dt-motion-duration-slow) var(--dt-motion-ease-out);
+  --dt-motion-transition-bounce: var(--dt-motion-duration-normal) var(--dt-motion-ease-bounce);
+  --dt-motion-transition-smooth: var(--dt-motion-duration-normal) var(--dt-motion-ease-smooth);
+
+  /* 动画延迟 */
+  --dt-motion-delay-100: 100ms;
+  --dt-motion-delay-200: 200ms;
+  --dt-motion-delay-300: 300ms;
+  --dt-motion-delay-400: 400ms;
+  --dt-motion-delay-500: 500ms;
+  --dt-motion-delay-600: 600ms;
+  --dt-motion-delay-700: 700ms;
+  --dt-motion-delay-800: 800ms;
+
+  /* 特殊动画时长 */
+  --dt-motion-duration-fade-in: 0.6s;
+  --dt-motion-duration-pulse: 2s;
+  --dt-motion-duration-gradient: 3s;
+  --dt-motion-duration-float: 3s;
+  --dt-motion-duration-shimmer: 2s;
+  --dt-motion-duration-border-rotate: 3s;
+  --dt-motion-duration-hero-grid: 25s;
+}
+
+/* ============================================
+   7. 玻璃拟态效果 - Glassmorphism
+   ============================================ */
+:root {
+  /* 玻璃效果 - 浅色模式 */
+  --dt-glass-bg: rgba(255, 255, 255, 0.7);
+  --dt-glass-bg-light: rgba(255, 255, 255, 0.5);
+  --dt-glass-bg-hover: rgba(255, 255, 255, 0.9);
+  --dt-glass-border: rgba(0, 0, 0, 0.08);
+  --dt-glass-border-strong: rgba(0, 0, 0, 0.12);
+  --dt-glass-blur: blur(12px);
+  --dt-glass-blur-sm: blur(8px);
+  --dt-glass-blur-lg: blur(20px);
+  --dt-glass-blur-nav: blur(20px);
+  --dt-glass-blur-card: blur(16px);
+}
+
+.dark,
+[data-theme="dark"] {
+  /* 玻璃效果 - 深色模式 */
+  --dt-glass-bg: rgba(0, 0, 0, 0.3);
+  --dt-glass-bg-light: rgba(255, 255, 255, 0.05);
+  --dt-glass-bg-hover: rgba(255, 255, 255, 0.1);
+  --dt-glass-border: rgba(255, 255, 255, 0.08);
+  --dt-glass-border-strong: rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================
+   8. Z-Index 层级系统
+   ============================================ */
+:root {
+  --dt-z-index-dropdown: 1000;
+  --dt-z-index-sticky: 1020;
+  --dt-z-index-fixed: 1030;
+  --dt-z-index-modal-backdrop: 1040;
+  --dt-z-index-modal: 1050;
+  --dt-z-index-popover: 1060;
+  --dt-z-index-tooltip: 1070;
+  --dt-z-index-toast: 1080;
+  --dt-z-index-noise-overlay: 9999;
+}
+
+/* ============================================
+   9. 断点系统 - Breakpoints (CSS 变量参考)
+   ============================================ */
+:root {
+  --dt-breakpoint-xs: 480px;
+  --dt-breakpoint-sm: 640px;
+  --dt-breakpoint-md: 768px;
+  --dt-breakpoint-lg: 1024px;
+  --dt-breakpoint-xl: 1280px;
+  --dt-breakpoint-2xl: 1536px;
+}
+
+/* ============================================
+   10. 容器宽度 - Container Widths
+   ============================================ */
+:root {
+  --dt-container-sm: 640px;
+  --dt-container-md: 768px;
+  --dt-container-lg: 1024px;
+  --dt-container-xl: 1280px;
+  --dt-container-2xl: 1536px;
+  --dt-container-nav: 900px;
+  --dt-container-nav-tablet: 720px;
+}
+
+/* ============================================
+   11. 特殊效果变量 - Special Effects
+   ============================================ */
+:root {
+  /* 网格背景 */
+  --dt-grid-color: rgba(59, 130, 246, 0.1);
+  --dt-grid-size: 60px;
+  --dt-grid-size-mobile: 40px;
+  --dt-grid-perspective: 200px;
+  --dt-grid-rotate-x: 65deg;
+  --dt-grid-dot-size: 24px;
+
+  /* 鼠标光晕 */
+  --dt-glow-mouse-size: 400px;
+  --dt-glow-mouse-color: rgba(59, 130, 246, 0.15);
+  --dt-glow-feature-size: 300px;
+  --dt-glow-card-size: 250px;
+  --dt-glow-hero-size: 600px;
+  --dt-glow-hero-height: 400px;
+
+  /* 滚动条 */
+  --dt-scrollbar-size: 6px;
+  --dt-scrollbar-radius: 3px;
+
+  /* 触摸目标 */
+  --dt-touch-target-size: 44px;
+
+  /* 噪点纹理 */
+  --dt-noise-opacity: 0.03;
+  --dt-noise-opacity-light: 0.02;
+
+  /* 选中文字 */
+  --dt-selection-bg: rgba(59, 130, 246, 0.3);
+
+  /* 分隔线渐变 */
+  --dt-divider-gradient: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.36) 25%, rgba(14, 116, 144, 0.5) 50%, rgba(59, 130, 246, 0.36) 75%, transparent 100%);
+
+  /* Hero 区域 */
+  --dt-hero-padding-top: 120px;
+  --dt-hero-padding-bottom: 80px;
+  --dt-hero-padding-mobile-top: 100px;
+  --dt-hero-padding-mobile-bottom: 60px;
+  --dt-hero-padding-landscape-top: 80px;
+  --dt-hero-padding-landscape-bottom: 40px;
+
+  /* 导航栏 */
+  --dt-nav-height: 44px;
+  --dt-nav-margin: 12px;
+  --dt-nav-margin-mobile: 8px;
+  --dt-nav-padding: 0.5rem 1.5rem;
+  --dt-nav-padding-mobile: 0.4rem 1rem;
+  --dt-nav-link-radius: 20px;
+  --dt-nav-link-padding: 0.4rem 0.8rem;
+
+  /* 搜索按钮 */
+  --dt-search-btn-height: 36px;
+
+  /* 特性卡片 */
+  --dt-feature-indicator-width: 3px;
+  --dt-feature-indicator-height: 60%;
+  --dt-feature-icon-size: 2.5rem;
+
+  /* 标签 */
+  --dt-tag-padding: 0.25rem 0.6rem;
+  --dt-tag-radius: 4px;
+
+  /* 外部链接图标 */
+  --dt-icon-external-size: 24px;
+  --dt-icon-external-offset: 4px;
+
+  /* 指示器 */
+  --dt-indicator-width: 3px;
+  --dt-indicator-height: 50%;
+
+  /* 卡片悬停 */
+  --dt-card-lift-hover: 6px;
+  --dt-card-lift-active: 4px;
+
+  /* 动画位移 */
+  --dt-bounce-height-1: 8px;
+  --dt-bounce-height-2: 4px;
+  --dt-bounce-height-3: 2px;
+  --dt-float-height: 6px;
+  --dt-slide-distance: 4px;
+}
+
+.dark,
+[data-theme="dark"] {
+  --dt-grid-color: rgba(59, 130, 246, 0.15);
+  --dt-glow-mouse-color: rgba(59, 130, 246, 0.2);
+}
+
+/* ============================================
+   12. 响应式 Token 调整
+   ============================================ */
+@media (max-width: 768px) {
+  :root {
+    /* 移动端字体调整 */
+    --dt-font-size-heading-h1: var(--dt-font-size-3xl);
+    --dt-font-size-heading-h2: var(--dt-font-size-2xl);
+    --dt-font-size-heading-h3: var(--dt-font-size-xl);
+    --dt-font-size-5xl: 2.5rem;
+    --dt-font-size-6xl: 3rem;
+
+    /* 移动端间距调整 */
+    --dt-space-stack-xl: var(--dt-space-8);
+    --dt-space-inset-lg: var(--dt-space-4);
+    --dt-space-12: 2.5rem;
+    --dt-space-16: 3rem;
+    --dt-space-20: 4rem;
+
+    /* 移动端特殊效果调整 */
+    --dt-hero-padding-top: 100px;
+    --dt-hero-padding-bottom: 60px;
+    --dt-glow-hero-size: 300px;
+    --dt-glow-hero-height: 250px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --dt-font-size-5xl: 2rem;
+    --dt-font-size-4xl: 1.75rem;
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  :root {
+    --dt-hero-padding-top: 80px;
+    --dt-hero-padding-bottom: 40px;
+  }
+}
+
+/* ============================================
+   13. VitePress 兼容层 - 兼容现有变量
+   ============================================ */
+:root {
+  /* VitePress 颜色变量映射 */
+  --vp-c-bg-deep: var(--dt-color-bg-deep);
+  --vp-c-bg-dark: var(--dt-color-bg-secondary);
+  --vp-c-bg-soft: var(--dt-color-bg-tertiary);
+  --vp-c-bg-mute: var(--dt-color-gray-200);
+
+  --vp-c-blue-50: var(--dt-color-blue-50);
+  --vp-c-blue-100: var(--dt-color-blue-100);
+  --vp-c-blue-200: var(--dt-color-blue-200);
+  --vp-c-blue-300: var(--dt-color-blue-300);
+  --vp-c-blue-400: var(--dt-color-blue-400);
+  --vp-c-blue-500: var(--dt-color-blue-500);
+  --vp-c-blue-600: var(--dt-color-blue-600);
+  --vp-c-blue-700: var(--dt-color-blue-700);
+  --vp-c-blue-800: var(--dt-color-blue-800);
+  --vp-c-blue-900: var(--dt-color-blue-900);
+
+  --vp-c-cyan-50: var(--dt-color-cyan-50);
+  --vp-c-cyan-100: var(--dt-color-cyan-100);
+  --vp-c-cyan-200: var(--dt-color-cyan-200);
+  --vp-c-cyan-300: var(--dt-color-cyan-300);
+  --vp-c-cyan-400: var(--dt-color-cyan-400);
+  --vp-c-cyan-500: var(--dt-color-cyan-500);
+  --vp-c-cyan-600: var(--dt-color-cyan-600);
+  --vp-c-cyan-700: var(--dt-color-cyan-700);
+  --vp-c-cyan-800: var(--dt-color-cyan-800);
+  --vp-c-cyan-900: var(--dt-color-cyan-900);
+
+  --vp-c-sky-50: var(--dt-color-sky-50);
+  --vp-c-sky-100: var(--dt-color-sky-100);
+  --vp-c-sky-200: var(--dt-color-sky-200);
+  --vp-c-sky-300: var(--dt-color-sky-300);
+  --vp-c-sky-400: var(--dt-color-sky-400);
+  --vp-c-sky-500: var(--dt-color-sky-500);
+  --vp-c-sky-600: var(--dt-color-sky-600);
+  --vp-c-sky-700: var(--dt-color-sky-700);
+  --vp-c-sky-800: var(--dt-color-sky-800);
+  --vp-c-sky-900: var(--dt-color-sky-900);
+
+  --vp-c-brand: var(--dt-color-brand-1);
+  --vp-c-brand-1: var(--dt-color-brand-1);
+  --vp-c-brand-2: var(--dt-color-brand-2);
+  --vp-c-brand-3: var(--dt-color-brand-3);
+  --vp-c-brand-soft: var(--dt-color-brand-soft);
+
+  --vp-c-text-1: var(--dt-color-text-1);
+  --vp-c-text-2: var(--dt-color-text-2);
+  --vp-c-text-3: var(--dt-color-text-3);
+
+  --vp-gradient-blue: var(--dt-gradient-brand);
+  --vp-gradient-blue-soft: var(--dt-gradient-brand-soft);
+  --vp-gradient-blue-dark: var(--dt-gradient-brand-dark);
+  --vp-gradient-hero: var(--dt-gradient-hero);
+
+  /* 玻璃拟态变量映射 */
+  --glass-bg: var(--dt-glass-bg);
+  --glass-bg-light: var(--dt-glass-bg-light);
+  --glass-bg-hover: var(--dt-glass-bg-hover);
+  --glass-border: var(--dt-glass-border);
+  --glass-border-light: var(--dt-glass-border-strong);
+  --glass-blur: var(--dt-glass-blur);
+  --glass-blur-sm: var(--dt-glass-blur-sm);
+  --glass-blur-lg: var(--dt-glass-blur-lg);
+
+  /* 光晕变量映射 */
+  --glow-blue: var(--dt-shadow-glow-brand);
+  --glow-blue-lg: var(--dt-shadow-glow-brand-lg);
+  --glow-cyan: var(--dt-shadow-glow-cyan);
+  --glow-cyan-lg: var(--dt-shadow-glow-cyan-lg);
+  --glow-mixed: var(--dt-shadow-glow-mixed);
+
+  /* 动画时间映射 */
+  --transition-fast: var(--dt-motion-duration-fast) var(--dt-motion-ease-out);
+  --transition-base: var(--dt-motion-duration-normal) var(--dt-motion-ease-out);
+  --transition-normal: var(--dt-motion-duration-normal) var(--dt-motion-ease-out);
+  --transition-slow: var(--dt-motion-duration-slow) var(--dt-motion-ease-out);
+  --transition-slower: var(--dt-motion-duration-slower) var(--dt-motion-ease-out);
+
+  /* 网格背景变量映射 */
+  --grid-color: var(--dt-grid-color);
+  --grid-size: var(--dt-grid-size);
+  --grid-perspective: var(--dt-grid-perspective);
+  --grid-rotate-x: var(--dt-grid-rotate-x);
+
+  /* Stagger 延迟 */
+  --stagger-delay: 0s;
+}
+
+/* Stagger 延迟工具类 */
+.stagger-1 { --stagger-delay: var(--dt-motion-delay-100); }
+.stagger-2 { --stagger-delay: var(--dt-motion-delay-200); }
+.stagger-3 { --stagger-delay: var(--dt-motion-delay-300); }
+.stagger-4 { --stagger-delay: var(--dt-motion-delay-400); }
+.stagger-5 { --stagger-delay: var(--dt-motion-delay-500); }
+.stagger-6 { --stagger-delay: var(--dt-motion-delay-600); }
+
+/* 动画延迟工具类 */
+.delay-100 { animation-delay: var(--dt-motion-delay-100); }
+.delay-200 { animation-delay: var(--dt-motion-delay-200); }
+.delay-300 { animation-delay: var(--dt-motion-delay-300); }
+.delay-400 { animation-delay: var(--dt-motion-delay-400); }
+.delay-500 { animation-delay: var(--dt-motion-delay-500); }
+.delay-600 { animation-delay: var(--dt-motion-delay-600); }
+.delay-700 { animation-delay: var(--dt-motion-delay-700); }
+.delay-800 { animation-delay: var(--dt-motion-delay-800); }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Trae Deep Agent"
+  short_description: "Deep multi-agent dispatch for Trae with mixed-burst plans."
+  default_prompt: "Orchestrate this goal with maximum parallel agent dispatch. Produce executable prompts, solution plan, agent task cards, dependencies, and acceptance gates in a new run folder under dispatches/trae-deepagent."

@@ -1,0 +1,1613 @@
+/**
+ * Modern Glassmorphism Design System for VitePress
+ * 蓝色渐变玻璃拟态风格
+ * 支持深色/浅色模式切换
+ */
+
+/* ============================================
+   CSS Variables - 浅色模式（默认）
+   ============================================ */
+:root {
+  /* 浅色背景系统 */
+  --vp-c-bg-deep: #ffffff;
+  --vp-c-bg-dark: #f9fafb;
+  --vp-c-bg-soft: #f3f4f6;
+  --vp-c-bg-mute: #e5e7eb;
+
+  /* 蓝色系统 - 浅色模式使用更深的蓝色 */
+  --vp-c-blue-50: #eff6ff;
+  --vp-c-blue-100: #dbeafe;
+  --vp-c-blue-200: #bfdbfe;
+  --vp-c-blue-300: #3b82f6;
+  --vp-c-blue-400: #2563eb;
+  --vp-c-blue-500: #1d4ed8;
+  --vp-c-blue-600: #1e40af;
+  --vp-c-blue-700: #1e3a8a;
+  --vp-c-blue-800: #1e3a8a;
+  --vp-c-blue-900: #172554;
+
+  /* 青色系统 */
+  --vp-c-cyan-50: #ecfeff;
+  --vp-c-cyan-100: #cffafe;
+  --vp-c-cyan-200: #a5f3fc;
+  --vp-c-cyan-300: #06b6d4;
+  --vp-c-cyan-400: #0891b2;
+  --vp-c-cyan-500: #0e7490;
+  --vp-c-cyan-600: #155e75;
+  --vp-c-cyan-700: #164e63;
+  --vp-c-cyan-800: #134e4a;
+  --vp-c-cyan-900: #042f2e;
+
+  /* 天蓝系统 */
+  --vp-c-sky-50: #f0f9ff;
+  --vp-c-sky-100: #e0f2fe;
+  --vp-c-sky-200: #bae6fd;
+  --vp-c-sky-300: #0ea5e9;
+  --vp-c-sky-400: #0284c7;
+  --vp-c-sky-500: #0369a1;
+  --vp-c-sky-600: #075985;
+  --vp-c-sky-700: #0369a1;
+  --vp-c-sky-800: #075985;
+  --vp-c-sky-900: #0c4a6e;
+  --vp-c-brand: var(--vp-c-blue-500);
+  --vp-c-brand-1: var(--vp-c-blue-500);
+  --vp-c-brand-2: var(--vp-c-blue-400);
+  --vp-c-brand-3: var(--vp-c-blue-600);
+  --vp-c-brand-soft: rgba(37, 99, 235, 0.16);
+
+  /* 文字颜色 - 浅色模式 */
+  --vp-c-text-1: #111827;
+  --vp-c-text-2: #374151;
+  --vp-c-text-3: #6b7280;
+
+  /* 渐变定义 */
+  --vp-gradient-blue: linear-gradient(135deg, var(--vp-c-blue-400), var(--vp-c-sky-500), var(--vp-c-cyan-400));
+  --vp-gradient-blue-soft: linear-gradient(135deg, var(--vp-c-blue-400), var(--vp-c-cyan-500));
+  --vp-gradient-blue-dark: linear-gradient(135deg, var(--vp-c-blue-600), var(--vp-c-sky-700));
+  --vp-gradient-hero: linear-gradient(180deg, var(--vp-c-blue-100) 0%, var(--vp-c-bg-deep) 100%);
+
+  /* 玻璃拟态变量 - 浅色模式 */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-bg-light: rgba(255, 255, 255, 0.5);
+  --glass-bg-hover: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-light: rgba(0, 0, 0, 0.12);
+  --glass-blur: blur(12px);
+  --glass-blur-sm: blur(8px);
+  --glass-blur-lg: blur(20px);
+
+  /* 光晕变量 - 浅色模式减弱 */
+  --glow-blue: 0 0 30px rgba(59, 130, 246, 0.2);
+  --glow-blue-lg: 0 0 50px rgba(59, 130, 246, 0.3);
+  --glow-cyan: 0 0 30px rgba(6, 182, 212, 0.2);
+  --glow-cyan-lg: 0 0 50px rgba(6, 182, 212, 0.3);
+  --glow-mixed: 0 0 30px rgba(59, 130, 246, 0.15), 0 0 60px rgba(6, 182, 212, 0.15);
+
+  /* 动画时间 */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 350ms ease;
+  --transition-slower: 500ms ease;
+
+  /* 网格背景变量 */
+  --grid-color: rgba(59, 130, 246, 0.1);
+  --grid-size: 60px;
+  --grid-perspective: 200px;
+  --grid-rotate-x: 65deg;
+}
+
+/* ============================================
+   深色模式覆盖
+   ============================================ */
+.dark {
+  /* 深色背景系统 */
+  --vp-c-bg-deep: #050505;
+  --vp-c-bg-dark: #0a0a0a;
+  --vp-c-bg-soft: #111111;
+  --vp-c-bg-mute: #1a1a1a;
+
+  /* 蓝色系统 - 深色模式使用浅色 */
+  --vp-c-blue-300: #93c5fd;
+  --vp-c-blue-400: #60a5fa;
+  --vp-c-blue-500: #3b82f6;
+  --vp-c-blue-600: #2563eb;
+  --vp-c-blue-700: #1d4ed8;
+
+  /* 青色系统 */
+  --vp-c-cyan-300: #67e8f9;
+  --vp-c-cyan-400: #22d3ee;
+  --vp-c-cyan-500: #06b6d4;
+  --vp-c-cyan-600: #0891b2;
+
+  /* 天蓝系统 */
+  --vp-c-sky-300: #7dd3fc;
+  --vp-c-sky-400: #38bdf8;
+  --vp-c-sky-500: #0ea5e9;
+  --vp-c-sky-600: #0284c7;
+  --vp-c-brand: var(--vp-c-blue-500);
+  --vp-c-brand-1: var(--vp-c-blue-500);
+  --vp-c-brand-2: var(--vp-c-blue-300);
+  --vp-c-brand-3: var(--vp-c-blue-600);
+  --vp-c-brand-soft: rgba(59, 130, 246, 0.22);
+
+  /* 文字颜色 - 深色模式 */
+  --vp-c-text-1: #ffffff;
+  --vp-c-text-2: #e5e7eb;
+  --vp-c-text-3: #9ca3af;
+
+  /* 渐变定义 */
+  --vp-gradient-blue: linear-gradient(135deg, var(--vp-c-blue-300), var(--vp-c-sky-400), var(--vp-c-cyan-400));
+  --vp-gradient-blue-soft: linear-gradient(135deg, var(--vp-c-blue-400), var(--vp-c-cyan-500));
+  --vp-gradient-blue-dark: linear-gradient(135deg, var(--vp-c-blue-700), var(--vp-c-sky-800));
+  --vp-gradient-hero: linear-gradient(180deg, var(--vp-c-blue-900) 0%, var(--vp-c-bg-deep) 100%);
+
+  /* 玻璃拟态变量 - 深色模式 */
+  --glass-bg: rgba(0, 0, 0, 0.3);
+  --glass-bg-light: rgba(255, 255, 255, 0.05);
+  --glass-bg-hover: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-light: rgba(255, 255, 255, 0.12);
+
+  /* 光晕变量 - 深色模式增强 */
+  --glow-blue: 0 0 40px rgba(59, 130, 246, 0.3);
+  --glow-blue-lg: 0 0 60px rgba(59, 130, 246, 0.4);
+  --glow-cyan: 0 0 40px rgba(6, 182, 212, 0.3);
+  --glow-cyan-lg: 0 0 60px rgba(6, 182, 212, 0.4);
+  --glow-mixed: 0 0 40px rgba(59, 130, 246, 0.2), 0 0 80px rgba(6, 182, 212, 0.2);
+
+  /* 网格背景变量 */
+  --grid-color: rgba(59, 130, 246, 0.15);
+}
+
+/* ============================================
+   基础样式覆盖
+   ============================================ */
+.VPDoc,
+.VPHome {
+  background-color: var(--vp-c-bg-deep);
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vp-c-bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-blue-500);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-blue-400);
+}
+
+/* ============================================
+   玻璃拟态基础类
+   ============================================ */
+
+/* 基础玻璃效果 */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-sm {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: 1px solid var(--glass-border);
+}
+
+.glass-lg {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border: 1px solid var(--glass-border);
+}
+
+/* 玻璃卡片 */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  transition: all var(--transition-base);
+}
+
+.glass-card:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-light);
+  transform: translateY(-2px);
+}
+
+/* 玻璃按钮 */
+.glass-btn {
+  background: var(--glass-bg-light);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--vp-c-blue-500);
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  transition: all var(--transition-base);
+  cursor: pointer;
+}
+
+.glass-btn:hover {
+  background: var(--glass-bg-hover);
+  border-color: var(--vp-c-blue-500);
+  color: var(--vp-c-blue-400);
+}
+
+/* 玻璃输入框 */
+.glass-input {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--vp-c-text-1);
+  padding: 0.75rem 1rem;
+  transition: all var(--transition-base);
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--vp-c-blue-500);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.glass-input::placeholder {
+  color: var(--vp-c-text-3);
+}
+
+/* ============================================
+   噪点纹理背景
+   ============================================ */
+
+/* 噪点纹理 */
+.noise-bg {
+  position: relative;
+}
+
+.noise-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.noise-bg>* {
+  position: relative;
+  z-index: 2;
+}
+
+/* 噪点纹理叠加 */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.02;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ============================================
+   光晕效果
+   ============================================ */
+
+/* 基础光晕 */
+.glow {
+  box-shadow: var(--glow-blue);
+}
+
+.glow-lg {
+  box-shadow: var(--glow-blue-lg);
+}
+
+/* 蓝色光晕 */
+.glow-blue {
+  box-shadow: var(--glow-blue);
+}
+
+.glow-blue-lg {
+  box-shadow: var(--glow-blue-lg);
+}
+
+/* 青色光晕 */
+.glow-cyan {
+  box-shadow: var(--glow-cyan);
+}
+
+.glow-cyan-lg {
+  box-shadow: var(--glow-cyan-lg);
+}
+
+/* 混合光晕 */
+.glow-mixed {
+  box-shadow: var(--glow-mixed);
+}
+
+/* 文字光晕 */
+.text-glow {
+  text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+}
+
+.text-glow-blue {
+  text-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 20px rgba(6, 182, 212, 0.5);
+}
+
+/* 悬停光晕 */
+.hover-glow {
+  transition: box-shadow var(--transition-base);
+}
+
+.hover-glow:hover {
+  box-shadow: var(--glow-blue);
+}
+
+.hover-glow-lg:hover {
+  box-shadow: var(--glow-blue-lg);
+}
+
+/* ============================================
+   网格背景效果
+   ============================================ */
+
+/* 透视网格背景 */
+.grid-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background-image:
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  transform: perspective(var(--grid-perspective)) rotateX(var(--grid-rotate-x));
+  transform-origin: center top;
+  animation: grid-move 20s linear infinite;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* 静态网格 */
+.grid-static {
+  background-image:
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+}
+
+/* 点状网格 */
+.grid-dots {
+  background-image: radial-gradient(circle, var(--grid-color) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* ============================================
+   渐变文字效果
+   ============================================ */
+
+/* 蓝色渐变文字 */
+.gradient-text {
+  background: var(--vp-gradient-blue);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-soft {
+  background: var(--vp-gradient-blue-soft);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 渐变边框 */
+.gradient-border {
+  position: relative;
+  background: var(--vp-c-bg-soft);
+  border-radius: 16px;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: var(--vp-gradient-blue);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* 旋转渐变边框（按钮效果） */
+@keyframes border-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotating-border {
+  position: relative;
+  background: var(--vp-c-bg-dark);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.rotating-border::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: conic-gradient(from 0deg,
+      transparent 0%,
+      var(--vp-c-blue-500) 25%,
+      var(--vp-c-cyan-500) 50%,
+      var(--vp-c-blue-500) 75%,
+      transparent 100%);
+  animation: border-rotate 4s linear infinite;
+}
+
+.rotating-border::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: var(--vp-c-bg-dark);
+  border-radius: 10px;
+}
+
+.rotating-border>* {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================
+   动画关键帧
+   ============================================ */
+
+/* 淡入上移动画 */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out forwards;
+}
+
+/* 脉冲光晕动画 */
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 40px rgba(59, 130, 246, 0.5), 0 0 60px rgba(6, 182, 212, 0.3);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* 网格移动动画 */
+@keyframes grid-move {
+  0% {
+    transform: perspective(var(--grid-perspective)) rotateX(var(--grid-rotate-x)) translateY(0);
+  }
+
+  100% {
+    transform: perspective(var(--grid-perspective)) rotateX(var(--grid-rotate-x)) translateY(var(--grid-size));
+  }
+}
+
+/* 渐变流动动画 */
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+/* 浮动动画 */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* 闪烁动画 */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* ============================================
+   动画延迟工具类
+   ============================================ */
+.delay-100 {
+  animation-delay: 100ms;
+}
+
+.delay-200 {
+  animation-delay: 200ms;
+}
+
+.delay-300 {
+  animation-delay: 300ms;
+}
+
+.delay-400 {
+  animation-delay: 400ms;
+}
+
+.delay-500 {
+  animation-delay: 500ms;
+}
+
+.delay-600 {
+  animation-delay: 600ms;
+}
+
+.delay-700 {
+  animation-delay: 700ms;
+}
+
+.delay-800 {
+  animation-delay: 800ms;
+}
+
+/* ============================================
+   Phase 3: 滚动触发动画系统 (Task 7)
+   ============================================ */
+
+/* 基础滚动触发动画 */
+.scroll-animate {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--stagger-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.scroll-animate.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 从左侧滑入 */
+.scroll-animate-left {
+  opacity: 0;
+  transform: translateX(-40px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--stagger-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.scroll-animate-left.is-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* 从右侧滑入 */
+.scroll-animate-right {
+  opacity: 0;
+  transform: translateX(40px);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--stagger-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.scroll-animate-right.is-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* 缩放进入 */
+.scroll-animate-scale {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--stagger-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.scroll-animate-scale.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 淡入动画 */
+.scroll-animate-fade {
+  opacity: 0;
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--stagger-delay, 0s);
+  will-change: opacity;
+}
+
+.scroll-animate-fade.is-visible {
+  opacity: 1;
+}
+
+/* Stagger 延迟工具类 */
+.stagger-1 {
+  --stagger-delay: 0.1s;
+}
+
+.stagger-2 {
+  --stagger-delay: 0.2s;
+}
+
+.stagger-3 {
+  --stagger-delay: 0.3s;
+}
+
+.stagger-4 {
+  --stagger-delay: 0.4s;
+}
+
+.stagger-5 {
+  --stagger-delay: 0.5s;
+}
+
+.stagger-6 {
+  --stagger-delay: 0.6s;
+}
+
+/* ============================================
+   Phase 3: 高级悬停交互 (Task 8)
+   ============================================ */
+
+/* 鼠标跟随光晕 - JS 辅助样式 */
+.mouse-glow {
+  position: relative;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+}
+
+.mouse-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(400px circle at var(--mouse-x) var(--mouse-y),
+      rgba(59, 130, 246, 0.15),
+      transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+.mouse-glow:hover::before {
+  opacity: 1;
+}
+
+/* 移动端触摸交互优化 - hover: none 设备 */
+@media (hover: none) {
+  .mouse-glow::before {
+    display: none;
+  }
+
+  .VPFeature::after {
+    display: none;
+  }
+
+  .glass-card:hover {
+    transform: none;
+  }
+
+  .VPFeature:hover {
+    transform: none;
+  }
+
+  .VPHero .VPButton:hover {
+    transform: none !important;
+  }
+}
+
+/* 触摸友好的点击区域 */
+@media (hover: none) and (pointer: coarse) {
+
+  .VPButton,
+  .glass-btn,
+  .VPLink {
+    min-height: 44px;
+    min-width: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .VPNav .VPNavBarMenuLink {
+    padding: 0.75rem 1rem !important;
+  }
+}
+
+/* ============================================
+   prefers-reduced-motion 支持
+   ============================================ */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .scroll-animate,
+  .scroll-animate-left,
+  .scroll-animate-right,
+  .scroll-animate-scale {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .grid-bg::before {
+    animation: none;
+  }
+
+  .rotating-border::before {
+    animation: none;
+  }
+}
+
+/* ============================================
+   Phase 2: 核心组件重设计
+   ============================================ */
+
+/* ============================================
+   导航栏 - 胶囊形状玻璃拟态（统一所有页面）
+   ============================================ */
+.VPNav {
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+.VPNav .VPNavBar {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 50px !important;
+  margin: 12px auto !important;
+  max-width: 900px !important;
+  padding: 0.5rem 1.5rem !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(59, 130, 246, 0.1) !important;
+  width: calc(100% - 24px) !important;
+}
+
+.VPNav .VPNavBar.home,
+.VPNav .VPNavBar.has-sidebar,
+.VPNav .VPNavBar:not(.home):not(.has-sidebar) {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+.VPNavBar:not(.home.top) {
+  background: var(--glass-bg) !important;
+}
+
+@media (min-width: 960px) {
+  .VPNavBar:not(.home) {
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+  }
+
+  .VPNavBar:not(.has-sidebar):not(.home.top) {
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+  }
+}
+
+.VPNav .VPNavBar .container {
+  display: flex !important;
+  align-items: stretch !important;
+  justify-content: space-between !important;
+  min-height: 44px !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.VPNav .VPNavBar .title {
+  display: flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 强制重置宽屏下带有侧边栏页面的标题绝对定位，让导航栏元素保持自适应的 Flex 布局，防止覆盖和错位 */
+@media (min-width: 960px) {
+  .VPNav .VPNavBar.has-sidebar .title {
+    position: static !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-bottom: none !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNav .VPNavBar.has-sidebar .title {
+    padding-left: 0 !important;
+    width: auto !important;
+  }
+}
+
+.VPNav .VPNavBar .content {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex: 1 !important;
+  justify-content: flex-end !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+  padding-left: 0 !important;
+}
+
+.VPNav .VPNavBar.has-sidebar .content {
+  padding-left: 0 !important;
+}
+
+@media (min-width: 960px) {
+
+  .VPNav .VPNavBar .content,
+  .VPNav .VPNavBar.has-sidebar .content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .VPNav .VPNavBar.has-sidebar .content {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+.VPNav .VPNavBar .content-body {
+  display: flex !important;
+  align-items: center !important;
+  gap: 1rem !important;
+  flex: 1 !important;
+  justify-content: flex-end !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+  background-color: transparent !important;
+}
+
+/* 隐藏 VitePress 默认的原生分割线，防止实心白条破坏悬浮玻璃效果 */
+.VPNav .VPNavBar .divider {
+  display: none !important;
+}
+
+.VPNav .VPNavBarTitle {
+  color: var(--vp-c-blue-500) !important;
+  font-weight: 600 !important;
+  display: flex !important;
+  align-items: center !important;
+  line-height: 1 !important;
+  padding: 0.4rem 0 !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.VPNav .VPNavBarMenuLink {
+  color: var(--vp-c-text-2) !important;
+  transition: all 0.3s ease !important;
+  border-radius: 20px !important;
+  padding: 0.4rem 0.8rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  line-height: 1 !important;
+}
+
+.VPNav .VPNavBarMenu {
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.25rem !important;
+}
+
+.VPNav .VPNavBarMenuLink:hover {
+  background: var(--glass-bg-light) !important;
+  color: var(--vp-c-blue-500) !important;
+}
+
+.VPNav .VPNavBarMenuLink.active {
+  background: var(--vp-c-brand-soft) !important;
+  color: var(--vp-c-brand-1) !important;
+  font-weight: 600 !important;
+}
+
+/* 搜索按钮样式 */
+.VPNav .DocSearch-Button {
+  background: var(--glass-bg-light) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 20px !important;
+  transition: all 0.3s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 36px !important;
+  padding: 0 12px !important;
+}
+
+.VPNav .VPNavBarSearch {
+  display: flex !important;
+  align-items: center !important;
+}
+
+.VPNav .VPNavBarAppearance {
+  display: flex !important;
+  align-items: center !important;
+}
+
+.VPNav .VPNavBarSocialLinks {
+  display: flex !important;
+  align-items: center !important;
+}
+
+.VPNav .VPSocialLink {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.VPNav .DocSearch-Button:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* ============================================
+   局部/次级导航栏 (.VPLocalNav) - 融入玻璃拟态设计
+   ============================================ */
+/* 移除原生粗硬边框和背景 */
+.VPLocalNav {
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+/* 赋予局部导航玻璃质感，并调节宽度使其与主导航对齐 */
+.VPLocalNav .container {
+  background: var(--glass-bg-light) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  max-width: 900px !important;
+  margin: 0 auto !important;
+}
+
+/* ============================================
+   Hero 区域 - 3D透视网格背景 + 渐变文字
+   ============================================ */
+.VPHero {
+  position: relative !important;
+  overflow: hidden !important;
+  padding-top: 120px !important;
+  padding-bottom: 80px !important;
+}
+
+/* 3D透视网格背景 */
+.VPHero::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background-image:
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  background-size: 60px 60px;
+  transform: perspective(500px) rotateX(60deg);
+  transform-origin: center top;
+  animation: hero-grid-move 25s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes hero-grid-move {
+  0% {
+    transform: perspective(500px) rotateX(60deg) translateY(0);
+  }
+
+  100% {
+    transform: perspective(500px) rotateX(60deg) translateY(60px);
+  }
+}
+
+/* 光晕背景效果 */
+.VPHero::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(ellipse, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.VPHero .container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Hero 名称渐变文字 */
+.VPHero .name {
+  background: var(--vp-gradient-blue) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+  filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.3));
+}
+
+.VPHero .text {
+  background: var(--vp-gradient-blue-soft) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  font-weight: 600 !important;
+}
+
+.VPHero .tagline {
+  color: var(--vp-c-text-3) !important;
+  font-size: 1.25rem !important;
+  margin-top: 1rem !important;
+}
+
+/* ============================================
+   CTA 按钮 - 旋转边框动画
+   ============================================ */
+.VPHero .actions {
+  margin-top: 2.5rem !important;
+}
+
+.VPHero .VPButton {
+  position: relative !important;
+  border-radius: 12px !important;
+  padding: 0.875rem 2rem !important;
+  font-weight: 600 !important;
+  transition: all 0.3s ease !important;
+  overflow: hidden !important;
+}
+
+/* Brand 按钮 - 旋转边框效果 */
+.VPHero .VPButton.brand {
+  background: transparent !important;
+  border: none !important;
+  color: white !important;
+  z-index: 1 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.VPHero .VPButton.brand::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: conic-gradient(from 0deg,
+      transparent 0%,
+      var(--vp-c-blue-500) 25%,
+      var(--vp-c-cyan-500) 50%,
+      var(--vp-c-blue-500) 75%,
+      transparent 100%);
+  border-radius: 14px;
+  animation: cta-border-rotate 3s linear infinite;
+  z-index: -2;
+}
+
+.VPHero .VPButton.brand::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: linear-gradient(135deg, var(--vp-c-blue-500) 0%, var(--vp-c-cyan-500) 100%);
+  border-radius: 10px;
+  z-index: -1;
+}
+
+@keyframes cta-border-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.VPHero .VPButton.brand:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 10px 40px rgba(59, 130, 246, 0.4) !important;
+}
+
+.VPHero .VPButton.brand:hover::after {
+  background: linear-gradient(135deg, #0f2744 0%, #0c2340 100%);
+}
+
+.VPHero .VPButton.brand:active {
+  transform: translateY(0) scale(0.98) !important;
+  box-shadow: 0 5px 20px rgba(59, 130, 246, 0.3) !important;
+  transition-duration: 0.1s !important;
+}
+
+/* Alt 按钮 */
+.VPHero .VPButton.alt {
+  background: var(--glass-bg-light) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: var(--vp-c-text-1) !important;
+}
+
+.VPHero .VPButton.alt:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
+}
+
+.VPHero .VPButton.alt:active {
+  transform: translateY(0) scale(0.98) !important;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08) !important;
+  transition-duration: 0.1s !important;
+}
+
+/* ============================================
+   特性卡片 - 玻璃拟态 + 光晕跟随效果
+   ============================================ */
+.VPFeatures {
+  position: relative;
+}
+
+.VPFeature {
+  position: relative !important;
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  padding: 2rem !important;
+  overflow: hidden !important;
+  transition: all 0.3s ease !important;
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+}
+
+/* 左侧竖条指示器 */
+.VPFeature::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px;
+  height: 60%;
+  background: linear-gradient(to bottom, var(--vp-c-blue-500), var(--vp-c-cyan-500));
+  border-radius: 0 3px 3px 0;
+  transition: transform 0.3s ease;
+}
+
+.VPFeature:hover::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* 光晕跟随效果 */
+.VPFeature::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(300px circle at var(--mouse-x) var(--mouse-y),
+      rgba(59, 130, 246, 0.15),
+      transparent 50%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.VPFeature:hover::after {
+  opacity: 1;
+}
+
+.VPFeature:hover {
+  border-color: rgba(59, 130, 246, 0.3) !important;
+  transform: translateY(-4px) !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(59, 130, 246, 0.1) !important;
+}
+
+.dark .VPFeature:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.1) !important;
+}
+
+.VPFeature .icon {
+  position: relative;
+  z-index: 1;
+  font-size: 2.5rem !important;
+  margin-bottom: 1rem !important;
+  filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3));
+}
+
+.VPFeature .title {
+  position: relative;
+  z-index: 1;
+  color: var(--vp-c-text-1) !important;
+  font-weight: 600 !important;
+  font-size: 1.125rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.VPFeature .details {
+  position: relative;
+  z-index: 1;
+  color: var(--vp-c-text-3) !important;
+  line-height: 1.6 !important;
+  font-size: 0.95rem !important;
+}
+
+/* 滚动触发进入动画 */
+.VPFeature {
+  opacity: 0;
+  transform: translateY(30px);
+  animation: feature-fade-in 0.6s ease forwards;
+}
+
+.VPFeature:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.VPFeature:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.VPFeature:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.VPFeature:nth-child(4) {
+  animation-delay: 0.4s;
+}
+
+.VPFeature:nth-child(5) {
+  animation-delay: 0.5s;
+}
+
+.VPFeature:nth-child(6) {
+  animation-delay: 0.6s;
+}
+
+@keyframes feature-fade-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   鼠标位置追踪脚本支持
+   ============================================ */
+.vp-doc .VPFeatures,
+.VPHome .VPFeatures {
+  cursor: default;
+}
+
+/* 侧边栏样式 */
+.VPSidebar {
+  background: var(--vp-c-bg-deep) !important;
+}
+
+/* 内容区域 */
+.VPDoc {
+  background: var(--vp-c-bg-deep);
+}
+
+/* 代码块样式增强 */
+.vp-code {
+  background: var(--vp-c-bg-soft) !important;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+}
+
+/* 自定义链接样式 */
+.vp-doc a {
+  color: var(--vp-c-blue-500);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.vp-doc a:hover {
+  color: var(--vp-c-blue-400);
+  text-decoration: underline;
+}
+
+/* 选中文字样式 */
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: var(--vp-c-text-1);
+}
+
+.page-intro {
+  margin-bottom: 2rem;
+  color: var(--vp-c-text-2);
+  font-size: 1.0625rem;
+  line-height: 1.75;
+}
+
+.page-intro p {
+  margin: 0;
+}
+
+.gradient-divider {
+  height: 1px;
+  margin: 2rem 0 2.5rem;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(59, 130, 246, 0.36) 25%,
+      rgba(14, 116, 144, 0.5) 50%,
+      rgba(59, 130, 246, 0.36) 75%,
+      transparent 100%);
+}
+
+.nav-category-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vp-c-text-1);
+}
+
+.nav-category-title-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--vp-c-blue-500);
+  flex-shrink: 0;
+}
+
+.nav-category-title-icon svg {
+  animation: none !important;
+  filter: none !important;
+}
+
+/* ============================================
+   Phase 4: 响应式布局优化 (Task 9)
+   ============================================ */
+
+/* 移动端优化 - < 768px */
+@media (max-width: 768px) {
+
+  /* 特性卡片单列布局 */
+  .VPFeatures .container {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 简化滚动动画 */
+  .scroll-animate,
+  .scroll-animate-left,
+  .scroll-animate-right,
+  .scroll-animate-scale {
+    transition-duration: 0.3s;
+  }
+
+  /* Hero 区域调整 */
+  .VPHero {
+    padding-top: 100px !important;
+    padding-bottom: 60px !important;
+  }
+
+  .VPHero .name {
+    font-size: 2.5rem !important;
+  }
+
+  .VPHero .text {
+    font-size: 1.5rem !important;
+  }
+
+  .VPHero .tagline {
+    font-size: 1rem !important;
+  }
+
+  /* 导航栏调整 */
+  .page-intro {
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .gradient-divider {
+    margin: 1.5rem 0 2rem;
+  }
+
+  .nav-category-title {
+    font-size: 1.125rem;
+  }
+
+  .VPNav .VPNavBar {
+    margin: 8px 12px !important;
+    max-width: none !important;
+    padding: 0.4rem 1rem !important;
+  }
+
+  /* 特性卡片调整 */
+  .VPFeature {
+    padding: 1.5rem !important;
+  }
+
+  /* 按钮堆叠布局 */
+  .VPHero .actions {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .VPHero .VPButton {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  /* 网格背景简化 */
+  .VPHero::before {
+    background-size: 40px 40px;
+    animation-duration: 40s;
+  }
+
+  /* 减小光晕尺寸 */
+  .VPHero::after {
+    width: 300px;
+    height: 250px;
+  }
+}
+
+/* 平板端优化 - 769px ~ 1024px */
+@media (min-width: 769px) and (max-width: 1024px) {
+
+  /* 特性卡片双列布局 */
+  .VPFeatures .container {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Hero 区域调整 */
+  .VPHero .name {
+    font-size: 3.5rem !important;
+  }
+
+  .VPHero .text {
+    font-size: 2rem !important;
+  }
+
+  /* 导航栏调整 */
+  .VPNav .VPNavBar {
+    max-width: 720px !important;
+  }
+}
+
+/* 小屏移动端优化 - < 480px */
+@media (max-width: 480px) {
+  .VPHero .name {
+    font-size: 2rem !important;
+  }
+
+  .VPHero .text {
+    font-size: 1.25rem !important;
+  }
+
+  .VPFeature {
+    padding: 1.25rem !important;
+  }
+
+  .VPFeature .icon {
+    font-size: 2rem !important;
+  }
+
+  .VPFeature .title {
+    font-size: 1rem !important;
+  }
+
+  .VPFeature .details {
+    font-size: 0.875rem !important;
+  }
+
+  /* 导航栏更紧凑 */
+  .VPNav .VPNavBar {
+    margin: 6px 8px !important;
+    padding: 0.3rem 0.75rem !important;
+  }
+}
+
+/* 横屏模式优化 */
+@media (max-height: 500px) and (orientation: landscape) {
+  .VPHero {
+    padding-top: 80px !important;
+    padding-bottom: 40px !important;
+    min-height: auto !important;
+  }
+
+  .VPHero .name {
+    font-size: 2rem !important;
+  }
+
+  .VPHero .text {
+    font-size: 1.25rem !important;
+  }
+}

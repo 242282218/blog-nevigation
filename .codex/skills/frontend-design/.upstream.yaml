@@ -1,0 +1,3 @@
+upstream_url: https://github.com/anthropics/skills/tree/main/skills/frontend-design
+last_synced: 2026-02-26
+notes: "翻译了 frontmatter 中的 description 并补充了 short-description，其余如设计理念和审美指导等规则全部保持英文原版。"

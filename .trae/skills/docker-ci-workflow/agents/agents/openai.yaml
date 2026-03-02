@@ -1,0 +1,3 @@
+display_name: Docker CI Workflow
+short_description: 创建 GitHub Actions Docker 构建测试工作流
+default_prompt: 帮我创建 Docker GitHub Actions 工作流

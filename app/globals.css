@@ -1,0 +1,58 @@
+@import './styles/design-tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --background: var(--color-bg-primary);
+    --foreground: var(--color-text-primary);
+    --grid-color: rgba(0, 0, 0, 0.04);
+}
+
+body {
+    color: var(--foreground);
+    background-color: var(--background);
+    background-image:
+        linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+    background-size: 40px 40px;
+    background-attachment: fixed;
+    font-family: var(--font-sans), sans-serif;
+    min-height: 100vh;
+}
+
+@layer components {
+    .terminal-prompt {
+        @apply font-mono mr-2 font-bold;
+        color: var(--color-terminal-prompt);
+    }
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-link);
+    outline-offset: 2px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.sr-only:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0.5rem 1rem;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+}
