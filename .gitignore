@@ -1,5 +1,44 @@
+# Dependencies
 node_modules/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
+.pnp
+.pnp.js
+
+# Build outputs
+.next/
+dist/
+out/
+build/
+
+# Development
 .DS_Store
 *.local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+
+# VitePress
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
+# Codex (local development files)
+.codex/
+
+# Misc
+*.log
