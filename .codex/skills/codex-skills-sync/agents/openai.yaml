@@ -1,3 +1,0 @@
-﻿interface:
-  display_name: "Codex Skills Sync"
-  short_description: "同步本机Codex核心目录到GitHub并支持云端一键恢复"
