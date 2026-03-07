@@ -1,0 +1,13 @@
+.git
+.github
+.next
+.trae
+.codex
+node_modules
+coverage
+dist
+out
+build
+dispatches
+*.log
+tsconfig.tsbuildinfo
