@@ -8,6 +8,7 @@ node_modules/
 dist/
 out/
 build/
+*.tsbuildinfo
 
 # Development
 .DS_Store
@@ -17,6 +18,9 @@ build/
 .env.development.local
 .env.test.local
 .env.production.local
+.trae/
+dispatches/
+必要文件.txt
 
 # IDE
 .vscode/
@@ -36,6 +40,9 @@ coverage/
 # VitePress
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+content/posts/.vitepress/.temp/
+content/posts/.vitepress/cache/
+content/posts/.vitepress/dist/
 
 # Codex (local development files)
 .codex/
