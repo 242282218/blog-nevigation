@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, FileText, Edit2, Trash2, Download, Upload, Calendar, Tag } from 'lucide-react';
 import { useLocalArticles } from '@/app/hooks/useLocalArticles';
 import { TemplateSelector } from './components/TemplateSelector';
 import { Article } from '@/app/types/article';
+import { LogoutButton } from '../components/LogoutButton';
 
 export default function BlogEditorPage() {
   const router = useRouter();
@@ -49,6 +49,31 @@ export default function BlogEditorPage() {
     URL.revokeObjectURL(url);
   }, [exportArticle]);
 
+  const handleExportAll = useCallback(() => {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      articles: articles.map((article) => ({
+        ...article,
+        markdown: exportArticle(article),
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const timestamp = payload.exportedAt.replace(/[:]/g, '-').replace(/\..+$/, '');
+
+    a.href = url;
+    a.download = `blog-articles-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [articles, exportArticle]);
+
   // 导入文章
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -86,6 +111,15 @@ export default function BlogEditorPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <LogoutButton />
+              <button
+                onClick={handleExportAll}
+                disabled={articles.length === 0}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Export All</span>
+              </button>
               {/* 导入按钮 */}
               <label className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
                 <Upload className="w-4 h-4" />
