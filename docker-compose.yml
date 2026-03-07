@@ -9,6 +9,9 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - BLOG_DATA_ROOT=/root/blog-nevigation
+    volumes:
+      - /root/blog-nevigation:/root/blog-nevigation
     restart: unless-stopped
 
   # 可选：使用已构建的镜像
@@ -18,4 +21,7 @@ services:
   #     - "3000:3000"
   #   environment:
   #     - NODE_ENV=production
+  #     - BLOG_DATA_ROOT=/root/blog-nevigation
+  #   volumes:
+  #     - /root/blog-nevigation:/root/blog-nevigation
   #   restart: unless-stopped

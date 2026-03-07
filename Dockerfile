@@ -27,6 +27,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV BLOG_DATA_ROOT=/root/blog-nevigation
+
+RUN mkdir -p /root/blog-nevigation/articles /root/blog-nevigation/navigation
 
 # 复制必要文件
 COPY --from=builder /app/package*.json ./
