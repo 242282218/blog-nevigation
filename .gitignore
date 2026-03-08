@@ -1,51 +1,31 @@
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
 
-# Build outputs
+# Next.js
 .next/
-dist/
 out/
-build/
-*.tsbuildinfo
 
-# Development
-.DS_Store
-*.local
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.trae/
-dispatches/
-必要文件.txt
+# Build
+dist/
 
 # IDE
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
 
 # Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Testing
-coverage/
-
-# VitePress
-docs/.vitepress/dist/
-docs/.vitepress/cache/
-content/posts/.vitepress/.temp/
-content/posts/.vitepress/cache/
-content/posts/.vitepress/dist/
-
-# Codex (local development files)
-.codex/
-
-# Misc
 *.log
+npm-debug.log*
+
+# Trae
+.trae/

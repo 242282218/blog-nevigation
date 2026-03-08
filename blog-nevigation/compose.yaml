@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      BLOG_DATA_ROOT: /var/lib/blog-navigation
+      EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
+    volumes:
+      - blog_navigation_data:/var/lib/blog-navigation
+    restart: unless-stopped
+
+volumes:
+  blog_navigation_data:
