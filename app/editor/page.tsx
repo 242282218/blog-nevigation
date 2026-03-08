@@ -6,7 +6,7 @@ import { LogoutButton } from './components/LogoutButton';
 export default function EditorHomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 顶部导航 */}
+      {/* 顶部导航 * /}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between gap-4">
           <div>
@@ -21,7 +21,7 @@ export default function EditorHomePage() {
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* 博客编辑器入口 */}
+          {/* 博客编辑器入口 * /}
           <Link
             href="/editor/blog"
             className="group p-8 bg-white border border-gray-200 rounded-2xl hover:border-blue-300 hover:shadow-lg transition-all"
@@ -44,7 +44,7 @@ export default function EditorHomePage() {
             </div>
           </Link>
 
-          {/* 导航编辑器入口 */}
+          {/* 导航编辑器入口 * /}
           <Link
             href="/editor/navigation"
             className="group p-8 bg-white border border-gray-200 rounded-2xl hover:border-purple-300 hover:shadow-lg transition-all"
@@ -68,7 +68,7 @@ export default function EditorHomePage() {
           </Link>
         </div>
 
-        {/* 功能说明 */}
+        {/* 功能说明 * /}
         <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="p-6 bg-white border border-gray-200 rounded-xl">
             <div className="w-10 h-10 bg-green-50 text-green-500 rounded-lg flex items-center justify-center mb-4">
