@@ -19,6 +19,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: blog-nevigation
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,6 +33,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: blog-nevigation/package-lock.json
       
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -42,19 +46,13 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
       
-      # - name: Lint
-      #   run: npm run lint
-      
-      # - name: Run tests
-      #   run: npm run test:run
-      
       - name: Build with Next.js
         run: npm run build
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: out
+          path: blog-nevigation/out
 
   deploy:
     environment:

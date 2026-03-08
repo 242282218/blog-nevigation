@@ -2,9 +2,13 @@ FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-COPY package*.json ./
+RUN apk add --no-cache libc6-compat
 
-RUN npm ci --legacy-peer-deps
+COPY package.json package-lock.json* ./
+
+RUN npm ci --legacy-peer-deps --prefer-offline --no-audit && \
+    npm cache clean --force && \
+    rm -rf /root/.npm
 
 FROM node:20-alpine AS builder
 
@@ -13,7 +17,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN npm run build
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN npm run build && \
+    rm -rf node_modules/.cache
 
 FROM node:20-alpine AS runner
 
@@ -23,14 +30,19 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV BLOG_DATA_ROOT=/var/lib/blog-navigation
+ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs && \
+    mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation && \
+    chown -R nextjs:nodejs /var/lib/blog-navigation
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/content ./content
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/content ./content
+
+USER nextjs
 
 EXPOSE 3000
 
