@@ -10,12 +10,6 @@ services:
       BLOG_DATA_ROOT: /var/lib/blog-navigation
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
     volumes:
-      - blog_articles:/var/lib/blog-navigation/articles
-      - blog_navigation:/var/lib/blog-navigation/navigation
+      - /root/blog-navigation/articles:/var/lib/blog-navigation/articles
+      - /root/blog-navigation/navigation:/var/lib/blog-navigation/navigation
     restart: unless-stopped
-
-volumes:
-  blog_articles:
-    name: blog_navigation_articles
-  blog_navigation:
-    name: blog_navigation_data

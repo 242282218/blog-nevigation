@@ -32,7 +32,7 @@ docs/                 项目文档和设计系统资源
 ## 运行时数据
 
 - **本地开发**：在 `.env.local` 中设置 `BLOG_DATA_ROOT` 为项目外的绝对路径
-- **Docker 默认**：`/var/lib/blog-navigation`
+- **Docker 部署**：数据存储在服务器 `/root/blog-navigation/` 目录
 
 设置 `EDITOR_ACCESS_TOKEN` 环境变量以解锁编辑器路由。
 
@@ -60,25 +60,29 @@ cp .env.example .env
 ```env
 # 编辑器访问令牌（必填，用于保护编辑器路由）
 EDITOR_ACCESS_TOKEN=your-secure-token-here
-
-# 数据存储路径（Docker 环境下通常不需要修改）
-BLOG_DATA_ROOT=/var/lib/blog-navigation
 ```
 
-#### 3. 启动服务
+#### 3. 创建数据目录
+
+```bash
+mkdir -p /root/blog-navigation/articles
+mkdir -p /root/blog-navigation/navigation
+```
+
+#### 4. 启动服务
 
 ```bash
 docker compose up -d --build
 ```
 
-#### 4. 访问应用
+#### 5. 访问应用
 
 - **主页**：http://localhost:3000
 - **博客**：http://localhost:3000/blog
 - **导航**：http://localhost:3000/navigation
 - **编辑器登录**：http://localhost:3000/editor/login
 
-#### 5. 常用命令
+#### 6. 常用命令
 
 ```bash
 # 查看日志
@@ -86,9 +90,6 @@ docker compose logs -f
 
 # 停止服务
 docker compose down
-
-# 停止并删除数据卷
-docker compose down -v
 
 # 重新构建
 docker compose up -d --build
@@ -105,11 +106,11 @@ cd blog-nevigation
 docker build -t blog-navigation:latest .
 ```
 
-#### 2. 创建数据卷
+#### 2. 创建数据目录
 
 ```bash
-docker volume create blog_navigation_articles
-docker volume create blog_navigation_data
+mkdir -p /root/blog-navigation/articles
+mkdir -p /root/blog-navigation/navigation
 ```
 
 #### 3. 运行容器
@@ -120,8 +121,8 @@ docker run -d \
   -p 3000:3000 \
   -e NODE_ENV=production \
   -e EDITOR_ACCESS_TOKEN=your-secure-token-here \
-  -v blog_navigation_articles:/var/lib/blog-navigation/articles \
-  -v blog_navigation_data:/var/lib/blog-navigation/navigation \
+  -v /root/blog-navigation/articles:/var/lib/blog-navigation/articles \
+  -v /root/blog-navigation/navigation:/var/lib/blog-navigation/navigation \
   --restart unless-stopped \
   blog-navigation:latest
 ```
@@ -160,15 +161,22 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-std
 docker pull ghcr.io/242282218/blog-nevigation:latest
 ```
 
-#### 3. 运行容器
+#### 3. 创建数据目录
+
+```bash
+mkdir -p /root/blog-navigation/articles
+mkdir -p /root/blog-navigation/navigation
+```
+
+#### 4. 运行容器
 
 ```bash
 docker run -d \
   --name blog-navigation \
   -p 3000:3000 \
   -e EDITOR_ACCESS_TOKEN=your-secure-token-here \
-  -v blog_navigation_articles:/var/lib/blog-navigation/articles \
-  -v blog_navigation_data:/var/lib/blog-navigation/navigation \
+  -v /root/blog-navigation/articles:/var/lib/blog-navigation/articles \
+  -v /root/blog-navigation/navigation:/var/lib/blog-navigation/navigation \
   --restart unless-stopped \
   ghcr.io/242282218/blog-nevigation:latest
 ```
@@ -182,52 +190,43 @@ docker run -d \
 | 变量名 | 必填 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `EDITOR_ACCESS_TOKEN` | 是 | - | 编辑器访问令牌，用于身份验证 |
-| `BLOG_DATA_ROOT` | 否 | `/var/lib/blog-navigation` | 数据存储路径 |
+| `BLOG_DATA_ROOT` | 否 | `/var/lib/blog-navigation` | 容器内数据存储路径 |
 | `NODE_ENV` | 否 | `production` | 运行环境 |
 | `PORT` | 否 | `3000` | 服务端口 |
 
 ### 数据持久化
 
-Docker 部署使用**独立数据卷**分别存储文章和导航数据，确保数据长久保存且互不影响：
+Docker 部署使用**本地目录映射**，数据存储在服务器 `/root/blog-navigation/` 目录：
 
-| 数据卷名称 | 容器路径 | 说明 |
+| 服务器路径 | 容器路径 | 说明 |
 |------------|----------|------|
-| `blog_navigation_articles` | `/var/lib/blog-navigation/articles/` | 文章数据（JSON 格式） |
-| `blog_navigation_data` | `/var/lib/blog-navigation/navigation/` | 导航数据（JSON 格式） |
+| `/root/blog-navigation/articles/` | `/var/lib/blog-navigation/articles/` | 文章数据（JSON 格式） |
+| `/root/blog-navigation/navigation/` | `/var/lib/blog-navigation/navigation/` | 导航数据（JSON 格式） |
 
-#### 数据卷管理
+#### 数据管理
 
 ```bash
-# 查看数据卷列表
-docker volume ls | grep blog
+# 查看文章数据
+ls -la /root/blog-navigation/articles/
 
-# 查看文章数据卷详情
-docker volume inspect blog_navigation_articles
+# 查看导航数据
+ls -la /root/blog-navigation/navigation/
 
-# 查看导航数据卷详情
-docker volume inspect blog_navigation_data
+# 备份所有数据
+tar czf blog-backup-$(date +%Y%m%d).tar.gz -C /root blog-navigation
 
-# 备份文章数据
-docker run --rm -v blog_navigation_articles:/data -v $(pwd):/backup alpine tar czf /backup/articles-backup.tar.gz -C /data .
-
-# 备份导航数据
-docker run --rm -v blog_navigation_data:/data -v $(pwd):/backup alpine tar czf /backup/navigation-backup.tar.gz -C /data .
-
-# 恢复文章数据
-docker run --rm -v blog_navigation_articles:/data -v $(pwd):/backup alpine sh -c "cd /data && tar xzf /backup/articles-backup.tar.gz"
-
-# 恢复导航数据
-docker run --rm -v blog_navigation_data:/data -v $(pwd):/backup alpine sh -c "cd /data && tar xzf /backup/navigation-backup.tar.gz"
+# 恢复数据
+tar xzf blog-backup-20250101.tar.gz -C /root
 ```
 
-#### 使用本地目录映射（可选）
+#### 修改存储路径
 
-如需将数据直接存储在宿主机目录，可修改 `compose.yaml`：
+如需使用其他目录，修改 `compose.yaml`：
 
 ```yaml
 volumes:
-  - ./data/articles:/var/lib/blog-navigation/articles
-  - ./data/navigation:/var/lib/blog-navigation/navigation
+  - /your/custom/path/articles:/var/lib/blog-navigation/articles
+  - /your/custom/path/navigation:/var/lib/blog-navigation/navigation
 ```
 
 或使用 Docker 命令：
@@ -237,8 +236,8 @@ docker run -d \
   --name blog-navigation \
   -p 3000:3000 \
   -e EDITOR_ACCESS_TOKEN=your-secure-token-here \
-  -v /path/to/articles:/var/lib/blog-navigation/articles \
-  -v /path/to/navigation:/var/lib/blog-navigation/navigation \
+  -v /your/custom/path/articles:/var/lib/blog-navigation/articles \
+  -v /your/custom/path/navigation:/var/lib/blog-navigation/navigation \
   --restart unless-stopped \
   blog-navigation:latest
 ```
