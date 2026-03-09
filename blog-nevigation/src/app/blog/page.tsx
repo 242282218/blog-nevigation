@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
+export const dynamic = 'force-dynamic';
+
 export default function BlogPage() {
     const articlePosts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
 

@@ -1,4 +1,4 @@
-import { getPostBySlugArray, getPosts } from '@/lib/markdown';
+import { getPostBySlugArray } from '@/lib/markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -6,12 +6,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalCard } from '@/app/components/terminal';
 
-export async function generateStaticParams() {
-    const posts = getPosts();
-    return posts.map((post) => ({
-        slug: post.slugArray,
-    }));
-}
+export const dynamic = 'force-dynamic';
 
 export default function PostPage({ params }: { params: { slug: string[] } }) {
     const post = getPostBySlugArray(params.slug);

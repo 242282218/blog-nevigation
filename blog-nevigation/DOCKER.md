@@ -24,3 +24,4 @@ docker compose up --build
 
 The compose stack uses a named volume mounted at `/var/lib/blog-navigation`.
 Runtime editor data stays outside the repository.
+Public blog articles and editor articles share the same runtime data under `/var/lib/blog-navigation/articles`.

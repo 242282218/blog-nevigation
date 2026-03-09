@@ -4,6 +4,8 @@ import { TerminalCard } from './components/terminal';
 import { SectionHeader, CommandPrompt, PostCard } from './components/ui';
 import { Section } from './components/layout';
 
+export const dynamic = 'force-dynamic';
+
 export default function Home() {
     const posts = getPosts();
 

@@ -36,6 +36,12 @@ docs/                 项目文档和设计系统资源
 
 设置 `EDITOR_ACCESS_TOKEN` 环境变量以解锁编辑器路由。
 
+配置 `BLOG_DATA_ROOT` 后，编辑器和前台博客会共用该目录下的文章数据：
+
+- 删除文章后，前台博客会同步消失
+- Docker 映射目录为空时，前台博客显示为空
+- `content/seeds/` 仅作为仓库示例数据，不再作为 Docker 运行时的实际文章来源
+
 ---
 
 ## Docker 部署
@@ -200,7 +206,7 @@ Docker 部署使用**本地目录映射**，数据存储在服务器 `/root/blog
 
 | 服务器路径 | 容器路径 | 说明 |
 |------------|----------|------|
-| `/root/blog-navigation/articles/` | `/var/lib/blog-navigation/articles/` | 文章数据（JSON 格式） |
+| `/root/blog-navigation/articles/` | `/var/lib/blog-navigation/articles/` | 文章数据（JSON 格式，前台博客与编辑器共用） |
 | `/root/blog-navigation/navigation/` | `/var/lib/blog-navigation/navigation/` | 导航数据（JSON 格式） |
 
 #### 数据管理
