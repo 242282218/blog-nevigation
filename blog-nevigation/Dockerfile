@@ -6,21 +6,25 @@ RUN apk add --no-cache libc6-compat
 
 COPY package.json package-lock.json* ./
 
-RUN npm ci --legacy-peer-deps --prefer-offline --no-audit && \
+RUN npm ci --legacy-peer-deps --prefer-offline --no-audit --no-optional && \
     npm cache clean --force && \
-    rm -rf /root/.npm
+    rm -rf /root/.npm /tmp/*
 
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package.json next.config.mjs tsconfig.json ./
+COPY src ./src
+COPY public ./public
+COPY content ./content
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 
 RUN npm run build && \
-    rm -rf node_modules/.cache
+    rm -rf node_modules/.cache /tmp/*
 
 FROM node:20-alpine AS runner
 
@@ -35,7 +39,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
     mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation && \
-    chown -R nextjs:nodejs /var/lib/blog-navigation
+    chown -R nextjs:nodejs /var/lib/blog-navigation && \
+    rm -rf /var/cache/apk/* /tmp/*
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static

@@ -20,6 +20,7 @@ tests
 *.spec.tsx
 vitest.config.ts
 jest.config.*
+__mocks__
 
 .env
 .env.*
@@ -36,6 +37,9 @@ design-system
 eslint.config.mjs
 .prettierrc*
 .editorconfig
+.nvmrc
+AGENTS.md
+DOCKER.md
 
 Dockerfile
 compose.yaml
@@ -45,3 +49,16 @@ docker-compose*.yml
 *.tsbuildinfo
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.idea
+*.swp
+*.swo
+*~
+
+.DS_Store
+Thumbs.db
+
+content/posts/.vitepress
+content/posts/public
