@@ -10,7 +10,7 @@ import { LogoutButton } from '../components/LogoutButton';
 
 export default function BlogEditorPage() {
   const router = useRouter();
-  const { articles, deleteArticle, exportArticle, importArticle, isLoaded } = useLocalArticles();
+  const { articles, deleteArticle, exportArticle, exportArticlesData, importArticle, isLoaded } = useLocalArticles();
   const [showTemplates, setShowTemplates] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -50,29 +50,20 @@ export default function BlogEditorPage() {
   }, [exportArticle]);
 
   const handleExportAll = useCallback(() => {
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      articles: articles.map((article) => ({
-        ...article,
-        markdown: exportArticle(article),
-      })),
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    const json = exportArticlesData();
+    const blob = new Blob([json], {
       type: 'application/json',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const timestamp = payload.exportedAt.replace(/[:]/g, '-').replace(/\..+$/, '');
 
     a.href = url;
-    a.download = `blog-articles-${timestamp}.json`;
+    a.download = 'blog-articles.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [articles, exportArticle]);
+  }, [exportArticlesData]);
 
   // 导入文章
   const handleImport = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,7 +109,7 @@ export default function BlogEditorPage() {
                 className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Export All</span>
+                <span className="hidden sm:inline">导出</span>
               </button>
               {/* 导入按钮 */}
               <label className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">

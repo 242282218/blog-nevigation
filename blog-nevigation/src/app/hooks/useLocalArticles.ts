@@ -437,6 +437,11 @@ export function useLocalArticles() {
     []
   );
 
+  const exportArticlesData = useCallback(
+    (): string => JSON.stringify(articles, null, 2),
+    [articles]
+  );
+
   const importArticle = useCallback(
     (markdown: string): Article | null => {
       try {
@@ -473,6 +478,7 @@ export function useLocalArticles() {
     deleteArticle,
     getArticleById,
     exportArticle,
+    exportArticlesData,
     importArticle,
     clearAllArticles,
   };
