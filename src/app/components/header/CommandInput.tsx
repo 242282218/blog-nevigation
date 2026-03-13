@@ -163,7 +163,7 @@ export function CommandInput() {
                     {!isOpen && <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle opacity-70" />}
                 </span>
                 <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 rounded border border-gray-200">
-                    <span>⌘</span>K
+                    Ctrl+K
                 </kbd>
             </button>
 
