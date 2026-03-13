@@ -36,7 +36,8 @@ ENV HOSTNAME=0.0.0.0
 ENV BLOG_DATA_ROOT=/var/lib/blog-navigation
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs && \
+RUN apk add --no-cache su-exec && \
+    addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
     mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation && \
     chown -R nextjs:nodejs /var/lib/blog-navigation && \
@@ -46,8 +47,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/content/seeds ./content/seeds
+COPY docker-entrypoint.sh /usr/local/bin/
 
-USER nextjs
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 EXPOSE 3000
 
