@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: '构建完成后是否继续部署'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.ref }}
@@ -77,8 +83,10 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: build-and-push
-    # 仅在 push 到默认分支时部署（PR 不部署）
-    if: github.event_name != 'pull_request'
+    # push 到 main/master 时自动部署；workflow_dispatch 默认只做构建，除非显式开启 deploy
+    if: >-
+      (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
     runs-on: ubuntu-latest
     environment:
       name: production
