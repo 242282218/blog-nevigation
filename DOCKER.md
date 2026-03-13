@@ -22,6 +22,6 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The compose stack uses a named volume mounted at `/var/lib/blog-navigation`.
+The compose stack uses bind mounts for `/root/blog-navigation/articles` and `/root/blog-navigation/navigation`.
 Runtime editor data stays outside the repository.
 Public blog articles and editor articles share the same runtime data under `/var/lib/blog-navigation/articles`.

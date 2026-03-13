@@ -52,7 +52,7 @@ docs/                 项目文档和设计系统资源
 
 ```bash
 git clone https://github.com/242282218/blog-nevigation.git
-cd blog-nevigation/blog-nevigation
+cd blog-nevigation
 ```
 
 #### 2. 配置环境变量
@@ -108,7 +108,6 @@ docker compose up -d --build
 #### 1. 构建镜像
 
 ```bash
-cd blog-nevigation
 docker build -t blog-navigation:latest .
 ```
 
@@ -153,7 +152,7 @@ docker rm -f blog-navigation
 
 ### 方式三：使用 GitHub Container Registry
 
-镜像自动构建并推送到 `ghcr.io`。
+镜像会在推送到 `main` 或 `master` 时由 GitHub Actions 自动构建并推送到 `ghcr.io`。
 
 #### 1. 登录 GitHub Container Registry
 
