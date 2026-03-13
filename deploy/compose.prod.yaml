@@ -25,6 +25,8 @@ services:
       BLOG_DATA_ROOT: /var/lib/blog-navigation
       NEXT_TELEMETRY_DISABLED: 1
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
+      # 无 HTTPS 时设为 false，允许 HTTP 下使用 session cookie
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
     volumes:
       # 数据持久化：宿主机目录 → 容器内数据目录
       # 确保宿主机目录已创建且有正确权限

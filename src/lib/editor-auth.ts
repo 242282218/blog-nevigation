@@ -64,10 +64,11 @@ export async function isValidEditorSession(
 }
 
 export function getEditorCookieOptions() {
+    const forceInsecure = process.env.COOKIE_SECURE === 'false';
     return {
         httpOnly: true,
         sameSite: 'lax' as const,
-        secure: process.env.NODE_ENV === 'production',
+        secure: !forceInsecure && process.env.NODE_ENV === 'production',
         path: '/',
         maxAge: EDITOR_SESSION_MAX_AGE,
     };
