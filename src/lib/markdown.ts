@@ -175,11 +175,13 @@ export function getPosts(): PostMeta[] {
 }
 
 export function getPostBySlugArray(slugArray: string[]) {
+    const decoded = slugArray.map((segment) => decodeURIComponent(segment));
+
     if (isRuntimeArticleSourceEnabled()) {
-        const runtimePost = getRuntimePostBySlugArray(slugArray);
+        const runtimePost = getRuntimePostBySlugArray(decoded);
         if (runtimePost) {
             return runtimePost;
         }
     }
-    return getSeedPostBySlugArray(slugArray);
+    return getSeedPostBySlugArray(decoded);
 }
