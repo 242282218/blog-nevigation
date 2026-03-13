@@ -165,11 +165,21 @@ function getSeedPostBySlugArray(slugArray: string[]) {
 }
 
 export function getPosts(): PostMeta[] {
-    return isRuntimeArticleSourceEnabled() ? getRuntimePosts() : getSeedPosts();
+    if (isRuntimeArticleSourceEnabled()) {
+        const runtimePosts = getRuntimePosts();
+        if (runtimePosts.length > 0) {
+            return runtimePosts;
+        }
+    }
+    return getSeedPosts();
 }
 
 export function getPostBySlugArray(slugArray: string[]) {
-    return isRuntimeArticleSourceEnabled()
-        ? getRuntimePostBySlugArray(slugArray)
-        : getSeedPostBySlugArray(slugArray);
+    if (isRuntimeArticleSourceEnabled()) {
+        const runtimePost = getRuntimePostBySlugArray(slugArray);
+        if (runtimePost) {
+            return runtimePost;
+        }
+    }
+    return getSeedPostBySlugArray(slugArray);
 }

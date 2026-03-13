@@ -69,12 +69,14 @@ describe('markdown runtime article source', () => {
     ]);
   });
 
-  it('returns an empty list when BLOG_DATA_ROOT is configured but no articles file exists', async () => {
+  it('falls back to seed posts when BLOG_DATA_ROOT is configured but no articles file exists', async () => {
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
 
     const { getPosts } = await importMarkdownModule();
+    const posts = getPosts();
 
-    expect(getPosts()).toEqual([]);
+    expect(posts.length).toBeGreaterThan(0);
+    expect(posts.some((p) => p.title === 'React 性能优化实践指南')).toBe(true);
   });
 
   it('loads article detail content from BLOG_DATA_ROOT article data', async () => {
