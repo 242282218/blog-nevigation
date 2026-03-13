@@ -1,12 +1,23 @@
 import { getPostBySlugArray } from '@/lib/markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
+import rehypeHighlight from 'rehype-highlight';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { TerminalCard } from '@/app/components/terminal';
+import 'highlight.js/styles/github.css';
 
 export const dynamic = 'force-dynamic';
+
+const sanitizeSchema = {
+    ...defaultSchema,
+    attributes: {
+        ...defaultSchema.attributes,
+        code: [...(defaultSchema.attributes?.code || []), 'className'],
+        span: [...(defaultSchema.attributes?.span || []), 'className'],
+    },
+};
 
 export default function PostPage({ params }: { params: { slug: string[] } }) {
     const post = getPostBySlugArray(params.slug);
@@ -50,13 +61,14 @@ export default function PostPage({ params }: { params: { slug: string[] } }) {
             prose-headings:font-mono prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-gray-900
             prose-a:text-link prose-a:no-underline hover:prose-a:underline hover:prose-a:decoration-2 hover:prose-a:decoration-link-light
             prose-code:font-mono prose-code:bg-accent-50 prose-code:text-accent prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:border prose-code:border-accent-100 prose-code:before:content-none prose-code:after:content-none
-            prose-pre:bg-slate-900 prose-pre:text-slate-50 prose-pre:font-mono prose-pre:rounded-xl prose-pre:shadow-inner
+            prose-pre:bg-[#f6f8fa] prose-pre:text-[#24292e] prose-pre:font-mono prose-pre:rounded-xl prose-pre:shadow-sm prose-pre:border prose-pre:border-gray-200
+            [&_pre_code]:bg-transparent [&_pre_code]:border-0 [&_pre_code]:p-0 [&_pre_code]:text-[inherit]
             prose-blockquote:border-l-4 prose-blockquote:border-gray-200 prose-blockquote:bg-gray-50/50 prose-blockquote:py-2 prose-blockquote:px-5 prose-blockquote:not-italic prose-blockquote:rounded-r-xl
             prose-img:rounded-xl prose-img:shadow-sm prose-img:border prose-img:border-gray-100
         ">
-                    <ReactMarkdown 
+                    <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeSanitize]}
+                        rehypePlugins={[[rehypeSanitize, sanitizeSchema], rehypeHighlight]}
                     >
                         {post.content}
                     </ReactMarkdown>
