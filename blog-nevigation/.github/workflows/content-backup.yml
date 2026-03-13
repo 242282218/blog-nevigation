@@ -1,0 +1,178 @@
+name: Content Backup
+
+on:
+  schedule:
+    # 每天 UTC 18:00 = 北京时间 02:00
+    - cron: '0 18 * * *'
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'blog-nevigation/content/seeds/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: '手动触发备份的原因（可选）'
+        required: false
+        default: '手动触发'
+
+# 备份任务不得并发取消，防止产生脏状态
+concurrency:
+  group: content-backup
+  cancel-in-progress: false
+
+env:
+  PROJECT_DIR: ./blog-nevigation
+  BACKUP_BRANCH: backup/content
+
+jobs:
+  backup-content:
+    name: Backup Content to Git Branch & Artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # 必须：推送 backup/content 分支
+
+    steps:
+      # Step 1: 检出完整仓库历史（fetch-depth: 0 用于切换分支）
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 2: 配置 Git 身份（使用官方 bot 账户）
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Step 3: 将需要备份的内容复制到临时目录（仍在 main 分支）
+      - name: Snapshot content to /tmp
+        run: |
+          TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          echo "SNAPSHOT_TIME=${TIMESTAMP}" >> "$GITHUB_ENV"
+
+          mkdir -p /tmp/content-snapshot/posts
+          mkdir -p /tmp/content-snapshot/navigation/data
+
+          # 复制文章 Markdown（排除 .vitepress 缓存和 _template.md 本身也备份）
+          find "${{ env.PROJECT_DIR }}/content/seeds/posts" \
+            -name "*.md" \
+            ! -path "*/.vitepress/*" \
+            | while IFS= read -r filepath; do
+                rel="${filepath#${{ env.PROJECT_DIR }}/content/seeds/posts/}"
+                target_dir=$(dirname "/tmp/content-snapshot/posts/${rel}")
+                mkdir -p "${target_dir}"
+                cp "${filepath}" "/tmp/content-snapshot/posts/${rel}"
+              done
+
+          # 复制导航 JSON 数据
+          cp "${{ env.PROJECT_DIR }}/content/seeds/navigation/data/tools.json" \
+             "/tmp/content-snapshot/navigation/data/tools.json"
+
+          # 统计文章数量（写入环境变量供后续步骤使用）
+          POST_COUNT=$(find /tmp/content-snapshot/posts -name "*.md" | wc -l | tr -d ' ')
+          echo "POST_COUNT=${POST_COUNT}" >> "$GITHUB_ENV"
+
+          echo "Snapshot complete: ${POST_COUNT} posts, tools.json"
+
+      # Step 4: 切换到 backup/content 分支（不存在则创建孤立分支）
+      - name: Switch to backup branch
+        run: |
+          if git ls-remote --exit-code origin "${{ env.BACKUP_BRANCH }}" > /dev/null 2>&1; then
+            echo "Backup branch exists, checking out..."
+            git checkout "${{ env.BACKUP_BRANCH }}"
+          else
+            echo "Backup branch does not exist, creating orphan branch..."
+            git checkout --orphan "${{ env.BACKUP_BRANCH }}"
+            git rm -rf . --quiet 2>/dev/null || true
+          fi
+
+      # Step 5: 将临时快照覆盖到当前（backup）分支工作区
+      - name: Apply snapshot to backup branch
+        run: |
+          # 清除旧的内容目录，保持幂等性
+          rm -rf posts/ navigation/
+          mkdir -p posts navigation/data
+
+          # 复制快照内容
+          cp -r /tmp/content-snapshot/posts/. posts/
+          cp -r /tmp/content-snapshot/navigation/data/. navigation/data/
+
+          # 生成自动 README（每次覆盖）
+          cat > README.md << 'HEREDOC'
+          # Content Backup Branch
+
+          > ⚠️ 此分支由 GitHub Actions 自动维护，**请勿手动修改或提交**。
+
+          ## 目录说明
+
+          | 路径 | 内容 |
+          |------|------|
+          | `posts/` | 博客文章 Markdown 文件（含子目录） |
+          | `navigation/data/tools.json` | 导航站分类与条目数据 |
+
+          ## 如何使用此备份
+
+          **查看某篇文章的历史版本：**
+          ```bash
+          git log --oneline -- posts/2025-02-28-react-performance-optimization.md
+          git show <commit-sha>:posts/2025-02-28-react-performance-optimization.md
+          ```
+
+          **恢复特定时间点的全部内容：**
+          ```bash
+          git checkout <commit-sha> -- posts/ navigation/
+          ```
+
+          HEREDOC
+
+          # 将动态信息追加到 README（避免 HEREDOC 内变量展开问题）
+          echo "" >> README.md
+          echo "## 最新快照信息" >> README.md
+          echo "" >> README.md
+          echo "| 项目 | 值 |" >> README.md
+          echo "|------|-----|" >> README.md
+          echo "| 快照时间 | ${{ env.SNAPSHOT_TIME }} |" >> README.md
+          echo "| 文章数量 | ${{ env.POST_COUNT }} |" >> README.md
+          echo "| 触发方式 | ${{ github.event_name }} |" >> README.md
+          echo "| 源分支 SHA | ${{ github.sha }} |" >> README.md
+
+      # Step 6: 提交并推送（无变化时跳过，不报错）
+      - name: Commit and push to backup branch
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No content changes detected since last backup. Skipping commit."
+          else
+            COMMIT_MSG="chore(backup): snapshot ${{ env.SNAPSHOT_TIME }} — ${{ env.POST_COUNT }} posts"
+            git commit -m "${COMMIT_MSG}"
+            git push origin "${{ env.BACKUP_BRANCH }}"
+            echo "Backup pushed successfully."
+          fi
+
+      # Step 7: 写入 GitHub Actions Job Summary（Actions 页面可见）
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## 📦 Content Backup Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 项目 | 值 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 快照时间（UTC） | ${{ env.SNAPSHOT_TIME }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 备份文章数 | ${{ env.POST_COUNT }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 目标分支 | \`${{ env.BACKUP_BRANCH }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 触发方式 | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 源 SHA | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      # Step 8: 上传为 GitHub Actions Artifact（保留 90 天）
+      - name: Upload backup as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-backup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/content-snapshot/posts/
+            /tmp/content-snapshot/navigation/
+          retention-days: 90
+          if-no-files-found: error
