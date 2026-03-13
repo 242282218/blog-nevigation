@@ -14,13 +14,20 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PROJECT_DIR: ./blog-nevigation
 
 jobs:
+  # ============================================================
+  # Job 1: 构建并推送 Docker 镜像（原有逻辑，保持不变）
+  # ============================================================
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout repository
@@ -52,13 +59,170 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v6
         with:
-          context: ./blog-nevigation
-          file: ./blog-nevigation/Dockerfile
+          context: ${{ env.PROJECT_DIR }}
+          file: ${{ env.PROJECT_DIR }}/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+
+  # ============================================================
+  # Job 2: 部署到生产服务器
+  # ============================================================
+  deploy:
+    name: Deploy to Production
+    needs: build-and-push
+    # 仅在 push 到默认分支时部署（PR 不部署）
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL || 'https://blog.example.com' }}
+
+    steps:
+      # Step 1: 通过 SSH 连接服务器并执行部署
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH }}"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}"
+            TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+            echo "========================================="
+            echo "Deployment started at ${TIMESTAMP}"
+            echo "Image: ${IMAGE}"
+            echo "Deploy dir: ${DEPLOY_DIR}"
+            echo "========================================="
+
+            cd "${DEPLOY_DIR}"
+
+            # 记录当前运行镜像的 digest（用于回滚）
+            PREV_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$(docker compose -f compose.prod.yaml ps -q app 2>/dev/null)" 2>/dev/null || echo "none")
+            echo "Previous image digest: ${PREV_DIGEST}"
+
+            # 拉取最新镜像
+            echo "Pulling latest image..."
+            docker pull "${IMAGE}"
+
+            # 使用生产 compose 文件重启服务
+            echo "Restarting service..."
+            DEPLOY_IMAGE="${IMAGE}" docker compose -f compose.prod.yaml up -d --force-recreate --remove-orphans
+
+            # 等待容器健康（最多 60 秒）
+            echo "Waiting for health check..."
+            HEALTHY=false
+            for i in $(seq 1 30); do
+              if curl --fail --silent --max-time 5 http://127.0.0.1:3000/ > /dev/null 2>&1; then
+                HEALTHY=true
+                echo "Health check passed after $((i*2)) seconds"
+                break
+              fi
+              sleep 2
+            done
+
+            if [ "${HEALTHY}" = "false" ]; then
+              echo "========================================="
+              echo "❌ Health check FAILED! Initiating rollback..."
+              echo "========================================="
+
+              # 打印容器日志以便诊断
+              docker compose -f compose.prod.yaml logs --tail=50 app || true
+
+              # 回滚：如果有之前的 digest，恢复之前的镜像
+              if [ "${PREV_DIGEST}" != "none" ]; then
+                echo "Rolling back to previous image: ${PREV_DIGEST}"
+                DEPLOY_IMAGE="${PREV_DIGEST}" docker compose -f compose.prod.yaml up -d --force-recreate --remove-orphans
+                echo "Rollback complete. Service may be running on previous version."
+              fi
+
+              exit 1
+            fi
+
+            # 清理旧的悬空镜像（节省磁盘空间）
+            echo "Cleaning up dangling images..."
+            docker image prune -f || true
+
+            echo "========================================="
+            echo "✅ Deployment successful at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo "========================================="
+
+      # Step 2: 写入部署摘要
+      - name: Write deployment summary
+        if: always()
+        run: |
+          echo "## 🚀 Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 项目 | 值 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 镜像 | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 目标服务器 | \`${{ secrets.DEPLOY_HOST }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 触发方式 | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 源 SHA | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 状态 | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================
+  # Job 3: 部署结果通知（Job Summary + 可选 Webhook）
+  # ============================================================
+  notify:
+    name: Deployment Notification
+    needs: [build-and-push, deploy]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine deployment result
+        id: result
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ]; then
+            echo "status=✅ 部署成功" >> "$GITHUB_OUTPUT"
+            echo "emoji=🎉" >> "$GITHUB_OUTPUT"
+          elif [ "${{ needs.deploy.result }}" = "failure" ]; then
+            echo "status=❌ 部署失败（已触发回滚）" >> "$GITHUB_OUTPUT"
+            echo "emoji=🚨" >> "$GITHUB_OUTPUT"
+          elif [ "${{ needs.deploy.result }}" = "skipped" ]; then
+            echo "status=⏭️ 部署已跳过" >> "$GITHUB_OUTPUT"
+            echo "emoji=⏭️" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=⚠️ 部署状态未知" >> "$GITHUB_OUTPUT"
+            echo "emoji=⚠️" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write notification summary
+        run: |
+          echo "## ${{ steps.result.outputs.emoji }} Deployment Notification" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**状态**：${{ steps.result.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 项目 | 值 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 构建 | ${{ needs.build-and-push.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 部署 | ${{ needs.deploy.result }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 分支 | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 提交者 | ${{ github.actor }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 提交信息 | ${{ github.event.head_commit.message }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      # 可选：Webhook 通知（Telegram / Discord / 企业微信等）
+      # 如果配置了 NOTIFICATION_WEBHOOK_URL secret，则发送通知
+      - name: Send webhook notification (optional)
+        if: secrets.NOTIFICATION_WEBHOOK_URL != ''
+        continue-on-error: true
+        run: |
+          curl -s -X POST "${{ secrets.NOTIFICATION_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "text": "${{ steps.result.outputs.emoji }} blog-navigation: ${{ steps.result.outputs.status }}\nBranch: ${{ github.ref_name }}\nCommit: ${{ github.sha }}\nBy: ${{ github.actor }}"
+            }' || true

@@ -1,0 +1,53 @@
+# ================================================================
+# 生产部署用 Docker Compose 文件
+# 使用说明：
+#   1. 将此文件复制到服务器部署目录（DEPLOY_PATH）
+#   2. 在同目录下创建 .env 文件，填写 EDITOR_ACCESS_TOKEN
+#   3. GitHub Actions 会自动通过 SSH 使用此文件部署
+#
+# 注意：此文件使用 GHCR 远程镜像，不在服务器上构建
+# ================================================================
+
+services:
+  app:
+    # 镜像地址：由 GitHub Actions 构建并推送到 GHCR
+    # 镜像名会自动取 github.repository 的小写形式
+    # 例如：ghcr.io/username/blog-nevigation:latest
+    image: ${DEPLOY_IMAGE:-ghcr.io/24228/blog-nevigation:latest}
+    container_name: blog-navigation
+    init: true
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      BLOG_DATA_ROOT: /var/lib/blog-navigation
+      NEXT_TELEMETRY_DISABLED: 1
+      EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
+    volumes:
+      # 数据持久化：宿主机目录 → 容器内数据目录
+      # 确保宿主机目录已创建且有正确权限
+      - ./articles:/var/lib/blog-navigation/articles
+      - ./navigation:/var/lib/blog-navigation/navigation
+    restart: unless-stopped
+    # 容器内健康检查
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # 资源限制（防止实例 OOM 影响宿主机）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    # 日志配置（防止日志文件无限膨胀）
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
