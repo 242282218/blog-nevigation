@@ -83,10 +83,16 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: build-and-push
-    # push 到 main/master 时自动部署；workflow_dispatch 默认只做构建，除非显式开启 deploy
+    # 只有部署 Secrets 配齐后才允许进入 deploy，避免纯镜像验证时误触发失败
     if: >-
-      (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
+      secrets.DEPLOY_HOST != '' &&
+      secrets.DEPLOY_USER != '' &&
+      secrets.DEPLOY_SSH_KEY != '' &&
+      secrets.DEPLOY_PATH != '' &&
+      (
+        (github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.deploy == true)
+      )
     runs-on: ubuntu-latest
     environment:
       name: production
