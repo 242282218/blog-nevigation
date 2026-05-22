@@ -5,7 +5,32 @@ import Link from 'next/link';
 import { ArrowLeft, Plus, Download, Upload, RotateCcw, Folder, Link2, Trash2, Edit2, X, Check } from 'lucide-react';
 import { useNavigationData } from '@/app/hooks/useNavigationData';
 import { Tool } from '@/app/types/navigation';
+import { isValidNavigationUrl } from '@/lib/navigation-data';
 import { LogoutButton } from '../components/LogoutButton';
+
+function normalizeTagsInput(value: string): string[] {
+  return value.split(',').map((tag) => tag.trim()).filter(Boolean);
+}
+
+function validateTool(tool: Tool): string | null {
+  if (!tool.title.trim()) {
+    return '请填写工具名称。';
+  }
+
+  if (!isValidNavigationUrl(tool.url)) {
+    return 'URL 必须是完整的 https:// 链接。';
+  }
+
+  if (!tool.description.trim()) {
+    return '请填写工具描述。';
+  }
+
+  if (tool.tags.filter(Boolean).length === 0) {
+    return '请至少填写一个标签。';
+  }
+
+  return null;
+}
 
 export default function NavigationEditorPage() {
   const {
@@ -26,6 +51,8 @@ export default function NavigationEditorPage() {
   const [editingTool, setEditingTool] = useState<{ categoryIndex: number; toolIndex: number } | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [showAddTool, setShowAddTool] = useState<number | null>(null);
+  const [categoryFormError, setCategoryFormError] = useState('');
+  const [toolFormError, setToolFormError] = useState('');
 
   // 表单状态
   const [categoryForm, setCategoryForm] = useState({ name: '', icon: 'folder', slug: '' });
@@ -39,23 +66,41 @@ export default function NavigationEditorPage() {
 
   // 添加分类
   const handleAddCategory = useCallback(() => {
-    if (!categoryForm.name.trim()) return;
+    if (!categoryForm.name.trim()) {
+      setCategoryFormError('请填写分类名称。');
+      return;
+    }
+
     addCategory({
-      name: categoryForm.name,
-      icon: categoryForm.icon,
+      name: categoryForm.name.trim(),
+      icon: categoryForm.icon.trim() || 'folder',
       slug: categoryForm.slug || categoryForm.name.toLowerCase().replace(/\s+/g, '-'),
     });
     setCategoryForm({ name: '', icon: 'folder', slug: '' });
+    setCategoryFormError('');
     setShowAddCategory(false);
   }, [categoryForm, addCategory]);
 
   // 添加工具
   const handleAddTool = useCallback(
     (categoryIndex: number) => {
-      if (!toolForm.title.trim() || !toolForm.url.trim()) return;
-      addTool(categoryIndex, {
+      const normalizedTool = {
         ...toolForm,
+        icon: toolForm.icon.trim() || 'link',
+        title: toolForm.title.trim(),
+        description: toolForm.description.trim(),
+        url: toolForm.url.trim(),
         tags: toolForm.tags.filter(Boolean),
+      };
+      const validationError = validateTool(normalizedTool);
+
+      if (validationError) {
+        setToolFormError(validationError);
+        return;
+      }
+
+      addTool(categoryIndex, {
+        ...normalizedTool,
       });
       setToolForm({
         icon: 'link',
@@ -64,6 +109,7 @@ export default function NavigationEditorPage() {
         url: '',
         tags: [],
       });
+      setToolFormError('');
       setShowAddTool(null);
     },
     [toolForm, addTool]
@@ -120,6 +166,7 @@ export default function NavigationEditorPage() {
               <Link
                 href="/navigation"
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="返回导航页"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </Link>
@@ -199,6 +246,9 @@ export default function NavigationEditorPage() {
                 className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {categoryFormError ? (
+              <p className="mt-3 text-sm text-red-500">{categoryFormError}</p>
+            ) : null}
             <div className="mt-4 flex gap-2">
               <button
                 onClick={handleAddCategory}
@@ -253,12 +303,14 @@ export default function NavigationEditorPage() {
                   <button
                     onClick={() => setEditingCategory(categoryIndex)}
                     className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                    aria-label={`编辑分类：${category.name}`}
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => deleteCategory(categoryIndex)}
                     className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    aria-label={`删除分类：${category.name}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -304,12 +356,15 @@ export default function NavigationEditorPage() {
                       onChange={(e) =>
                         setToolForm({
                           ...toolForm,
-                          tags: e.target.value.split(',').map((t) => t.trim()),
+                          tags: normalizeTagsInput(e.target.value),
                         })
                       }
                       className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  {toolFormError ? (
+                    <p className="mt-3 text-sm text-red-500">{toolFormError}</p>
+                  ) : null}
                   <div className="mt-4 flex gap-2">
                     <button
                       onClick={() => handleAddTool(categoryIndex)}
@@ -367,6 +422,27 @@ interface ToolItemProps {
 
 function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolItemProps) {
   const [form, setForm] = useState(tool);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const handleSave = () => {
+    const normalizedTool = {
+      ...form,
+      icon: form.icon.trim() || 'link',
+      title: form.title.trim(),
+      description: form.description.trim(),
+      url: form.url.trim(),
+      tags: form.tags.filter(Boolean),
+    };
+    const validationError = validateTool(normalizedTool);
+
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setErrorMessage('');
+    onSave(normalizedTool);
+  };
 
   if (isEditing) {
     return (
@@ -393,13 +469,16 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
           <input
             type="text"
             value={form.tags.join(', ')}
-            onChange={(e) => setForm({ ...form, tags: e.target.value.split(',').map((t) => t.trim()) })}
+            onChange={(e) => setForm({ ...form, tags: normalizeTagsInput(e.target.value) })}
             className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        {errorMessage ? (
+          <p className="mt-3 text-sm text-red-500">{errorMessage}</p>
+        ) : null}
         <div className="mt-4 flex gap-2">
           <button
-            onClick={() => onSave(form)}
+            onClick={handleSave}
             className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
           >
             <Check className="w-3 h-3" />
@@ -431,24 +510,27 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
           <div className="text-sm text-gray-500 truncate">{tool.description || tool.url}</div>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <a
           href={tool.url}
           target="_blank"
           rel="noopener noreferrer"
           className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+          aria-label={`打开工具：${tool.title}`}
         >
           <Link2 className="w-4 h-4" />
         </a>
         <button
           onClick={onEdit}
           className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+          aria-label={`编辑工具：${tool.title}`}
         >
           <Edit2 className="w-4 h-4" />
         </button>
         <button
           onClick={onDelete}
           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+          aria-label={`删除工具：${tool.title}`}
         >
           <Trash2 className="w-4 h-4" />
         </button>

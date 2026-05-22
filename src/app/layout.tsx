@@ -15,8 +15,8 @@ const ibmPlex = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-    title: 'Blog / Timeline',
-    description: 'A developer focused blog and timeline interface',
+    title: '个人技术博客导航',
+    description: '个人技术文章、常用链接和知识入口',
 };
 
 export default function RootLayout({

@@ -65,7 +65,7 @@ function mapArticleToPostMeta(article: Article): PostMeta {
 function comparePostsByDateDescending(a: PostMeta, b: PostMeta): number {
     if (!a.date) return 1;
     if (!b.date) return -1;
-    return new Date(b.date).getTime() - new Date(a.date).getTime();
+    return b.date.localeCompare(a.date);
 }
 
 function getRuntimePosts(): PostMeta[] {
@@ -74,7 +74,16 @@ function getRuntimePosts(): PostMeta[] {
         .sort(comparePostsByDateDescending);
 }
 
+let seedPostsCache: PostMeta[] | null = null;
+let seedPostsCacheTime = 0;
+const SEED_CACHE_TTL = 60_000;
+
 function getSeedPosts(): PostMeta[] {
+    const now = Date.now();
+    if (seedPostsCache && now - seedPostsCacheTime < SEED_CACHE_TTL) {
+        return seedPostsCache;
+    }
+
     let files: string[] = [];
 
     if (!fs.existsSync(contentDir)) {
@@ -96,7 +105,7 @@ function getSeedPosts(): PostMeta[] {
 
     findMdFiles(contentDir);
 
-    return files
+    const result = files
         .map((file) => {
             const fileContent = fs.readFileSync(file, 'utf8');
             const { data } = matter(fileContent);
@@ -112,6 +121,10 @@ function getSeedPosts(): PostMeta[] {
             };
         })
         .sort(comparePostsByDateDescending);
+
+    seedPostsCache = result;
+    seedPostsCacheTime = Date.now();
+    return result;
 }
 
 function getRuntimePostBySlugArray(slugArray: string[]) {
@@ -136,6 +149,14 @@ function getSeedPostBySlugArray(slugArray: string[]) {
     const relPath = slugArray.join('/');
     const targetPath = path.join(contentDir, relPath + '.md');
     const targetIndexPath = path.join(contentDir, relPath, 'index.md');
+
+    const resolvedBase = path.resolve(contentDir) + path.sep;
+    if (
+        !path.resolve(targetPath).startsWith(resolvedBase) ||
+        !path.resolve(targetIndexPath).startsWith(resolvedBase)
+    ) {
+        return null;
+    }
 
     let matchedFile = '';
 

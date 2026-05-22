@@ -220,11 +220,12 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
           </div>
         </div>
 
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           <button
             onClick={onEdit}
             className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
             title="编辑"
+            aria-label={`编辑文章：${article.title || '无标题'}`}
           >
             <Edit2 className="w-4 h-4" />
           </button>
@@ -232,6 +233,7 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
             onClick={onExport}
             className="p-2 text-gray-400 hover:text-green-500 hover:bg-green-50 rounded-lg transition-colors"
             title="导出"
+            aria-label={`导出文章：${article.title || '无标题'}`}
           >
             <Download className="w-4 h-4" />
           </button>
@@ -243,6 +245,7 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
                 : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
             }`}
             title={isDeleting ? '确认删除？' : '删除'}
+            aria-label={`${isDeleting ? '确认删除文章' : '删除文章'}：${article.title || '无标题'}`}
           >
             <Trash2 className="w-4 h-4" />
           </button>

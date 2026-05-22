@@ -30,7 +30,7 @@ export default function Home() {
                         <TypewriterTitle />
                         <div className="mt-6 font-mono text-sm text-gray-500 relative z-10 block">
                             <span className="text-terminal-prompt font-bold mr-2">//</span>
-                            博客系统 / 技能积累 / <span className="text-link underline decoration-link-light underline-offset-4">常用工具链导航</span>
+                            个人技术博客 / 知识沉淀 / <span className="text-link underline decoration-link-light underline-offset-4">常用链接导航</span>
                         </div>
                     </div>
                 </TerminalCard>

@@ -5,6 +5,8 @@ import { CategoryCard } from '@/app/components/navigation';
 import { readNavigationFromDisk } from '@/lib/editor-data-storage';
 import type { Category } from '@/app/types/navigation';
 
+export const dynamic = 'force-dynamic';
+
 function getNavigationData() {
     try {
         return readNavigationFromDisk();
@@ -26,11 +28,11 @@ export default function NavigationPage() {
                 <TerminalCard>
                     <div className="p-10 md:p-16 text-center relative overflow-hidden">
                         <h1 className="text-4xl md:text-5xl lg:text-6xl font-mono font-bold text-gray-800 tracking-tight leading-tight flex items-center justify-center gap-4 relative z-10">
-                            <span className="text-link">{'>'}</span> 常用工具箱
+                            <span className="text-link">{'>'}</span> 常用链接
                         </h1>
                         <div className="mt-6 font-mono text-sm text-gray-500 relative z-10 block">
                             <span className="text-terminal-prompt font-bold mr-2">//</span>
-                            开发工具 / 学习资源 / <span className="text-link underline decoration-link-light underline-offset-4">常用链接导航</span>
+                            开发文档 / 写作知识 / <span className="text-link underline decoration-link-light underline-offset-4">个人高频入口</span>
                         </div>
                     </div>
                 </TerminalCard>
@@ -52,25 +54,31 @@ export default function NavigationPage() {
 
                 <div className="space-y-12">
                     {navData.map((category: Category, idx: number) => (
-                        <div key={idx} className="animate-in slide-in-from-bottom">
-                            <h3 className="text-lg font-mono font-bold text-gray-700 mb-6 flex items-center gap-2 px-1">
-                                <span className="text-gray-400">[{idx}]</span> {category.name}
-                            </h3>
+                        <div key={category.slug || category.name} className="animate-in slide-in-from-bottom">
+                            <div className="mb-6 flex items-center justify-between gap-4 px-1">
+                                <h3 className="text-lg font-mono font-bold text-gray-700 flex items-center gap-2">
+                                    <span className="text-gray-400">[{idx}]</span> {category.name}
+                                </h3>
+                                <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-mono text-gray-400">
+                                    {category.tools.length} links
+                                </span>
+                            </div>
 
-                            {/* 4 列网格布局 */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                                 {category.tools.map((tool, tIdx: number) => (
                                     <a
-                                        key={tIdx}
+                                        key={`${tool.title}-${tIdx}`}
                                         href={tool.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="block"
+                                        className="block h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-link focus:ring-offset-2"
+                                        aria-label={`打开 ${tool.title}`}
                                     >
                                         <CategoryCard
-                                            name={tool.title}
-                                            slug={tool.title.toLowerCase().replace(/\s+/g, '-')}
-                                            count={1}
+                                            title={tool.title}
+                                            description={tool.description}
+                                            url={tool.url}
+                                            tags={tool.tags}
                                         />
                                     </a>
                                 ))}

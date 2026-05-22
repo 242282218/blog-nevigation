@@ -22,15 +22,15 @@
 |--------|------|------|---------|
 | `name` | string | ✅ 必填 | 分类显示名称，中文，建议 2-8 字 |
 | `icon` | string | ✅ 必填 | 图标标识符，小写英文，与前端 icon 组件注册名一致；当前可用值见下方枚举 |
-| `slug` | string | ✅ 必填 | URL 友好标识符，小写英文字母和连字符，全局唯一，一旦设定不得更改（会影响 URL） |
-| `tools` | Tool[] | ✅ 必填 | 该分类下的导航条目数组，至少包含 1 个 Tool |
+| `slug` | string | ✅ 必填 | URL 友好标识符，建议小写英文字母和连字符；系统会规范化并要求全局唯一 |
+| `tools` | Tool[] | ✅ 必填 | 该分类下的导航条目数组；编辑草稿可为空，正式展示建议至少 1 个 Tool |
 
 ### icon 可用值枚举
 
 当前前端已注册的 icon 名称（新增 icon 需同步前端组件）：
 
 ```
-blog | link | idea | glass | search | responsive
+blog | link | idea | search | responsive
 ```
 
 ---
@@ -86,9 +86,8 @@ blog | link | idea | glass | search | responsive
 // ❌ 错误：tags 为空数组
 { "tags": [] }
 
-// ❌ 错误：slug 包含中文或大写
-{ "slug": "开发工具" }
-{ "slug": "DevTools" }
+// ❌ 错误：slug 重复或包含空白
+{ "slug": "dev tools" }
 
 // ❌ 错误：description 过短
 { "description": "好用" }

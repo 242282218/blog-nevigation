@@ -35,6 +35,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run type check
+        run: npx tsc --noEmit --incremental false --pretty false
+
+      - name: Run tests
+        run: npm run test:run
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

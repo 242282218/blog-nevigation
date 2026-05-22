@@ -1,28 +1,93 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, FileText, Compass } from 'lucide-react';
+import { Compass, FileText, Lock, Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const ADMIN_SHORTCUT = ':admin';
 
 interface SearchResult {
+    type: 'post' | 'tool';
     title: string;
     slug: string;
+    href: string;
     description?: string;
+    meta?: string;
+    external?: boolean;
+    tags?: string[];
+}
+
+interface CommandInputProps {
+    compact?: boolean;
+    className?: string;
 }
 
 const placeholders = [
     'grep "React优化"...',
     'grep "Next.js"...',
     'grep "TypeScript"...',
-    'grep "CSS技巧"...',
-    'grep "Git工作流"...',
+    'grep "MDN"...',
+    'grep "GitHub"...',
     'grep "性能优化"...',
 ];
 
-export function CommandInput() {
+function SearchResultItem({
+    result,
+    onSelect,
+}: {
+    result: SearchResult;
+    onSelect: () => void;
+}) {
+    const label = result.type === 'post' ? '文章' : '链接';
+    const content = (
+        <>
+            <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 font-mono text-sm text-gray-800 transition-colors group-hover:text-accent">
+                    {result.title}
+                </div>
+                <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-mono text-gray-400">
+                    {label}
+                </span>
+            </div>
+            {result.description && (
+                <div className="mt-1 line-clamp-1 text-xs text-gray-500">
+                    {result.description}
+                </div>
+            )}
+            {result.meta && (
+                <div className="mt-1 text-[11px] font-mono text-gray-400">
+                    {result.meta}
+                </div>
+            )}
+        </>
+    );
+
+    const className = 'group block px-4 py-3 hover:bg-accent-50/50 transition-colors border-b border-gray-50 last:border-0';
+
+    if (result.external) {
+        return (
+            <a
+                href={result.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onSelect}
+                className={className}
+            >
+                {content}
+            </a>
+        );
+    }
+
+    return (
+        <Link href={result.href} onClick={onSelect} className={className}>
+            {content}
+        </Link>
+    );
+}
+
+export function CommandInput({ compact = false, className }: CommandInputProps) {
     const router = useRouter();
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
@@ -37,6 +102,12 @@ export function CommandInput() {
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
+    const closeSearch = useCallback(() => {
+        setIsOpen(false);
+        setQuery('');
+        setShowAdminMenu(false);
+    }, []);
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
@@ -45,17 +116,16 @@ export function CommandInput() {
                 setTimeout(() => inputRef.current?.focus(), 0);
             }
             if (e.key === 'Escape') {
-                setIsOpen(false);
-                setQuery('');
+                closeSearch();
             }
         };
 
         document.addEventListener('keydown', handleKeyDown);
         return () => document.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [closeSearch]);
 
     useEffect(() => {
-        if (isOpen) return;
+        if (isOpen || compact) return;
 
         const currentText = placeholders[placeholderIndex];
         const timeout = setTimeout(() => {
@@ -66,19 +136,17 @@ export function CommandInput() {
                 } else {
                     setTimeout(() => setIsDeleting(true), 2000);
                 }
+            } else if (charIndex > 0) {
+                setPlaceholder(currentText.slice(0, charIndex - 1));
+                setCharIndex(charIndex - 1);
             } else {
-                if (charIndex > 0) {
-                    setPlaceholder(currentText.slice(0, charIndex - 1));
-                    setCharIndex(charIndex - 1);
-                } else {
-                    setIsDeleting(false);
-                    setPlaceholderIndex((placeholderIndex + 1) % placeholders.length);
-                }
+                setIsDeleting(false);
+                setPlaceholderIndex((placeholderIndex + 1) % placeholders.length);
             }
         }, isDeleting ? 50 : 100);
 
         return () => clearTimeout(timeout);
-    }, [charIndex, isDeleting, placeholderIndex, isOpen]);
+    }, [charIndex, compact, isDeleting, placeholderIndex, isOpen]);
 
     useEffect(() => {
         if (!query.trim()) {
@@ -113,7 +181,7 @@ export function CommandInput() {
                     throw new Error(payload?.message || '搜索服务暂时不可用');
                 }
 
-                const data = await res.json();
+                const data = (await res.json()) as SearchResult[];
                 setResults(data);
             } catch (error) {
                 if (controller.signal.aborted) {
@@ -142,33 +210,53 @@ export function CommandInput() {
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-                setIsOpen(false);
-                setQuery('');
+                closeSearch();
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+    }, [closeSearch]);
 
     return (
-        <div ref={containerRef} className="relative hidden lg:block">
+        <div ref={containerRef} className={cn('relative', className)}>
             <button
-                onClick={() => setIsOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs font-mono text-gray-400 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50/50 transition-all min-w-[240px]"
+                type="button"
+                onClick={() => {
+                    setIsOpen(true);
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                }}
+                aria-label={compact ? '搜索文章和链接' : undefined}
+                className={cn(
+                    'flex items-center gap-2 text-xs font-mono text-gray-400 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50/50 transition-all',
+                    compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[240px] px-3 py-1.5'
+                )}
             >
-                <span className="text-terminal-prompt">$</span>
-                <span className="flex-1 text-left text-gray-500">
-                    {isOpen && query ? query : placeholder || placeholders[0]}
-                    {!isOpen && <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle opacity-70" />}
-                </span>
-                <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 rounded border border-gray-200">
-                    Ctrl+K
-                </kbd>
+                {compact ? (
+                    <Search className="h-4 w-4 text-gray-500" />
+                ) : (
+                    <>
+                        <span className="text-terminal-prompt">$</span>
+                        <span className="flex-1 text-left text-gray-500">
+                            {isOpen && query ? query : placeholder || placeholders[0]}
+                            {!isOpen && <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle opacity-70" />}
+                        </span>
+                        <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 rounded border border-gray-200">
+                            Ctrl+K
+                        </kbd>
+                    </>
+                )}
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50 min-w-[320px]">
+                <div
+                    className={cn(
+                        'bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50',
+                        compact
+                            ? 'fixed left-4 right-4 top-[4.25rem]'
+                            : 'absolute top-full left-0 right-0 mt-2 min-w-[360px]'
+                    )}
+                >
                     <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
                         <span className="text-terminal-prompt font-mono font-bold">$</span>
                         <input
@@ -176,7 +264,8 @@ export function CommandInput() {
                             type="text"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            placeholder={`搜索文章，或输入 ${ADMIN_SHORTCUT}`}
+                            placeholder={`搜索文章或链接，输入 ${ADMIN_SHORTCUT} 进编辑区`}
+                            aria-label="搜索文章或链接"
                             className="flex-1 bg-transparent outline-none font-mono text-sm text-gray-700 placeholder:text-gray-400"
                             autoFocus
                         />
@@ -190,26 +279,13 @@ export function CommandInput() {
                     )}
 
                     {!isLoading && results.length > 0 && (
-                        <div className="max-h-64 overflow-y-auto">
-                            {results.map((post) => (
-                                <Link
-                                    key={post.slug}
-                                    href={`/posts/${post.slug}`}
-                                    onClick={() => {
-                                        setIsOpen(false);
-                                        setQuery('');
-                                    }}
-                                    className="block px-4 py-3 hover:bg-accent-50/50 transition-colors border-b border-gray-50 last:border-0"
-                                >
-                                    <div className="font-mono text-sm text-gray-800 hover:text-accent transition-colors">
-                                        {post.title}
-                                    </div>
-                                    {post.description && (
-                                        <div className="text-xs text-gray-500 mt-1 line-clamp-1">
-                                            {post.description}
-                                        </div>
-                                    )}
-                                </Link>
+                        <div className="max-h-72 overflow-y-auto">
+                            {results.map((result) => (
+                                <SearchResultItem
+                                    key={`${result.type}-${result.href}-${result.title}`}
+                                    result={result}
+                                    onSelect={closeSearch}
+                                />
                             ))}
                         </div>
                     )}
@@ -222,13 +298,13 @@ export function CommandInput() {
 
                     {!isLoading && !errorMessage && query && !showAdminMenu && results.length === 0 && (
                         <div className="px-4 py-6 text-center text-sm text-gray-400 font-mono">
-                            <span className="text-accent">!</span> 未找到匹配的文章
+                            <span className="text-accent">!</span> 未找到匹配的文章或链接
                         </div>
                     )}
 
                     {!isLoading && !query && (
                         <div className="px-4 py-3 text-xs text-gray-400 font-mono border-t border-gray-100">
-                            输入关键词搜索文章
+                            输入关键词搜索文章和链接
                         </div>
                     )}
 
@@ -242,10 +318,9 @@ export function CommandInput() {
                             </div>
                             <div className="p-2 space-y-1">
                                 <button
+                                    type="button"
                                     onClick={() => {
-                                        setIsOpen(false);
-                                        setQuery('');
-                                        setShowAdminMenu(false);
+                                        closeSearch();
                                         router.push('/editor/blog');
                                     }}
                                     className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"
@@ -257,10 +332,9 @@ export function CommandInput() {
                                     </div>
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={() => {
-                                        setIsOpen(false);
-                                        setQuery('');
-                                        setShowAdminMenu(false);
+                                        closeSearch();
                                         router.push('/editor/navigation');
                                     }}
                                     className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"

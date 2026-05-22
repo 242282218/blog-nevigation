@@ -22,10 +22,11 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 标题 */}
         <div className="md:col-span-2">
-          <label className="block text-xs font-mono text-gray-500 mb-1">
+          <label htmlFor="frontmatter-title" className="block text-xs font-mono text-gray-500 mb-1">
             title
           </label>
           <input
+            id="frontmatter-title"
             type="text"
             value={value.title}
             onChange={(e) => handleChange('title', e.target.value)}
@@ -36,10 +37,11 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
 
         {/* 日期 */}
         <div>
-          <label className="block text-xs font-mono text-gray-500 mb-1">
+          <label htmlFor="frontmatter-date" className="block text-xs font-mono text-gray-500 mb-1">
             date
           </label>
           <input
+            id="frontmatter-date"
             type="date"
             value={value.date}
             onChange={(e) => handleChange('date', e.target.value)}
@@ -49,10 +51,11 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
 
         {/* 标签 */}
         <div>
-          <label className="block text-xs font-mono text-gray-500 mb-1">
+          <label htmlFor="frontmatter-tags" className="block text-xs font-mono text-gray-500 mb-1">
             tags
           </label>
           <input
+            id="frontmatter-tags"
             type="text"
             value={value.tags.join(', ')}
             onChange={(e) => handleTagsChange(e.target.value)}
@@ -63,10 +66,11 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
 
         {/* 描述 */}
         <div className="md:col-span-2">
-          <label className="block text-xs font-mono text-gray-500 mb-1">
+          <label htmlFor="frontmatter-description" className="block text-xs font-mono text-gray-500 mb-1">
             description
           </label>
           <textarea
+            id="frontmatter-description"
             value={value.description}
             onChange={(e) => handleChange('description', e.target.value)}
             placeholder="文章描述"

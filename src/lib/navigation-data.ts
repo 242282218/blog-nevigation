@@ -16,6 +16,15 @@ function createSlug(value: string): string {
         .replace(/^-|-$/g, '');
 }
 
+export function isValidNavigationUrl(value: string): boolean {
+    try {
+        const url = new URL(value.trim());
+        return url.protocol === 'https:';
+    } catch {
+        return false;
+    }
+}
+
 function normalizeTags(value: unknown): string[] {
     if (!Array.isArray(value)) {
         return [];
@@ -34,16 +43,28 @@ function normalizeTool(value: unknown): Tool | null {
 
     const tool = value as UnknownRecord;
 
-    if (!isNonEmptyString(tool.title) || !isNonEmptyString(tool.url)) {
+    if (
+        !isNonEmptyString(tool.icon) ||
+        !isNonEmptyString(tool.title) ||
+        !isNonEmptyString(tool.description) ||
+        !isNonEmptyString(tool.url) ||
+        !isValidNavigationUrl(tool.url)
+    ) {
+        return null;
+    }
+
+    const tags = normalizeTags(tool.tags);
+
+    if (tags.length === 0) {
         return null;
     }
 
     return {
-        icon: isNonEmptyString(tool.icon) ? tool.icon.trim() : 'link',
+        icon: tool.icon.trim(),
         title: tool.title.trim(),
-        description: isNonEmptyString(tool.description) ? tool.description.trim() : '',
+        description: tool.description.trim(),
         url: tool.url.trim(),
-        tags: normalizeTags(tool.tags),
+        tags,
     };
 }
 
@@ -54,7 +75,11 @@ function normalizeCategory(value: unknown): Category | null {
 
     const category = value as UnknownRecord;
 
-    if (!isNonEmptyString(category.name) || !Array.isArray(category.tools)) {
+    if (
+        !isNonEmptyString(category.name) ||
+        !isNonEmptyString(category.icon) ||
+        !Array.isArray(category.tools)
+    ) {
         return null;
     }
 
@@ -65,11 +90,16 @@ function normalizeCategory(value: unknown): Category | null {
     }
 
     const slugSource = isNonEmptyString(category.slug) ? category.slug : category.name;
+    const slug = createSlug(slugSource);
+
+    if (!slug) {
+        return null;
+    }
 
     return {
         name: category.name.trim(),
-        icon: isNonEmptyString(category.icon) ? category.icon.trim() : 'folder',
-        slug: createSlug(slugSource),
+        icon: category.icon.trim(),
+        slug,
         tools: tools as Tool[],
     };
 }
@@ -83,6 +113,16 @@ export function parseNavigationData(input: unknown): Category[] | null {
 
     if (categories.some((category) => category === null)) {
         return null;
+    }
+
+    const slugs = new Set<string>();
+
+    for (const category of categories as Category[]) {
+        if (slugs.has(category.slug)) {
+            return null;
+        }
+
+        slugs.add(category.slug);
     }
 
     return categories as Category[];

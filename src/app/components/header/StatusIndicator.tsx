@@ -2,24 +2,27 @@
 
 import { useState, useEffect } from 'react';
 
+function formatTime(date: Date) {
+    return date.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    });
+}
+
 export function StatusIndicator() {
-    const [time, setTime] = useState(new Date());
+    const [time, setTime] = useState<string | null>(null);
 
     useEffect(() => {
+        const updateTime = () => setTime(formatTime(new Date()));
+
+        updateTime();
         const interval = setInterval(() => {
-            setTime(new Date());
+            updateTime();
         }, 1000);
 
         return () => clearInterval(interval);
     }, []);
-
-    const formatTime = (date: Date) => {
-        return date.toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        });
-    };
 
     return (
         <div className="hidden md:flex items-center gap-3 px-3 py-1.5 bg-white border border-gray-200 rounded-lg">
@@ -31,7 +34,7 @@ export function StatusIndicator() {
                 <span className="text-xs font-mono text-gray-500">online</span>
             </div>
             <div className="text-xs font-mono text-gray-600 tabular-nums border-l border-gray-200 pl-3">
-                {formatTime(time)}
+                {time ?? '--:--'}
             </div>
         </div>
     );

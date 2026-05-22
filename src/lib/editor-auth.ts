@@ -80,14 +80,21 @@ export function getSafeEditorNextPath(rawPath?: string | null): string {
     }
 
     try {
+        if (rawPath.startsWith('//')) {
+            return '/editor';
+        }
+
         const normalized = new URL(rawPath, 'http://localhost');
-        const target = `${normalized.pathname}${normalized.search}`;
+
+        if (normalized.host !== 'localhost') {
+            return '/editor';
+        }
 
         if (!normalized.pathname.startsWith('/editor')) {
             return '/editor';
         }
 
-        return target;
+        return `${normalized.pathname}${normalized.search}`;
     } catch {
         return '/editor';
     }

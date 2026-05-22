@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+    EditorDataRootNotConfiguredError,
     getDefaultNavigationSeedFilePath,
     getEditorDataRoot,
+    isEditorDataRootConfigured,
+    writeArticlesToDisk,
 } from '@/lib/editor-data-storage';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
@@ -20,11 +23,18 @@ describe('editor data storage configuration', () => {
         delete process.env.BLOG_DATA_ROOT;
 
         expect(getEditorDataRoot()).toBeNull();
+        expect(isEditorDataRootConfigured()).toBe(false);
     });
 
     it('keeps committed navigation seed data under content/seeds', () => {
         expect(getDefaultNavigationSeedFilePath()).toContain('content');
         expect(getDefaultNavigationSeedFilePath()).toContain('seeds');
         expect(getDefaultNavigationSeedFilePath()).toContain('navigation');
+    });
+
+    it('fails writes explicitly when BLOG_DATA_ROOT is missing', () => {
+        delete process.env.BLOG_DATA_ROOT;
+
+        expect(() => writeArticlesToDisk([])).toThrow(EditorDataRootNotConfiguredError);
     });
 });

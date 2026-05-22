@@ -1,6 +1,6 @@
-# blog-navigation
+# 个人技术博客导航
 
-基于 Next.js 的博客和导航站点，包含受 `EDITOR_ACCESS_TOKEN` 保护的编辑器。
+基于 Next.js 的个人技术博客和常用链接导航，包含受 `EDITOR_ACCESS_TOKEN` 保护的编辑器。
 
 ## 本地开发
 
@@ -28,7 +28,7 @@ npm run dev
 
 说明：
 
-- 不配置 `BLOG_DATA_ROOT` 时，站点使用种子数据运行，编辑器数据不会持久化到磁盘。
+- 不配置 `BLOG_DATA_ROOT` 时，站点使用种子数据运行，编辑器数据仅保存在当前浏览器，不会写入服务器磁盘。
 - Docker 部署已默认设置 `BLOG_DATA_ROOT=/var/lib/blog-navigation`。
 
 ## 部署
@@ -77,6 +77,29 @@ docker compose -f compose.prod.yaml logs --tail=100 app
 | `EDITOR_ACCESS_TOKEN` | 编辑器访问密码（必填） | — |
 | `APP_PORT` | 宿主机端口 | `3000` |
 | `COOKIE_SECURE` | HTTPS 下设为 `true` | `false` |
+| `R2_BACKUP_ENABLED` | 是否启用 Cloudflare R2 远端备份 | `false` |
+| `R2_ACCOUNT_ID` | Cloudflare Account ID | — |
+| `R2_BUCKET` | R2 Bucket 名称 | — |
+| `R2_ACCESS_KEY_ID` | R2 S3 API Access Key | — |
+| `R2_SECRET_ACCESS_KEY` | R2 S3 API Secret Key | — |
+| `R2_PREFIX` | R2 对象前缀 | `blog-navigation` |
+| `R2_ENDPOINT` | 自定义 S3 endpoint（通常留空） | — |
+| `R2_SNAPSHOT_ON_WRITE` | 每次编辑保存都写入时间快照 | `false` |
+
+### Cloudflare R2 备份
+
+默认以服务器本地 `BLOG_DATA_ROOT` 为主数据源。启用 R2 后，每次编辑保存会同步
+`latest/backup.json` 到 R2；在编辑中心点击“同步云端”会额外写入时间快照。
+
+R2 对象结构：
+
+```text
+blog-navigation/latest/backup.json
+blog-navigation/snapshots/YYYY/MM/DD/<timestamp>-manual-sync.json
+```
+
+迁移服务器时优先复制部署目录下的 `articles/` 和 `navigation/`。如果本地数据不可用，
+在新服务器配置同一组 R2 变量后登录 `/editor`，点击“云端恢复”即可从最新 R2 备份恢复。
 
 ## 常用命令
 

@@ -9,11 +9,12 @@ export function Header() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
                 <TypewriterLogo />
                 
-                <div className="flex-1 flex justify-center">
+                <div className="hidden flex-1 justify-center lg:flex">
                     <CommandInput />
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <CommandInput compact className="lg:hidden" />
                     <StatusIndicator />
                     <Navigation />
                 </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
@@ -13,6 +13,7 @@ interface PreviewPaneProps {
 
 export function PreviewPane({ content }: PreviewPaneProps) {
   const [isClient, setIsClient] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsClient(true);
@@ -20,8 +21,8 @@ export function PreviewPane({ content }: PreviewPaneProps) {
 
   // 代码高亮
   useEffect(() => {
-    if (isClient) {
-      document.querySelectorAll('pre code').forEach((block) => {
+    if (isClient && previewRef.current) {
+      previewRef.current.querySelectorAll('pre code').forEach((block) => {
         hljs.highlightElement(block as HTMLElement);
       });
     }
@@ -42,7 +43,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="markdown-preview p-6 min-h-full">
+      <div ref={previewRef} className="markdown-preview p-6 min-h-full">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeSanitize]}

@@ -121,6 +121,7 @@ export function NewArticleContent() {
               <Link
                 href="/editor/blog"
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="返回博客管理"
               >
                 <ArrowLeft className="w-5 h-5 text-gray-600" />
               </Link>
@@ -141,6 +142,7 @@ export function NewArticleContent() {
               <button
                 onClick={() => setShowPreview(!showPreview)}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label={showPreview ? '隐藏预览' : '显示预览'}
               >
                 {showPreview ? (
                   <>
@@ -159,6 +161,7 @@ export function NewArticleContent() {
               <button
                 onClick={handleExport}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                aria-label="导出 Markdown"
               >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">导出</span>
@@ -190,10 +193,10 @@ export function NewArticleContent() {
       <FrontmatterForm value={frontmatter} onChange={setFrontmatter} />
 
       {/* 编辑器主体 */}
-      <div className="flex h-[calc(100vh-200px)]">
+      <div className="flex h-[calc(100vh-200px)] flex-col lg:flex-row">
         {/* 编辑区 */}
         <div
-          className={`${showPreview ? 'w-1/2' : 'w-full'} border-r border-gray-200`}
+          className={`${showPreview ? 'h-1/2 lg:h-full lg:w-1/2' : 'h-full w-full'} border-b border-gray-200 lg:border-b-0 lg:border-r`}
         >
           <MarkdownEditor
             value={content}
@@ -204,7 +207,7 @@ export function NewArticleContent() {
 
         {/* 预览区 */}
         {showPreview && (
-          <div className="w-1/2 bg-white">
+          <div className="h-1/2 bg-white lg:h-full lg:w-1/2">
             <PreviewPane content={content} />
           </div>
         )}

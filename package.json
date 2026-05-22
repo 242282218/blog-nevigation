@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint .",
+    "lint": "eslint src tests eslint.config.mjs next.config.mjs postcss.config.mjs tailwind.config.ts",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -15,6 +15,7 @@
     "test:architecture": "vitest run tests/architecture"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1052.0",
     "date-fns": "^3.6.0",
     "framer-motion": "^11.0.0",
     "gray-matter": "^4.0.3",
@@ -42,7 +43,6 @@
     "eslint-config-next": "^14.2.0",
     "jsdom": "^28.1.0",
     "postcss": "^8.4.38",
-    "sharp": "^0.33.4",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.4.0",
     "vitest": "^4.0.18"

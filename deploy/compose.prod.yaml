@@ -27,6 +27,15 @@ services:
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
       # 无 HTTPS 时设为 false，允许 HTTP 下使用 session cookie
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # 可选：Cloudflare R2 远端备份
+      R2_BACKUP_ENABLED: ${R2_BACKUP_ENABLED:-false}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_PREFIX: ${R2_PREFIX:-blog-navigation}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_SNAPSHOT_ON_WRITE: ${R2_SNAPSHOT_ON_WRITE:-false}
     volumes:
       # 数据持久化：宿主机目录 → 容器内数据目录
       # 确保宿主机目录已创建且有正确权限

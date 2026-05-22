@@ -7,19 +7,26 @@ import { parseNavigationData } from '@/lib/navigation-data';
 const ARTICLES_FILE_NAME = 'articles.json';
 const NAVIGATION_FILE_NAME = 'tools.json';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export class EditorDataRootNotConfiguredError extends Error {
+    constructor() {
+        super('BLOG_DATA_ROOT is not configured.');
+        this.name = 'EditorDataRootNotConfiguredError';
+    }
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function isStringArray(value: unknown): value is string[] {
+export function isStringArray(value: unknown): value is string[] {
     return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
-function isFiniteNumber(value: unknown): value is number {
+export function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-function isArticle(value: unknown): value is Article {
+export function isArticle(value: unknown): value is Article {
     if (!isRecord(value)) {
         return false;
     }
@@ -43,7 +50,8 @@ function readJsonFile(filePath: string | null): unknown | null {
 
     try {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch {
+    } catch (error) {
+        console.error(`[editor-data-storage] Failed to read JSON: ${filePath}`, error);
         return null;
     }
 }
@@ -54,16 +62,28 @@ function ensureParentDirectory(filePath: string): void {
 
 function writeJsonFile(filePath: string | null, value: unknown): void {
     if (!filePath) {
-        throw new Error('BLOG_DATA_ROOT is not configured.');
+        throw new EditorDataRootNotConfiguredError();
     }
 
     ensureParentDirectory(filePath);
-    fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+    const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+    try {
+        fs.writeFileSync(tempFilePath, JSON.stringify(value, null, 2), 'utf8');
+        fs.renameSync(tempFilePath, filePath);
+    } catch (error) {
+        fs.rmSync(tempFilePath, { force: true });
+        throw error;
+    }
 }
 
 export function getEditorDataRoot(): string | null {
     const configured = process.env.BLOG_DATA_ROOT?.trim();
     return configured && configured.length > 0 ? configured : null;
+}
+
+export function isEditorDataRootConfigured(): boolean {
+    return Boolean(getEditorDataRoot());
 }
 
 export function getArticlesDataFilePath(): string | null {

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readNavigationFromDisk } from '@/lib/editor-data-storage';
 import { getPosts } from '@/lib/markdown';
+
+function includesQuery(parts: string[], query: string): boolean {
+    return parts.join('\n').toLowerCase().includes(query);
+}
 
 export async function GET(request: NextRequest) {
     const query = request.nextUrl.searchParams.get('q')?.trim().toLowerCase();
@@ -8,18 +13,52 @@ export async function GET(request: NextRequest) {
         return NextResponse.json([]);
     }
 
-    const results = getPosts()
+    const postResults = getPosts()
         .filter((post) => !post.slugArray.includes('navigation'))
-        .filter((post) => {
-            const haystack = [post.title, post.description ?? '', post.slug].join('\n').toLowerCase();
-            return haystack.includes(query);
-        })
-        .slice(0, 8)
+        .filter((post) => includesQuery([post.title, post.description ?? '', post.slug], query))
+        .slice(0, 5)
         .map((post) => ({
+            type: 'post' as const,
             title: post.title,
             slug: post.slug,
+            href: `/posts/${post.slug}`,
             description: post.description,
+            meta: post.date || '文章',
+            external: false,
         }));
+
+    const toolResults = readNavigationFromDisk()
+        .flatMap((category) =>
+            category.tools.map((tool) => ({
+                categoryName: category.name,
+                tool,
+            }))
+        )
+        .filter(({ categoryName, tool }) =>
+            includesQuery(
+                [
+                    categoryName,
+                    tool.title,
+                    tool.description,
+                    tool.url,
+                    ...tool.tags,
+                ],
+                query
+            )
+        )
+        .slice(0, 5)
+        .map(({ categoryName, tool }) => ({
+            type: 'tool' as const,
+            title: tool.title,
+            slug: tool.url,
+            href: tool.url,
+            description: tool.description,
+            meta: categoryName,
+            external: true,
+            tags: tool.tags,
+        }));
+
+    const results = [...postResults, ...toolResults].slice(0, 8);
 
     return NextResponse.json(results);
 }
