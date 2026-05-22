@@ -58,7 +58,7 @@ export default function TypewriterTitle() {
     }, [displayText, isDeleting, isPaused, currentCmdIndex]);
 
     return (
-        <h1 className="text-3xl md:text-4xl lg:text-5xl font-mono font-bold text-gray-800 tracking-tight leading-tight flex items-center justify-center gap-3 relative z-10 min-h-[1.2em]">
+        <h1 className="relative z-10 flex min-h-[1.2em] items-center justify-center gap-3 font-mono text-3xl font-bold leading-tight text-gray-800 md:text-4xl lg:text-5xl">
             <span className="text-green-500">$</span>
             <span className="text-gray-700">{displayText}</span>
             <span className="w-2.5 h-6 bg-orange-400 animate-pulse rounded-sm"></span>

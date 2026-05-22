@@ -37,10 +37,8 @@ services:
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_SNAPSHOT_ON_WRITE: ${R2_SNAPSHOT_ON_WRITE:-false}
     volumes:
-      # 数据持久化：宿主机目录 → 容器内数据目录
-      # 确保宿主机目录已创建且有正确权限
-      - ./articles:/var/lib/blog-navigation/articles
-      - ./navigation:/var/lib/blog-navigation/navigation
+      # 数据持久化：整个数据根目录单点挂载，迁移时复制 ./data 即可
+      - ./data:/var/lib/blog-navigation
     restart: unless-stopped
     # 容器内健康检查
     healthcheck:

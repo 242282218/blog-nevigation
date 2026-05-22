@@ -2,137 +2,110 @@ import { getPosts } from '@/lib/markdown';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
+import { ArrowRight, CalendarDays, FileText } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default function BlogPage() {
     const articlePosts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
-
     const postsByYear = articlePosts.reduce((acc, post) => {
         const year = post.date ? post.date.split('-')[0] : '未分类';
-        if (!acc[year]) acc[year] = [];
+
+        if (!acc[year]) {
+            acc[year] = [];
+        }
+
         acc[year].push(post);
         return acc;
     }, {} as Record<string, typeof articlePosts>);
-
     const sortedYears = Object.keys(postsByYear).sort((a, b) => b.localeCompare(a));
 
     return (
-        <div className="min-h-screen pb-20">
-            {/* Hero Header */}
-            <section className="relative overflow-hidden mb-16">
-                <div className="absolute inset-0 bg-gradient-to-br from-accent-50 via-white to-link-50 opacity-60"></div>
-                <div className="absolute inset-0" style={{
-                    backgroundImage: `radial-gradient(circle at 2px 2px, rgba(0,0,0,0.03) 1px, transparent 0)`,
-                    backgroundSize: '32px 32px'
-                }}></div>
-                
-                <div className="relative max-w-5xl mx-auto px-4 sm:px-6 pt-16 pb-12">
-                    <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/80 backdrop-blur border border-gray-200 rounded-full text-xs font-mono text-gray-500 mb-6">
-                        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-                        <span>$ ls -la ./posts/*.md | wc -l</span>
-                        <span className="text-accent font-bold">→ {articlePosts.length}</span>
-                    </div>
-                    
-                    <h1 className="text-5xl md:text-6xl font-bold font-mono text-gray-900 tracking-tight mb-4">
-                        <span className="text-accent">#</span> 博客文章
-                    </h1>
-                    <p className="text-lg text-gray-500 font-mono max-w-2xl">
-                        <span className="text-terminal-prompt">//</span> 按时间顺序排列的技术文章和思考记录
-                    </p>
+        <div className="space-y-10 pb-16">
+            <header className="rounded-lg border border-gray-200 bg-white/90 p-6 shadow-token-card md:p-10">
+                <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-500">
+                    <FileText className="h-3.5 w-3.5 text-accent" />
+                    {articlePosts.length} posts
                 </div>
-            </section>
+                <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-gray-900 md:text-5xl">
+                    技术文章归档
+                </h1>
+                <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600">
+                    按时间整理的工程实践、工具链记录和项目复盘。
+                </p>
+            </header>
 
-            {/* Timeline */}
-            <section className="max-w-4xl mx-auto px-4 sm:px-6">
-                <div className="relative">
-                    {/* Timeline line */}
-                    <div className="absolute left-0 md:left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-gray-200 via-gray-300 to-transparent md:-translate-x-1/2"></div>
+            {articlePosts.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-200 bg-white/80 px-6 py-16 text-center text-gray-500">
+                    暂无文章。
+                </div>
+            ) : (
+                <div className="grid gap-8 lg:grid-cols-[160px_1fr]">
+                    <aside className="hidden lg:block">
+                        <div className="sticky top-24 space-y-2">
+                            {sortedYears.map((year) => (
+                                <a
+                                    key={year}
+                                    href={`#year-${year}`}
+                                    className="flex items-center justify-between rounded-lg border border-gray-200 bg-white/85 px-3 py-2 text-sm text-gray-600 transition hover:border-accent-200 hover:text-accent"
+                                >
+                                    <span>{year}</span>
+                                    <span className="font-mono text-xs text-gray-400">{postsByYear[year].length}</span>
+                                </a>
+                            ))}
+                        </div>
+                    </aside>
 
-                    {sortedYears.map((year) => (
-                        <div key={year} className="relative mb-16 last:mb-0">
-                            {/* Year marker */}
-                            <div className="sticky top-24 z-10 mb-8 flex items-center justify-center">
-                                <div className="bg-white border border-gray-200 rounded-full px-6 py-2 shadow-sm">
-                                    <span className="text-2xl font-mono font-bold text-gray-800">{year}</span>
-                                    <span className="ml-2 text-xs text-gray-400 font-mono">({postsByYear[year].length})</span>
+                    <div className="space-y-8">
+                        {sortedYears.map((year) => (
+                            <section
+                                key={year}
+                                id={`year-${year}`}
+                                className="scroll-mt-24 rounded-lg border border-gray-200 bg-white/90 p-5 shadow-token-card md:p-6"
+                            >
+                                <div className="mb-5 flex items-center justify-between border-b border-gray-100 pb-4">
+                                    <h2 className="text-2xl font-semibold text-gray-900">{year}</h2>
+                                    <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-500">
+                                        {postsByYear[year].length} entries
+                                    </span>
                                 </div>
-                            </div>
 
-                            {/* Posts for this year */}
-                            <div className="space-y-6">
-                                {postsByYear[year].map((post, index) => {
-                                    const isEven = index % 2 === 0;
-                                    const hasDate = post.date && post.date !== '';
-                                    
-                                    return (
-                                        <div 
-                                            key={post.slug} 
-                                            className={`relative flex items-start gap-8 ${isEven ? 'md:flex-row' : 'md:flex-row-reverse'}`}
-                                        >
-                                            {/* Timeline dot */}
-                                            <div className="absolute left-0 md:left-1/2 w-3 h-3 bg-white border-2 border-accent rounded-full md:-translate-x-1/2 translate-y-6 z-10"></div>
-                                            
-                                            {/* Date - desktop */}
-                                            <div className={`hidden md:block w-1/2 ${isEven ? 'text-right pr-12' : 'text-left pl-12'}`}>
-                                                {hasDate && (
-                                                    <div className="inline-flex flex-col items-center bg-gray-50 rounded-lg px-4 py-2 border border-gray-100">
-                                                        <span className="text-2xl font-mono font-bold text-gray-700">
-                                                            {format(parseISO(post.date), 'dd', { locale: zhCN })}
-                                                        </span>
-                                                        <span className="text-xs text-gray-400 font-mono uppercase">
-                                                            {format(parseISO(post.date), 'MMM', { locale: zhCN })}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
+                                <div className="space-y-3">
+                                    {postsByYear[year].map((post) => {
+                                        const hasDate = Boolean(post.date);
 
-                                            {/* Content */}
-                                            <div className={`pl-8 md:pl-0 md:w-1/2 ${isEven ? 'md:pl-12' : 'md:pr-12'}`}>
-                                                <Link
-                                                    href={`/posts/${post.slug}`}
-                                                    className="group block bg-white border border-gray-100 hover:border-accent rounded-xl p-6 shadow-sm hover:shadow-lg transition-all duration-300"
-                                                >
-                                                    {/* Mobile date */}
-                                                    {hasDate && (
-                                                        <div className="md:hidden flex items-center gap-2 text-xs text-gray-400 font-mono mb-3">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-accent-300"></span>
-                                                            {post.date}
-                                                        </div>
-                                                    )}
-                                                    
-                                                    <h3 className="text-xl font-mono font-bold text-gray-800 group-hover:text-accent transition-colors mb-2">
+                                        return (
+                                            <Link
+                                                key={post.slug}
+                                                href={`/posts/${post.slug}`}
+                                                className="group grid gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-all hover:border-accent-300 hover:shadow-token-card-hover md:grid-cols-[132px_1fr_auto] md:items-center"
+                                            >
+                                                <div className="flex items-center gap-2 font-mono text-xs text-gray-500">
+                                                    <CalendarDays className="h-4 w-4 text-accent" />
+                                                    {hasDate
+                                                        ? format(parseISO(post.date), 'MM月dd日', { locale: zhCN })
+                                                        : 'UNTRACKED'}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <h3 className="text-lg font-semibold text-gray-900 transition-colors group-hover:text-accent">
                                                         {post.title}
                                                     </h3>
-                                                    
-                                                    {post.description && (
-                                                        <p className="text-sm text-gray-500 line-clamp-2 mb-4">
+                                                    {post.description ? (
+                                                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-gray-500">
                                                             {post.description}
                                                         </p>
-                                                    )}
-
-                                                    <div className="flex items-center gap-2 text-xs font-mono text-gray-400">
-                                                        <span className="text-accent">→</span>
-                                                        <span className="group-hover:text-accent transition-colors">阅读文章</span>
-                                                    </div>
-                                                </Link>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                {articlePosts.length === 0 && (
-                    <div className="text-center py-20">
-                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-400 font-mono text-sm">
-                            <span className="text-accent">!</span> 暂无文章
-                        </div>
+                                                    ) : null}
+                                                </div>
+                                                <ArrowRight className="hidden h-4 w-4 text-gray-300 transition group-hover:translate-x-1 group-hover:text-accent md:block" />
+                                            </Link>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        ))}
                     </div>
-                )}
-            </section>
+                </div>
+            )}
         </div>
     );
 }

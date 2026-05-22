@@ -14,9 +14,10 @@ body {
     color: var(--foreground);
     background-color: var(--background);
     background-image:
+        linear-gradient(to bottom, rgba(255, 254, 250, 0.92), rgba(247, 244, 238, 0.72) 28rem, rgba(247, 244, 238, 1)),
         linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
         linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-size: auto, 48px 48px, 48px 48px;
     background-attachment: fixed;
     font-family: var(--font-sans), sans-serif;
     min-height: 100vh;

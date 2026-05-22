@@ -21,7 +21,7 @@ export function TemplateSelector({ onSelect }: TemplateSelectorProps) {
         <button
           key={template.id}
           onClick={() => onSelect(template.id)}
-          className="group p-6 bg-white border border-gray-200 rounded-xl hover:border-blue-300 hover:shadow-md transition-all text-left"
+          className="group rounded-lg border border-gray-200 bg-white p-6 text-left transition-all hover:border-blue-300 hover:shadow-md"
         >
           <div className="flex items-start gap-4">
             <div className="p-3 bg-blue-50 text-blue-500 rounded-lg group-hover:bg-blue-100 transition-colors">

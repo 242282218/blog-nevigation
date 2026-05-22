@@ -25,12 +25,12 @@ interface CommandInputProps {
 }
 
 const placeholders = [
-    'grep "React优化"...',
-    'grep "Next.js"...',
-    'grep "TypeScript"...',
-    'grep "MDN"...',
-    'grep "GitHub"...',
-    'grep "性能优化"...',
+    '搜索 React 优化...',
+    '搜索 Next.js...',
+    '搜索 TypeScript...',
+    '搜索 MDN...',
+    '搜索 GitHub...',
+    '输入 :admin...',
 ];
 
 function SearchResultItem({
@@ -44,7 +44,7 @@ function SearchResultItem({
     const content = (
         <>
             <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 font-mono text-sm text-gray-800 transition-colors group-hover:text-accent">
+                <div className="min-w-0 text-sm font-medium text-gray-800 transition-colors group-hover:text-accent">
                     {result.title}
                 </div>
                 <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-mono text-gray-400">
@@ -64,7 +64,7 @@ function SearchResultItem({
         </>
     );
 
-    const className = 'group block px-4 py-3 hover:bg-accent-50/50 transition-colors border-b border-gray-50 last:border-0';
+    const className = 'group block border-b border-gray-100 px-4 py-3 transition-colors last:border-0 hover:bg-accent-50/70';
 
     if (result.external) {
         return (
@@ -228,20 +228,19 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                 }}
                 aria-label={compact ? '搜索文章和链接' : undefined}
                 className={cn(
-                    'flex items-center gap-2 text-xs font-mono text-gray-400 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50/50 transition-all',
-                    compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[240px] px-3 py-1.5'
+                    'flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white/85 text-xs font-mono text-gray-400 shadow-button transition-all hover:border-gray-300 hover:bg-white',
+                    compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[260px] px-3 py-1.5'
                 )}
             >
                 {compact ? (
                     <Search className="h-4 w-4 text-gray-500" />
                 ) : (
                     <>
-                        <span className="text-terminal-prompt">$</span>
+                        <Search className="h-3.5 w-3.5 text-accent" />
                         <span className="flex-1 text-left text-gray-500">
                             {isOpen && query ? query : placeholder || placeholders[0]}
-                            {!isOpen && <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle opacity-70" />}
                         </span>
-                        <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono bg-gray-100 rounded border border-gray-200">
+                        <kbd className="hidden items-center gap-0.5 rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">
                             Ctrl+K
                         </kbd>
                     </>
@@ -251,14 +250,14 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
             {isOpen && (
                 <div
                     className={cn(
-                        'bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50',
+                        'z-50 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg',
                         compact
                             ? 'fixed left-4 right-4 top-[4.25rem]'
                             : 'absolute top-full left-0 right-0 mt-2 min-w-[360px]'
                     )}
                 >
-                    <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-                        <span className="text-terminal-prompt font-mono font-bold">$</span>
+                    <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-3">
+                        <Search className="h-4 w-4 text-accent" />
                         <input
                             ref={inputRef}
                             type="text"
@@ -266,7 +265,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder={`搜索文章或链接，输入 ${ADMIN_SHORTCUT} 进编辑区`}
                             aria-label="搜索文章或链接"
-                            className="flex-1 bg-transparent outline-none font-mono text-sm text-gray-700 placeholder:text-gray-400"
+                            className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
                             autoFocus
                         />
                         <kbd className="text-[10px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">ESC</kbd>
@@ -323,7 +322,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                         closeSearch();
                                         router.push('/editor/blog');
                                     }}
-                                    className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"
+                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-gray-50"
                                 >
                                     <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                                     <div className="text-left">
@@ -337,7 +336,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                         closeSearch();
                                         router.push('/editor/navigation');
                                     }}
-                                    className="w-full flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition-colors duration-200 cursor-pointer min-h-[44px]"
+                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-gray-50"
                                 >
                                     <Compass className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                                     <div className="text-left">

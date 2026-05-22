@@ -234,10 +234,10 @@ export default function EditorHomePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Link
             href="/editor/blog"
-            className="group p-8 bg-white border border-gray-200 rounded-2xl hover:border-blue-300 hover:shadow-lg transition-all"
+            className="group rounded-lg border border-gray-200 bg-white p-8 transition-all hover:border-blue-300 hover:shadow-lg"
           >
             <div className="flex items-start justify-between">
-              <div className="p-4 bg-blue-50 text-blue-500 rounded-xl group-hover:bg-blue-100 transition-colors">
+              <div className="rounded-lg bg-blue-50 p-4 text-blue-500 transition-colors group-hover:bg-blue-100">
                 <FileText className="w-8 h-8" />
               </div>
               <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
@@ -254,10 +254,10 @@ export default function EditorHomePage() {
 
           <Link
             href="/editor/navigation"
-            className="group p-8 bg-white border border-gray-200 rounded-2xl hover:border-purple-300 hover:shadow-lg transition-all"
+            className="group rounded-lg border border-gray-200 bg-white p-8 transition-all hover:border-purple-300 hover:shadow-lg"
           >
             <div className="flex items-start justify-between">
-              <div className="p-4 bg-purple-50 text-purple-500 rounded-xl group-hover:bg-purple-100 transition-colors">
+              <div className="rounded-lg bg-purple-50 p-4 text-purple-500 transition-colors group-hover:bg-purple-100">
                 <Compass className="w-8 h-8" />
               </div>
               <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />

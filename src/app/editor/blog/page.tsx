@@ -197,7 +197,7 @@ interface ArticleCardProps {
 
 function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: ArticleCardProps) {
   return (
-    <div className="group bg-white border border-gray-200 rounded-xl p-5 hover:border-gray-300 hover:shadow-sm transition-all">
+    <div className="group rounded-lg border border-gray-200 bg-white p-5 transition-all hover:border-gray-300 hover:shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <h3 className="font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">

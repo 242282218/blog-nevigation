@@ -26,12 +26,12 @@ export default function RootLayout({
 }) {
     return (
         <html lang="zh-CN" className={`${jetbrains.variable} ${ibmPlex.variable}`}>
-            <body className="antialiased min-h-screen selection:bg-accent-200">
+            <body className="min-h-screen antialiased selection:bg-accent-200">
                 <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-link focus:text-white focus:rounded-lg focus:shadow-lg">
                     跳转到主内容
                 </a>
                 <Header />
-                <main id="main-content" className="max-w-5xl mx-auto px-4 sm:px-6 py-10 md:py-16">
+                <main id="main-content" className="mx-auto min-h-[calc(100vh-4rem)] max-w-6xl px-4 py-8 sm:px-6 md:py-12">
                     {children}
                 </main>
             </body>

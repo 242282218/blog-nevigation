@@ -1,9 +1,6 @@
-import { TerminalCard } from '@/app/components/terminal';
-import { CommandPrompt } from '@/app/components/ui';
-import { Section } from '@/app/components/layout';
-import { CategoryCard } from '@/app/components/navigation';
 import { readNavigationFromDisk } from '@/lib/editor-data-storage';
-import type { Category } from '@/app/types/navigation';
+import { Compass } from 'lucide-react';
+import { NavigationDirectory } from './NavigationDirectory';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,75 +15,24 @@ function getNavigationData() {
 
 export default function NavigationPage() {
     const navData = getNavigationData();
+    const linkCount = navData.reduce((total, category) => total + category.tools.length, 0);
 
     return (
-        <Section spacing="lg" className="animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
-            {/* Header Section */}
-            <Section spacing="sm">
-                <CommandPrompt command="pwd" path="~ / navigation" />
-
-                <TerminalCard>
-                    <div className="p-10 md:p-16 text-center relative overflow-hidden">
-                        <h1 className="text-4xl md:text-5xl lg:text-6xl font-mono font-bold text-gray-800 tracking-tight leading-tight flex items-center justify-center gap-4 relative z-10">
-                            <span className="text-link">{'>'}</span> 常用链接
-                        </h1>
-                        <div className="mt-6 font-mono text-sm text-gray-500 relative z-10 block">
-                            <span className="text-terminal-prompt font-bold mr-2">//</span>
-                            开发文档 / 写作知识 / <span className="text-link underline decoration-link-light underline-offset-4">个人高频入口</span>
-                        </div>
-                    </div>
-                </TerminalCard>
-            </Section>
-
-            {/* Navigation Bookmarks Section */}
-            <TerminalCard
-                opacity={0.5}
-                command="ls -la ./bookmarks/"
-            >
-                <div className="mb-10 pb-4 border-b border-gray-100 flex items-center justify-between">
-                    <h2 className="text-2xl font-mono font-bold flex items-center gap-3 text-gray-800">
-                        <span className="text-link">##</span> 工具分类 (Categories)
-                    </h2>
-                    <div className="flex items-center gap-3">
-                        <span className="text-xs font-mono bg-link-50 text-link px-2 py-1 rounded border border-link-100 hidden sm:block">bookmarks.db</span>
-                    </div>
+        <div className="animate-in space-y-8 pb-16 duration-700 fade-in slide-in-from-bottom-6">
+            <header className="rounded-lg border border-gray-200 bg-white/90 p-6 shadow-token-card md:p-10">
+                <div className="mb-6 inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs text-gray-500">
+                    <Compass className="h-3.5 w-3.5 text-accent" />
+                    {navData.length} categories / {linkCount} links
                 </div>
+                <h1 className="max-w-3xl text-4xl font-semibold leading-tight text-gray-900 md:text-5xl">
+                    常用链接导航
+                </h1>
+                <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600">
+                    开发文档、写作资料和高频工具入口集中管理。
+                </p>
+            </header>
 
-                <div className="space-y-12">
-                    {navData.map((category: Category, idx: number) => (
-                        <div key={category.slug || category.name} className="animate-in slide-in-from-bottom">
-                            <div className="mb-6 flex items-center justify-between gap-4 px-1">
-                                <h3 className="text-lg font-mono font-bold text-gray-700 flex items-center gap-2">
-                                    <span className="text-gray-400">[{idx}]</span> {category.name}
-                                </h3>
-                                <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-mono text-gray-400">
-                                    {category.tools.length} links
-                                </span>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {category.tools.map((tool, tIdx: number) => (
-                                    <a
-                                        key={`${tool.title}-${tIdx}`}
-                                        href={tool.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block h-full rounded-lg focus:outline-none focus:ring-2 focus:ring-link focus:ring-offset-2"
-                                        aria-label={`打开 ${tool.title}`}
-                                    >
-                                        <CategoryCard
-                                            title={tool.title}
-                                            description={tool.description}
-                                            url={tool.url}
-                                            tags={tool.tags}
-                                        />
-                                    </a>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </TerminalCard>
-        </Section>
+            <NavigationDirectory categories={navData} />
+        </div>
     );
 }

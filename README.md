@@ -15,7 +15,7 @@ npm install
 ```env
 EDITOR_ACCESS_TOKEN=change-me
 # 可选：需要本地持久化编辑数据时再配置
-BLOG_DATA_ROOT=/absolute/path/to/blog-navigation-data
+BLOG_DATA_ROOT=./data
 ```
 
 启动开发环境：
@@ -47,7 +47,7 @@ curl -LO https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy
 echo 'EDITOR_ACCESS_TOKEN=change-me' > .env
 
 # 创建数据目录并启动
-mkdir -p articles navigation
+mkdir -p data
 docker compose -f compose.prod.yaml pull
 docker compose -f compose.prod.yaml up -d
 ```
@@ -98,8 +98,15 @@ blog-navigation/latest/backup.json
 blog-navigation/snapshots/YYYY/MM/DD/<timestamp>-manual-sync.json
 ```
 
-迁移服务器时优先复制部署目录下的 `articles/` 和 `navigation/`。如果本地数据不可用，
+迁移服务器时优先复制部署目录下的 `data/`。如果本地数据不可用，
 在新服务器配置同一组 R2 变量后登录 `/editor`，点击“云端恢复”即可从最新 R2 备份恢复。
+
+也可以用仓库内置脚本生成和恢复可迁移备份包：
+
+```bash
+npm run data:export -- ./data ./output/blog-navigation-backup.json
+npm run data:import -- ./output/blog-navigation-backup.json ./data
+```
 
 ## 常用命令
 

@@ -12,7 +12,9 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "test:architecture": "vitest run tests/architecture"
+    "test:architecture": "vitest run tests/architecture",
+    "data:export": "node scripts/data/export-runtime-data.mjs",
+    "data:import": "node scripts/data/import-runtime-data.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1052.0",

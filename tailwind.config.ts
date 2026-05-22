@@ -290,11 +290,11 @@ const config: Config = {
                 'token-wide': "var(--letter-spacing-wide)",
                 'token-wider': "var(--letter-spacing-wider)",
                 // 手绘风格字间距
-                'sketch-tighter': '-0.05em',
-                'sketch-tight': '-0.025em',
+                'sketch-tighter': '0',
+                'sketch-tight': '0',
                 'sketch-normal': '0',
-                'sketch-wide': '0.025em',
-                'sketch-wider': '0.05em',
+                'sketch-wide': '0',
+                'sketch-wider': '0',
             },
             zIndex: {
                 'token-dropdown': "var(--z-index-dropdown)",

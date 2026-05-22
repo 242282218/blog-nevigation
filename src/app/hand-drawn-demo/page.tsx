@@ -290,7 +290,7 @@ export default function HandDrawnDemoPage() {
                                 <PaperTexture key={font} variant="white" className="p-6 rounded-lg">
                                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                                         <div className="w-32 shrink-0">
-                                            <span className="text-xs text-gray-500 uppercase tracking-wider">
+                                            <span className="text-xs uppercase text-gray-500">
                                                 {font.replace('-', ' ')}
                                             </span>
                                         </div>

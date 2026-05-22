@@ -56,9 +56,9 @@ export function EditorLoginForm({
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-            <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+            <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-8 shadow-sm">
                 <div className="flex items-center gap-3 text-gray-900">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-gray-100">
                         <Lock className="h-5 w-5" />
                     </div>
                     <div>
@@ -80,19 +80,19 @@ export function EditorLoginForm({
                             onChange={(event) => setSecret(event.target.value)}
                             disabled={!authConfigured || isSubmitting}
                             autoComplete="current-password"
-                            className="w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-gray-400"
+                            className="w-full rounded-lg border border-gray-200 px-4 py-3 outline-none transition focus:border-gray-400"
                             placeholder="输入 EDITOR_ACCESS_TOKEN"
                         />
                     </label>
 
                     {!authConfigured && (
-                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                             当前环境未配置 `EDITOR_ACCESS_TOKEN`，因此编辑区登录已禁用。
                         </p>
                     )}
 
                     {errorMessage && (
-                        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                             {errorMessage}
                         </p>
                     )}
@@ -100,7 +100,7 @@ export function EditorLoginForm({
                     <button
                         type="submit"
                         disabled={!authConfigured || isSubmitting || !secret.trim()}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gray-900 px-4 py-3 text-sm font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                     >
                         <LogIn className="h-4 w-4" />
                         <span>{isSubmitting ? '登录中...' : '进入编辑区'}</span>

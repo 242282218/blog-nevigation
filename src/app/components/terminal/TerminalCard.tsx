@@ -23,14 +23,14 @@ export function TerminalCard({
     return (
         <div
             className={cn(
-                "bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden",
+                "overflow-hidden rounded-lg border border-gray-200 bg-white/90 shadow-sm",
                 "transition-shadow hover:shadow-md",
                 className
             )}
         >
             <div
                 className={cn(
-                    "border-b border-gray-100 bg-gray-50/80 px-5 py-3.5 flex items-center gap-4",
+                    "flex items-center gap-4 border-b border-gray-100 bg-gray-50/80 px-5 py-3.5",
                     headerClassName
                 )}
             >

@@ -18,6 +18,5 @@ services:
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_SNAPSHOT_ON_WRITE: ${R2_SNAPSHOT_ON_WRITE:-false}
     volumes:
-      - /root/blog-navigation/articles:/var/lib/blog-navigation/articles
-      - /root/blog-navigation/navigation:/var/lib/blog-navigation/navigation
+      - ./data:/var/lib/blog-navigation
     restart: unless-stopped

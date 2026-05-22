@@ -13,26 +13,26 @@ export function PostCard({ title, description, date, href, className }: PostCard
         <a
             href={href}
             className={cn(
-                "group block bg-white border border-gray-100 hover:border-accent hover:shadow-md",
-                "transition-all duration-300 rounded-xl p-6 relative overflow-hidden",
+                "group relative block overflow-hidden rounded-lg border border-gray-200 bg-white/90 p-5",
+                "transition-all duration-300 hover:border-accent-300 hover:shadow-token-card-hover",
                 className
             )}
         >
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-transparent group-hover:bg-accent transition-colors" />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="absolute bottom-0 left-0 top-0 w-1 bg-transparent transition-colors group-hover:bg-accent" />
+            <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
                 <div className="flex-1">
-                    <h3 className="text-xl font-mono font-bold text-gray-800 group-hover:text-accent transition-colors mb-2 flex items-center gap-2">
+                    <h3 className="mb-2 flex items-center gap-2 text-lg font-semibold text-gray-800 transition-colors group-hover:text-accent">
                         {title}
                     </h3>
                     {description && (
-                        <p className="text-sm text-gray-500 font-sans tracking-wide">
+                        <p className="text-sm leading-6 text-gray-500">
                             {description}
                         </p>
                     )}
                 </div>
                 {date && (
-                    <div className="shrink-0 flex items-center md:flex-col items-end gap-2">
-                        <time className="text-xs font-mono text-gray-500 font-medium bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200">
+                    <div className="flex shrink-0 items-center gap-2 md:flex-col md:items-end">
+                        <time className="rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 font-mono text-xs font-medium text-gray-500">
                             {date}
                         </time>
                     </div>

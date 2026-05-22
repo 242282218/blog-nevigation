@@ -23,9 +23,17 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The compose stack uses bind mounts for `/root/blog-navigation/articles` and `/root/blog-navigation/navigation`.
-Runtime editor data stays outside the repository.
+The compose stack uses a single bind mount: `./data:/var/lib/blog-navigation`.
+Runtime editor data stays outside the repository and can be migrated by copying
+the `data/` directory.
 Public blog articles and editor articles share the same runtime data under `/var/lib/blog-navigation/articles`.
+
+## Portable data backup
+
+```bash
+npm run data:export -- ./data ./output/blog-navigation-backup.json
+npm run data:import -- ./output/blog-navigation-backup.json ./data
+```
 
 ## Optional Cloudflare R2 backup
 
