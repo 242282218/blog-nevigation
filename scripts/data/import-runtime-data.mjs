@@ -1,113 +1,15 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
-
-const MANIFEST_VERSION = 1;
-const DEFAULT_SITE_SETTINGS = {
-  siteName: '个人技术博客导航',
-  siteDescription: '个人技术文章、常用链接和知识入口',
-  workspaceLabel: 'workspace / blog-navigation',
-  heroTitleLineOne: '技术博客与常用链接的',
-  heroTitleLineTwo: '个人工作台',
-  heroDescription:
-    '把长期文章、开发文档、工具入口和编辑数据放在一个轻量系统里，公开阅读和服务器迁移都保持清晰。',
-};
-
-function resolveDataRoot(input) {
-  return path.resolve(input || process.env.BLOG_DATA_ROOT || 'data');
-}
-
-function isRecord(value) {
-  return typeof value === 'object' && value !== null;
-}
-
-function normalizeSlugPart(value) {
-  return String(value)
-    .trim()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-}
-
-function normalizeIdSuffix(value) {
-  return String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '')
-    .slice(-6) || 'entry';
-}
-
-function createArticleSlug(article) {
-  const base = normalizeSlugPart(article.title) || 'article';
-  return `${base}-${normalizeIdSuffix(article.id)}`;
-}
-
-function hashJson(value) {
-  return createHash('sha256')
-    .update(JSON.stringify(value))
-    .digest('hex');
-}
-
-function createResourceManifest(value) {
-  const hash = hashJson(value);
-  const updatedAt = new Date().toISOString();
-
-  return {
-    revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
-    hash,
-    updatedAt,
-  };
-}
-
-function createManifest(data) {
-  const articles = createResourceManifest(data.articles);
-  const navigation = createResourceManifest(data.navigation);
-  const settings = createResourceManifest(data.settings);
-
-  return {
-    version: MANIFEST_VERSION,
-    updatedAt: settings.updatedAt,
-    resources: {
-      articles,
-      navigation,
-      settings,
-    },
-  };
-}
-
-function normalizeArticleSlug(value) {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  const slug = normalizeSlugPart(value);
-  return slug.length > 0 ? slug : null;
-}
-
-function normalizeArticles(articles) {
-  const slugs = new Set();
-
-  return articles.map((article) => {
-    if (!isRecord(article)) {
-      throw new Error('Article data must contain JSON objects.');
-    }
-
-    const normalized = {
-      ...article,
-      slug: normalizeArticleSlug(article.slug) || createArticleSlug(article),
-    };
-
-    if (slugs.has(normalized.slug)) {
-      throw new Error(`Duplicate article slug: ${normalized.slug}`);
-    }
-
-    slugs.add(normalized.slug);
-    return normalized;
-  });
-}
+import {
+  DEFAULT_SITE_SETTINGS,
+  createManifest,
+  isRecord,
+  normalizeArticles,
+  readJsonFile,
+  resolveDataRoot,
+  writeManifest,
+  writeRuntimeData,
+} from './runtime-data.mjs';
 
 function parseBackupData(value) {
   if (!isRecord(value)) {
@@ -127,19 +29,6 @@ function parseBackupData(value) {
   };
 }
 
-function writeJsonAtomically(filePath, value) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-
-  try {
-    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-    fs.renameSync(tempPath, filePath);
-  } catch (error) {
-    fs.rmSync(tempPath, { force: true });
-    throw error;
-  }
-}
-
 const [backupFileArg, dataRootArg] = process.argv.slice(2);
 
 if (!backupFileArg) {
@@ -149,14 +38,12 @@ if (!backupFileArg) {
 
 const backupFile = path.resolve(backupFileArg);
 const dataRoot = resolveDataRoot(dataRootArg);
-const payload = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
+const payload = readJsonFile(backupFile);
 const data = parseBackupData(payload);
 const manifest = createManifest(data);
 
-writeJsonAtomically(path.join(dataRoot, 'articles', 'articles.json'), data.articles);
-writeJsonAtomically(path.join(dataRoot, 'navigation', 'tools.json'), data.navigation);
-writeJsonAtomically(path.join(dataRoot, 'settings', 'site.json'), data.settings);
-writeJsonAtomically(path.join(dataRoot, 'manifest.json'), manifest);
+writeRuntimeData(dataRoot, data);
+writeManifest(dataRoot, manifest);
 
 console.log(JSON.stringify({
   dataRoot,

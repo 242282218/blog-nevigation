@@ -125,5 +125,21 @@ describe('runtime data migration scripts', () => {
         }),
       })
     );
+
+    const verifyOutput = execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(JSON.parse(verifyOutput)).toEqual(
+      expect.objectContaining({
+        ok: true,
+        articles: 1,
+        categories: 1,
+        settings: true,
+        manifest: true,
+      })
+    );
   });
 });

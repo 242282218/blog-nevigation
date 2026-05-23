@@ -34,6 +34,11 @@ npm run dev
 ## 部署
 
 推送到 `main` 会自动通过 GitHub Actions 构建镜像并推送到 GHCR。
+详细部署文档见：
+
+- [服务器部署](docs/deploy/server.md)
+- [数据迁移](docs/deploy/migration.md)
+- [Cloudflare R2 备份](docs/deploy/cloudflare-r2.md)
 
 ### 首次部署
 
@@ -106,6 +111,7 @@ blog-navigation/snapshots/YYYY/MM/DD/<timestamp>-manual-sync.json
 ```bash
 npm run data:export -- ./data ./output/blog-navigation-backup.json
 npm run data:import -- ./output/blog-navigation-backup.json ./data
+npm run data:verify -- ./data
 ```
 
 备份包包含文章、导航和站点设置；旧备份缺少站点设置时会使用默认设置恢复。
