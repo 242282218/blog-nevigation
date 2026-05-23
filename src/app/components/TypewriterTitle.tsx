@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 
-// Linux commands to type
 const commands = [
     'ls -la',
     'cd ~/projects',
@@ -58,10 +57,10 @@ export default function TypewriterTitle() {
     }, [displayText, isDeleting, isPaused, currentCmdIndex]);
 
     return (
-        <h1 className="relative z-10 flex min-h-[1.2em] items-center justify-center gap-3 font-mono text-3xl font-bold leading-tight text-gray-800 md:text-4xl lg:text-5xl">
-            <span className="text-green-500">$</span>
-            <span className="text-gray-700">{displayText}</span>
-            <span className="w-2.5 h-6 bg-orange-400 animate-pulse rounded-sm"></span>
+        <h1 className="relative z-10 flex min-h-[1.2em] items-center justify-center gap-3 font-mono text-3xl font-medium leading-tight text-fg md:text-4xl lg:text-5xl">
+            <span className="text-terminal-prompt">$</span>
+            <span className="text-muted">{displayText}</span>
+            <span className="w-2.5 h-6 bg-accent animate-pulse rounded-sm"></span>
         </h1>
     );
 }

@@ -1,11 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeSanitize from 'rehype-sanitize';
-import hljs from 'highlight.js';
-import '@/app/styles/markdown-preview.css';
+import { useEffect, useState } from 'react';
+import { Eye } from 'lucide-react';
+import { MarkdownContent } from '@/app/components/markdown';
 
 interface PreviewPaneProps {
   content: string;
@@ -13,64 +10,41 @@ interface PreviewPaneProps {
 
 export function PreviewPane({ content }: PreviewPaneProps) {
   const [isClient, setIsClient] = useState(false);
-  const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // 代码高亮
-  useEffect(() => {
-    if (isClient && previewRef.current) {
-      previewRef.current.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightElement(block as HTMLElement);
-      });
-    }
-  }, [content, isClient]);
-
   if (!isClient) {
     return (
-      <div className="h-full p-4 overflow-auto">
+      <div className="h-full overflow-auto p-4">
         <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 rounded w-full"></div>
-          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-          <div className="h-4 bg-gray-200 rounded w-4/6"></div>
+          <div className="h-8 w-3/4 rounded bg-surface"></div>
+          <div className="h-4 w-full rounded bg-surface"></div>
+          <div className="h-4 w-5/6 rounded bg-surface"></div>
+          <div className="h-4 w-4/6 rounded bg-surface"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-auto">
-      <div ref={previewRef} className="markdown-preview p-6 min-h-full">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeSanitize]}
-          components={{
-            // 自定义代码块渲染
-            code({ className, children, ...props }) {
-              return (
-                <code
-                  className={className}
-                  {...props}
-                >
-                  {children}
-                </code>
-              );
-            },
-            // 自定义 pre 标签渲染
-            pre({ children }) {
-              return (
-                <pre className="hljs">
-                  {children}
-                </pre>
-              );
-            },
-          }}
-        >
-          {content}
-        </ReactMarkdown>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex min-h-11 items-center justify-between border-b border-border bg-background/80 px-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-fg">
+          <Eye className="h-4 w-4 text-subtle" />
+          预览
+        </div>
+        <span className="font-mono text-xs text-subtle">rendered markdown</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        {content.trim() ? (
+          <MarkdownContent content={content} className="min-h-full p-6" />
+        ) : (
+          <div className="flex h-full items-center justify-center p-6 text-sm text-subtle">
+            预览会在这里显示
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16,15 +16,15 @@ export function CommandPrompt({
     return (
         <div
             className={cn(
-                "inline-flex items-center gap-2 px-3.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm font-mono text-sm text-gray-500",
+                "inline-flex items-center gap-2 px-3.5 py-1.5 bg-surface border border-border rounded-token-card font-mono text-sm text-subtle",
                 className
             )}
         >
-            <span className="text-green-500 font-bold">$</span>
+            <span className="text-terminal-prompt font-medium">$</span>
             {command}
             {showPath && path && (
                 <>
-                    : <span className="text-orange-500">{path}</span>
+                    : <span className="text-accent">{path}</span>
                 </>
             )}
         </div>

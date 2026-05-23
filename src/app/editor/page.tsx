@@ -1,9 +1,17 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import Link from 'next/link';
-import { FileText, Compass, ArrowRight, Download, Upload, CloudDownload, CloudUpload } from 'lucide-react';
+import { FileText, Compass, ArrowRight, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
+import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from './components/LogoutButton';
+import {
+  EditorActionCard,
+  EditorButton,
+  EditorMain,
+  EditorPage,
+  EditorPanel,
+  EditorTopBar,
+} from './components/EditorShell';
 
 type BackupPayload = {
   version?: number;
@@ -23,11 +31,11 @@ function createBackupFileName(exportedAt?: string): string {
 export default function EditorHomePage() {
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'loading'; text: string } | null>(null);
 
   const handleBackup = useCallback(async () => {
     setIsBusy(true);
-    setMessage('');
+    setMessage({ tone: 'loading', text: '正在生成备份文件...' });
 
     try {
       const response = await fetch('/api/data/backup', {
@@ -53,10 +61,10 @@ export default function EditorHomePage() {
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
 
-      setMessage('备份已下载。');
+      setMessage({ tone: 'success', text: '备份已下载。' });
     } catch (error) {
       console.error('Failed to create backup:', error);
-      setMessage('备份失败，请稍后重试。');
+      setMessage({ tone: 'danger', text: '备份失败，请稍后重试。' });
     } finally {
       setIsBusy(false);
     }
@@ -68,7 +76,7 @@ export default function EditorHomePage() {
 
   const handleRemoteSync = useCallback(async () => {
     setIsBusy(true);
-    setMessage('');
+    setMessage({ tone: 'loading', text: '正在同步云端备份...' });
 
     try {
       const response = await fetch('/api/data/backup/remote', {
@@ -84,10 +92,10 @@ export default function EditorHomePage() {
         throw new Error(`remote_sync_failed_${response.status}`);
       }
 
-      setMessage('云端备份已同步。');
+      setMessage({ tone: 'success', text: '云端备份已同步。' });
     } catch (error) {
       console.error('Failed to sync remote backup:', error);
-      setMessage('云端备份失败，请检查 R2 配置。');
+      setMessage({ tone: 'danger', text: '云端备份失败，请检查 R2 配置。' });
     } finally {
       setIsBusy(false);
     }
@@ -99,7 +107,7 @@ export default function EditorHomePage() {
     }
 
     setIsBusy(true);
-    setMessage('');
+    setMessage({ tone: 'loading', text: '正在从云端恢复数据...' });
 
     try {
       const response = await fetch('/api/data/backup/remote', {
@@ -115,10 +123,10 @@ export default function EditorHomePage() {
         throw new Error(`remote_restore_failed_${response.status}`);
       }
 
-      setMessage('云端恢复成功，刷新页面后可见最新数据。');
+      setMessage({ tone: 'success', text: '云端恢复成功，刷新页面后可见最新数据。' });
     } catch (error) {
       console.error('Failed to restore remote backup:', error);
-      setMessage('云端恢复失败，请检查 R2 配置和备份文件。');
+      setMessage({ tone: 'danger', text: '云端恢复失败，请检查 R2 配置和备份文件。' });
     } finally {
       setIsBusy(false);
     }
@@ -137,7 +145,7 @@ export default function EditorHomePage() {
     }
 
     setIsBusy(true);
-    setMessage('');
+    setMessage({ tone: 'loading', text: '正在恢复本地备份...' });
 
     try {
       const content = await file.text();
@@ -156,62 +164,56 @@ export default function EditorHomePage() {
         throw new Error(`restore_failed_${response.status}`);
       }
 
-      setMessage('恢复成功，刷新页面后可见最新数据。');
+      setMessage({ tone: 'success', text: '恢复成功，刷新页面后可见最新数据。' });
     } catch (error) {
       console.error('Failed to restore backup:', error);
-      setMessage('恢复失败，请确认备份文件格式正确。');
+      setMessage({ tone: 'danger', text: '恢复失败，请确认备份文件格式正确。' });
     } finally {
       setIsBusy(false);
     }
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">编辑中心</h1>
-            <p className="mt-1 text-sm text-gray-500">管理你的博客文章和导航链接</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
+    <EditorPage>
+      <EditorTopBar
+        title="编辑中心"
+        description="管理博客文章、导航链接和可迁移数据"
+        actions={(
+          <>
+            <EditorButton
               type="button"
               onClick={handleBackup}
               disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '备份数据'}</span>
-            </button>
+            </EditorButton>
 
-            <button
+            <EditorButton
               type="button"
               onClick={openRestorePicker}
               disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Upload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '恢复数据'}</span>
-            </button>
-            <button
+            </EditorButton>
+            <EditorButton
               type="button"
               onClick={handleRemoteSync}
               disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CloudUpload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '同步云端'}</span>
-            </button>
+            </EditorButton>
 
-            <button
+            <EditorButton
               type="button"
               onClick={handleRemoteRestore}
               disabled={isBusy}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CloudDownload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '云端恢复'}</span>
-            </button>
+            </EditorButton>
             <input
               ref={restoreInputRef}
               type="file"
@@ -221,58 +223,55 @@ export default function EditorHomePage() {
             />
 
             <LogoutButton />
-          </div>
-        </div>
+          </>
+        )}
+      />
+
+      <EditorMain className="space-y-6">
         {message ? (
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-4 text-sm text-gray-600">
-            {message}
-          </div>
+          <StatusMessage tone={message.tone}>
+            {message.text}
+          </StatusMessage>
         ) : null}
-      </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Link
+        <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <EditorActionCard
             href="/editor/blog"
-            className="group rounded-lg border border-gray-200 bg-white p-8 transition-all hover:border-blue-300 hover:shadow-lg"
-          >
-            <div className="flex items-start justify-between">
-              <div className="rounded-lg bg-blue-50 p-4 text-blue-500 transition-colors group-hover:bg-blue-100">
-                <FileText className="w-8 h-8" />
-              </div>
-              <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
-            </div>
-            <h2 className="mt-6 text-xl font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-              博客编辑器
-            </h2>
-            <p className="mt-2 text-gray-500">使用 Markdown 编写博客文章，支持实时预览和多种模板</p>
-            <div className="mt-4 flex items-center gap-2 text-sm text-blue-600">
-              <span>开始写作</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
+            icon={FileText}
+            title="博客编辑器"
+            description="使用 Markdown 编写文章，保留实时预览、模板和本地优先保存。"
+            action="开始写作"
+          />
 
-          <Link
+          <EditorActionCard
             href="/editor/navigation"
-            className="group rounded-lg border border-gray-200 bg-white p-8 transition-all hover:border-purple-300 hover:shadow-lg"
-          >
-            <div className="flex items-start justify-between">
-              <div className="rounded-lg bg-purple-50 p-4 text-purple-500 transition-colors group-hover:bg-purple-100">
-                <Compass className="w-8 h-8" />
-              </div>
-              <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-purple-500 group-hover:translate-x-1 transition-all" />
-            </div>
-            <h2 className="mt-6 text-xl font-semibold text-gray-900 group-hover:text-purple-600 transition-colors">
-              导航编辑器
-            </h2>
-            <p className="mt-2 text-gray-500">管理导航分类和工具链接，自定义你的网站导航</p>
-            <div className="mt-4 flex items-center gap-2 text-sm text-purple-600">
-              <span>编辑导航</span>
-              <ArrowRight className="w-4 h-4" />
-            </div>
-          </Link>
-        </div>
-      </main>
-    </div>
+            icon={Compass}
+            title="导航编辑器"
+            description="管理分类、工具链接和标签，让公开导航页保持可搜索、可迁移。"
+            action="编辑导航"
+          />
+
+          <EditorActionCard
+            href="/editor/settings"
+            icon={Settings}
+            title="站点设置"
+            description="管理公开站点名称、描述和首页首屏文案，并随备份一起迁移。"
+            action="调整设置"
+          />
+        </section>
+
+        <EditorPanel className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
+          <div>
+            <p className="font-mono text-xs text-accent">portable data</p>
+            <h2 className="mt-1 text-lg font-semibold text-fg">运行时数据边界</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              服务器数据集中在 <code className="rounded-token-card bg-surface px-1.5 py-0.5 font-mono text-fg">data/</code>，
+              本页提供 JSON 离线备份与 R2 镜像操作。
+            </p>
+          </div>
+          <ArrowRight className="hidden h-5 w-5 text-subtle md:block" />
+        </EditorPanel>
+      </EditorMain>
+    </EditorPage>
   );
 }

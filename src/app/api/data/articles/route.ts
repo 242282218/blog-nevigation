@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { Article } from '@/app/types/article';
+import { parseArticlesData } from '@/lib/article-data';
 import {
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
     isEditorDataRootConfigured,
-    isArticle,
     readArticlesFromDisk,
     writeArticlesToDisk,
 } from '@/lib/editor-data-storage';
@@ -41,9 +40,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => null)) as ArticlesRequestBody | null;
-    const articles = body?.articles;
+    const articles = parseArticlesData(body?.articles);
 
-    if (!Array.isArray(articles) || !articles.every(isArticle)) {
+    if (!articles) {
         return NextResponse.json(
             {
                 message: '文章数据格式无效。',

@@ -1,0 +1,120 @@
+import type { Article } from '@/app/types/article';
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function normalizeSlugPart(value: string): string {
+    return value
+        .trim()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+}
+
+function normalizeIdSuffix(value: string): string {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '')
+        .slice(-6) || 'entry';
+}
+
+export function createArticleSlug(article: Pick<Article, 'id' | 'title'>): string {
+    const base = normalizeSlugPart(article.title) || 'article';
+    return `${base}-${normalizeIdSuffix(article.id)}`;
+}
+
+function normalizeStoredSlug(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const slug = normalizeSlugPart(value);
+    return slug.length > 0 ? slug : null;
+}
+
+export function isArticle(value: unknown): value is Article {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return (
+        typeof value.id === 'string' &&
+        typeof value.title === 'string' &&
+        typeof value.date === 'string' &&
+        typeof value.description === 'string' &&
+        isStringArray(value.tags) &&
+        typeof value.content === 'string' &&
+        isFiniteNumber(value.createdAt) &&
+        isFiniteNumber(value.updatedAt) &&
+        (value.slug === undefined || typeof value.slug === 'string')
+    );
+}
+
+function normalizeArticle(value: unknown): Article | null {
+    if (!isArticle(value)) {
+        return null;
+    }
+
+    return {
+        ...value,
+        slug: normalizeStoredSlug(value.slug) ?? createArticleSlug(value),
+    };
+}
+
+export function filterArticlesData(value: unknown): Article[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const slugs = new Set<string>();
+    const articles: Article[] = [];
+
+    for (const item of value) {
+        const article = normalizeArticle(item);
+
+        if (!article?.slug || slugs.has(article.slug)) {
+            continue;
+        }
+
+        slugs.add(article.slug);
+        articles.push(article);
+    }
+
+    return articles;
+}
+
+export function parseArticlesData(value: unknown): Article[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const articles = value.map(normalizeArticle);
+
+    if (articles.some((article) => article === null)) {
+        return null;
+    }
+
+    const slugs = new Set<string>();
+
+    for (const article of articles as Article[]) {
+        if (!article.slug || slugs.has(article.slug)) {
+            return null;
+        }
+
+        slugs.add(article.slug);
+    }
+
+    return articles as Article[];
+}

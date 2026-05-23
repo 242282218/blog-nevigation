@@ -23,23 +23,23 @@ export function TerminalCard({
     return (
         <div
             className={cn(
-                "overflow-hidden rounded-lg border border-gray-200 bg-white/90 shadow-sm",
-                "transition-shadow hover:shadow-md",
+                "overflow-hidden rounded-token-card border border-border bg-surface",
+                "transition-shadow duration-token-normal hover:shadow-token-md",
                 className
             )}
         >
             <div
                 className={cn(
-                    "flex items-center gap-4 border-b border-gray-100 bg-gray-50/80 px-5 py-3.5",
+                    "flex items-center gap-4 border-b border-border-soft bg-surface/80 px-5 py-3.5",
                     headerClassName
                 )}
             >
                 <MacButtons opacity={opacity} />
                 {(title || command) && (
-                    <div className="font-mono text-xs text-gray-500 flex items-center gap-2 font-medium">
+                    <div className="font-mono text-xs text-subtle flex items-center gap-2 font-medium">
                         {command && (
                             <>
-                                <span className="text-green-500 font-bold">$</span> {command}
+                                <span className="text-terminal-prompt font-medium">$</span> {command}
                             </>
                         )}
                         {title && !command && title}

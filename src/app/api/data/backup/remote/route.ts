@@ -89,6 +89,7 @@ export async function POST(request: NextRequest) {
             counts: {
                 articles: result.articles,
                 categories: result.categories,
+                settings: result.settings,
             },
             remoteBackup,
         });

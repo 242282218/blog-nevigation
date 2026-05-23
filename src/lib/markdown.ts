@@ -3,6 +3,7 @@ import path from 'path';
 import matter from 'gray-matter';
 import { getEditorDataRoot, readArticlesFromDisk } from '@/lib/editor-data-storage';
 import type { Article } from '@/app/types/article';
+import { createArticleSlug } from '@/lib/article-data';
 
 export interface PostMeta {
     slug: string;
@@ -33,21 +34,7 @@ function normalizeDate(value: unknown): string {
 }
 
 function createRuntimeSlug(article: Article): string {
-    const normalizedTitle = article.title
-        .trim()
-        .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
-        .replace(/^-+|-+$/g, '')
-        .toLowerCase();
-    const base = normalizedTitle || 'article';
-    const suffix = article.id
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '')
-        .slice(-6) || 'entry';
-
-    return `${base}-${suffix}`;
+    return article.slug || createArticleSlug(article);
 }
 
 function mapArticleToPostMeta(article: Article): PostMeta {

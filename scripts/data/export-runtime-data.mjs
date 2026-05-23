@@ -3,6 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const BACKUP_VERSION = 1;
+const DEFAULT_SITE_SETTINGS = {
+  siteName: '个人技术博客导航',
+  siteDescription: '个人技术文章、常用链接和知识入口',
+  workspaceLabel: 'workspace / blog-navigation',
+  heroTitleLineOne: '技术博客与常用链接的',
+  heroTitleLineTwo: '个人工作台',
+  heroDescription:
+    '把长期文章、开发文档、工具入口和编辑数据放在一个轻量系统里，公开阅读和服务器迁移都保持清晰。',
+};
 
 function resolveDataRoot(input) {
   return path.resolve(input || process.env.BLOG_DATA_ROOT || 'data');
@@ -27,6 +36,74 @@ function readJsonArray(filePath) {
   return parsed;
 }
 
+function normalizeSlugPart(value) {
+  return String(value)
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{Letter}\p{Number}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function normalizeIdSuffix(value) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(-6) || 'entry';
+}
+
+function createArticleSlug(article) {
+  const base = normalizeSlugPart(article.title) || 'article';
+  return `${base}-${normalizeIdSuffix(article.id)}`;
+}
+
+function normalizeArticleSlug(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const slug = normalizeSlugPart(value);
+  return slug.length > 0 ? slug : null;
+}
+
+function normalizeArticles(articles) {
+  const slugs = new Set();
+
+  return articles.map((article) => {
+    if (!article || typeof article !== 'object' || Array.isArray(article)) {
+      throw new Error('Article data must contain JSON objects.');
+    }
+
+    const normalized = {
+      ...article,
+      slug: normalizeArticleSlug(article.slug) || createArticleSlug(article),
+    };
+
+    if (slugs.has(normalized.slug)) {
+      throw new Error(`Duplicate article slug: ${normalized.slug}`);
+    }
+
+    slugs.add(normalized.slug);
+    return normalized;
+  });
+}
+
+function readJsonObject(filePath, fallback) {
+  if (!fs.existsSync(filePath)) {
+    return fallback;
+  }
+
+  const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${filePath} must contain a JSON object.`);
+  }
+
+  return parsed;
+}
+
 function ensureParentDirectory(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
@@ -35,8 +112,12 @@ const [dataRootArg, outputArg] = process.argv.slice(2);
 const dataRoot = resolveDataRoot(dataRootArg);
 const outputPath = path.resolve(outputArg || createDefaultOutputPath());
 
-const articles = readJsonArray(path.join(dataRoot, 'articles', 'articles.json'));
+const articles = normalizeArticles(readJsonArray(path.join(dataRoot, 'articles', 'articles.json')));
 const navigation = readJsonArray(path.join(dataRoot, 'navigation', 'tools.json'));
+const settings = readJsonObject(
+  path.join(dataRoot, 'settings', 'site.json'),
+  DEFAULT_SITE_SETTINGS
+);
 const payload = {
   version: BACKUP_VERSION,
   exportedAt: new Date().toISOString(),
@@ -46,6 +127,7 @@ const payload = {
   data: {
     articles,
     navigation,
+    settings,
   },
 };
 
@@ -57,4 +139,5 @@ console.log(JSON.stringify({
   outputPath,
   articles: articles.length,
   categories: navigation.length,
+  settings: true,
 }, null, 2));

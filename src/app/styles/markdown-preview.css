@@ -1,35 +1,43 @@
-/* Markdown 预览样式 - 浅色主题代码块 */
-
 .markdown-preview {
-  font-family: var(--font-sans), 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
-  line-height: 1.8;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--fg);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.85;
 }
 
-/* 标题样式 */
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
 .markdown-preview h1,
 .markdown-preview h2,
 .markdown-preview h3,
 .markdown-preview h4,
 .markdown-preview h5,
 .markdown-preview h6 {
-  font-weight: 600;
-  line-height: 1.3;
-  margin-top: 2rem;
-  margin-bottom: 1rem;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--fg);
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin-bottom: 0.75rem;
+  margin-top: 2.25rem;
 }
 
 .markdown-preview h1 {
+  border-bottom: 1px solid var(--border);
   font-size: 2rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 2px solid var(--color-border-primary, #e5e5e5);
+  padding-bottom: 0.75rem;
 }
 
 .markdown-preview h2 {
-  font-size: 1.5rem;
-  padding-bottom: 0.3rem;
-  border-bottom: 1px solid var(--color-border-primary, #e5e5e5);
+  border-bottom: 1px solid var(--border);
+  font-size: 1.55rem;
+  padding-bottom: 0.5rem;
 }
 
 .markdown-preview h3 {
@@ -40,35 +48,31 @@
   font-size: 1.125rem;
 }
 
-/* 段落和文本 */
 .markdown-preview p {
+  color: var(--muted);
   margin-bottom: 1rem;
 }
 
 .markdown-preview strong {
+  color: var(--fg);
   font-weight: 600;
-  color: var(--color-text-primary, #1e293b);
 }
 
-.markdown-preview em {
-  font-style: italic;
-}
-
-/* 链接 */
 .markdown-preview a {
-  color: var(--color-link, #3b82f6);
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.2s ease;
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  transition: color 150ms ease;
 }
 
 .markdown-preview a:hover {
-  border-bottom-color: var(--color-link, #3b82f6);
+  color: var(--link-hover);
 }
 
-/* 列表 */
 .markdown-preview ul,
 .markdown-preview ol {
+  color: var(--muted);
   margin-bottom: 1rem;
   padding-left: 1.5rem;
 }
@@ -82,57 +86,136 @@
 }
 
 .markdown-preview li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.35rem;
 }
 
 .markdown-preview li > ul,
 .markdown-preview li > ol {
-  margin-top: 0.25rem;
   margin-bottom: 0.25rem;
+  margin-top: 0.25rem;
 }
 
-/* 任务列表 */
 .markdown-preview input[type="checkbox"] {
+  accent-color: var(--accent);
   margin-right: 0.5rem;
-  accent-color: var(--color-link, #3b82f6);
 }
 
-/* 引用块 */
 .markdown-preview blockquote {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+  color: var(--muted);
   margin: 1.5rem 0;
-  padding: 1rem 1.5rem;
-  border-left: 4px solid var(--color-accent, #f97316);
-  background: var(--color-gray-50, #fafafa);
-  border-radius: 0 0.5rem 0.5rem 0;
-  font-style: italic;
-  color: var(--color-text-secondary, #64748b);
+  padding: 1rem 1.25rem;
 }
 
 .markdown-preview blockquote p:last-child {
   margin-bottom: 0;
 }
 
-/* 代码块 - 浅色主题（重点） */
 .markdown-preview pre {
-  background: #f8f9fa !important;
-  border: 1px solid #e9ecef;
-  border-radius: 0.5rem;
-  padding: 1rem;
+  background: var(--warm-50) !important;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--fg);
   margin: 1.5rem 0;
   overflow-x: auto;
+  padding: 1rem;
+}
+
+.markdown-preview .markdown-code-block {
+  background: var(--warm-50);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin: 1.5rem 0;
+  overflow: hidden;
+}
+
+.markdown-preview .markdown-code-block__header {
+  align-items: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(250, 249, 245, 0.92));
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.markdown-preview .markdown-code-block__dots {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.markdown-preview .markdown-code-block__dots span {
+  background: var(--border);
+  border-radius: 999px;
+  display: block;
+  height: 0.55rem;
+  width: 0.55rem;
+}
+
+.markdown-preview .markdown-code-block__dots span:nth-child(1) {
+  background: var(--mac-red);
+}
+
+.markdown-preview .markdown-code-block__dots span:nth-child(2) {
+  background: var(--mac-yellow);
+}
+
+.markdown-preview .markdown-code-block__dots span:nth-child(3) {
+  background: var(--mac-green);
+}
+
+.markdown-preview .markdown-code-block__language {
+  color: var(--subtle);
+  flex: 1;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.markdown-preview .markdown-code-block__copy {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 500;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.55rem;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.markdown-preview .markdown-code-block__copy:hover {
+  background: var(--accent-soft);
+  border-color: var(--terracotta-200);
+  color: var(--accent);
+}
+
+.markdown-preview .markdown-code-block pre {
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset -16px 0 16px -18px rgba(39, 33, 27, 0.55);
+  margin: 0;
+  max-height: 32rem;
+  padding: 1rem;
 }
 
 .markdown-preview pre code {
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 0.875rem;
-  line-height: 1.6;
   background: transparent !important;
+  border: 0;
+  color: inherit;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  line-height: 1.65;
   padding: 0;
-  border-radius: 0;
-  color: #24292e;
 }
 
-/* 行内代码 */
 .markdown-preview p code,
 .markdown-preview li code,
 .markdown-preview h1 code,
@@ -141,131 +224,111 @@
 .markdown-preview h4 code,
 .markdown-preview h5 code,
 .markdown-preview h6 code {
-  background: #f1f3f5;
-  color: #e64980;
-  padding: 0.2em 0.4em;
-  border-radius: 0.25rem;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  background: var(--terracotta-50);
+  border: 1px solid var(--terracotta-100);
+  border-radius: var(--radius-sm);
+  color: var(--terracotta-700);
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.875em;
+  padding: 0.2em 0.4em;
 }
 
-/* 表格 */
 .markdown-preview table {
-  width: 100%;
   border-collapse: collapse;
+  display: block;
+  font-size: 0.9rem;
   margin: 1.5rem 0;
-  font-size: 0.875rem;
+  overflow-x: auto;
+  width: 100%;
 }
 
 .markdown-preview th,
 .markdown-preview td {
+  border: 1px solid var(--border);
   padding: 0.75rem;
-  border: 1px solid var(--color-border-primary, #e5e5e5);
   text-align: left;
 }
 
 .markdown-preview th {
-  background: var(--color-gray-50, #fafafa);
+  background: var(--surface);
+  color: var(--fg);
   font-weight: 600;
-  color: var(--color-text-primary, #1e293b);
 }
 
 .markdown-preview tr:nth-child(even) {
-  background: var(--color-gray-50, #fafafa);
+  background: rgba(250, 249, 245, 0.64);
 }
 
-/* 水平线 */
 .markdown-preview hr {
-  border: none;
-  border-top: 2px solid var(--color-border-primary, #e5e5e5);
+  border: 0;
+  border-top: 1px solid var(--border);
   margin: 2rem 0;
 }
 
-/* 图片 */
 .markdown-preview img {
-  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   height: auto;
-  border-radius: 0.5rem;
   margin: 1.5rem 0;
+  max-width: 100%;
 }
 
-/* 代码高亮 - 浅色主题 */
 .markdown-preview .hljs {
-  display: block;
-  overflow-x: auto;
-  background: #f8f9fa;
-  color: #24292e;
+  background: var(--warm-50);
+  color: var(--fg);
 }
 
 .markdown-preview .hljs-comment,
 .markdown-preview .hljs-quote {
-  color: #6a737d;
+  color: var(--subtle);
   font-style: italic;
 }
 
 .markdown-preview .hljs-keyword,
 .markdown-preview .hljs-selector-tag,
 .markdown-preview .hljs-subst {
-  color: #d73a49;
-  font-weight: 500;
+  color: var(--terracotta-700);
+  font-weight: 600;
 }
 
 .markdown-preview .hljs-number,
 .markdown-preview .hljs-literal,
 .markdown-preview .hljs-variable,
 .markdown-preview .hljs-template-variable,
-.markdown-preview .hljs-tag .hljs-attr {
-  color: #005cc5;
+.markdown-preview .hljs-tag .hljs-attr,
+.markdown-preview .hljs-property,
+.markdown-preview .hljs-built_in,
+.markdown-preview .hljs-builtin-name {
+  color: var(--blue-600);
 }
 
 .markdown-preview .hljs-string,
-.markdown-preview .hljs-doctag {
-  color: #032f62;
+.markdown-preview .hljs-doctag,
+.markdown-preview .hljs-regexp,
+.markdown-preview .hljs-link {
+  color: var(--green-600);
 }
 
 .markdown-preview .hljs-title,
 .markdown-preview .hljs-section,
-.markdown-preview .hljs-selector-id {
-  color: #6f42c1;
-  font-weight: 500;
+.markdown-preview .hljs-selector-id,
+.markdown-preview .hljs-function,
+.markdown-preview .hljs-name,
+.markdown-preview .hljs-attr {
+  color: var(--terracotta-700);
+  font-weight: 600;
 }
 
 .markdown-preview .hljs-type,
-.markdown-preview .hljs-class .hljs-title {
-  color: #22863a;
-  font-weight: 500;
-}
-
-.markdown-preview .hljs-function,
-.markdown-preview .hljs-name {
-  color: #6f42c1;
-}
-
-.markdown-preview .hljs-property {
-  color: #005cc5;
-}
-
-.markdown-preview .hljs-built_in,
-.markdown-preview .hljs-builtin-name {
-  color: #005cc5;
-}
-
+.markdown-preview .hljs-class .hljs-title,
 .markdown-preview .hljs-tag {
-  color: #22863a;
-}
-
-.markdown-preview .hljs-attr {
-  color: #6f42c1;
-}
-
-.markdown-preview .hljs-regexp,
-.markdown-preview .hljs-link {
-  color: #032f62;
+  color: var(--green-600);
+  font-weight: 600;
 }
 
 .markdown-preview .hljs-symbol,
 .markdown-preview .hljs-bullet {
-  color: #e36209;
+  color: var(--accent);
 }
 
 .markdown-preview .hljs-emphasis {

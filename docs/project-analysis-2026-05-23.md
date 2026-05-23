@@ -74,6 +74,28 @@ data/
 - 全手绘拼贴：记忆点强，但会削弱导航和编辑器的工具效率。
 - 大面积玻璃和渐变：和内容型个人站不匹配，且可读性风险高。
 
+## 本轮增量执行
+
+当前仓库没有 `.zread/wiki/current`，因此本轮以源码、既有计划文档和
+`D:\PROJECT_ZZZZZZZZZ\设计美学研究\Web设计知识库` 作为事实来源继续审计。
+
+架构优化集中在 UI shell 边界，而不是继续大规模搬目录：
+
+- 根布局新增路由感知 `AppShell`，公开站点继续使用公共 Header 和受限内容宽度，
+  `/editor/*` 则脱离公开站点容器，避免编辑工作台被公共导航和 `max-w-6xl`
+  约束挤压。
+- 编辑区新增 `EditorShell`，统一 TopBar、Main、Panel、Button、输入框和入口卡片，
+  把 `/editor`、登录页、博客管理、导航管理和文章编辑页的重复样式收敛到同一处。
+- 公共页移除“section 外壳卡片里再放列表卡片”的层级，最近文章、年份归档和导航分类改为章节标题 + 独立列表/网格。
+- Markdown 工具栏移除 emoji，改用 lucide 图标；编辑区旧蓝/紫强调色收敛到暖色 accent 和语义状态色。
+- 移动端编辑 TopBar 改为标题与操作区分行，避免操作按钮挤压标题不可见。
+- 文章数据契约抽到纯共享模块 `article-data`，服务端存储、备份恢复、文章 API
+  和客户端 hook 复用同一套 Article 校验，避免前后端数据契约漂移。
+- 公开文章页和编辑预览抽到共享 `MarkdownContent`，统一 GFM、sanitize 和代码高亮路径；
+  删除旧的未引用 `code-highlight` 模块，避免保留第二套高亮实现。
+- 文章正文样式从 GitHub/mono 倾向调整为暖色阅读样式，标题回到 sans，
+  代码块、引用、表格和行内代码使用同一套暖色 token。
+
 ## 本轮验证
 
 - `npm run lint -- --fix`
@@ -81,3 +103,7 @@ data/
 - `npm run test:run`
 - `npm run build`
 - `scripts/test/verify-public-ui.py` 覆盖首页、博客、导航的桌面和移动视口。
+- 额外 Playwright 检查 `/editor/login` 登录后进入 `/editor`、`/editor/blog`、
+  `/editor/navigation` 的桌面和移动视口，无横向溢出和控制台错误。
+- `scripts/test/verify-public-ui.py` 已扩展覆盖文章详情页
+  `/posts/2025-02-28-react-performance-optimization`。

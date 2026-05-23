@@ -1,5 +1,6 @@
 export interface Article {
   id: string;
+  slug?: string;
   title: string;
   date: string;
   description: string;
@@ -14,6 +15,9 @@ export interface ArticleTemplate {
   name: string;
   description: string;
   icon: string;
+  category?: string;
+  estimatedMinutes?: number;
+  highlights?: string[];
   frontmatter: {
     title: string;
     description: string;

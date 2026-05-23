@@ -24,27 +24,27 @@ export function SectionHeader({
     return (
         <div
             className={cn(
-                "border-b border-gray-100 bg-gray-50/80 px-5 py-3.5 flex items-center gap-4",
+                "border-b border-border-soft bg-surface/80 px-5 py-3.5 flex items-center gap-4",
                 className
             )}
         >
             {showMacButtons && <MacButtons opacity={macButtonOpacity} />}
             <div className="flex-1 flex items-center justify-between">
                 <h2 className={cn(
-                    "text-2xl font-mono font-bold flex items-center gap-3 text-gray-800",
+                    "text-xl font-serif font-medium flex items-center gap-3 text-fg",
                     titleClassName
                 )}>
                     {title}
                 </h2>
                 {subtitle && (
-                    <span className="text-xs font-mono bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200 hidden sm:block">
+                    <span className="text-xs font-mono bg-surface text-subtle px-2 py-1 rounded-token-badge border border-border-soft hidden sm:block">
                         {subtitle}
                     </span>
                 )}
             </div>
             {command && (
-                <div className="font-mono text-xs text-gray-500 flex items-center gap-2 font-medium">
-                    <span className="text-terminal-prompt font-bold">$</span> {command}
+                <div className="font-mono text-xs text-subtle flex items-center gap-2 font-medium">
+                    <span className="text-terminal-prompt font-medium">$</span> {command}
                 </div>
             )}
         </div>

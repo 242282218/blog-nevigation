@@ -8,6 +8,8 @@ import {
   parseEditorBackupData,
   restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
+import { createArticleSlug } from '@/lib/article-data';
+import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
 const tempDirectories: string[] = [];
@@ -40,6 +42,15 @@ const navigation = [
   },
 ];
 
+const settings = {
+  ...DEFAULT_SITE_SETTINGS,
+  siteName: 'Runtime Site',
+};
+const normalizedArticle = {
+  ...article,
+  slug: createArticleSlug(article),
+};
+
 function createTempDataRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-backup-'));
   tempDirectories.push(root);
@@ -63,6 +74,7 @@ describe('editor backup payload', () => {
     const payload = createEditorBackupPayload({
       articles: [article],
       navigation,
+      settings,
     });
 
     expect(payload).toEqual(
@@ -72,6 +84,7 @@ describe('editor backup payload', () => {
         data: {
           articles: [article],
           navigation,
+          settings,
         },
       })
     );
@@ -82,11 +95,13 @@ describe('editor backup payload', () => {
     const envelope = createEditorBackupPayload({
       articles: [article],
       navigation,
+      settings,
     });
 
     expect(parseEditorBackupData(envelope)).toEqual({
-      articles: [article],
+      articles: [normalizedArticle],
       navigation,
+      settings,
     });
 
     expect(
@@ -96,8 +111,9 @@ describe('editor backup payload', () => {
         navigation,
       })
     ).toEqual({
-      articles: [article],
+      articles: [normalizedArticle],
       navigation,
+      settings: DEFAULT_SITE_SETTINGS,
     });
   });
 
@@ -109,14 +125,17 @@ describe('editor backup payload', () => {
       createEditorBackupPayload({
         articles: [article],
         navigation,
+        settings,
       })
     );
 
     expect(result).toEqual({
       articles: 1,
       categories: 1,
+      settings: true,
     });
-    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([article]);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([normalizedArticle]);
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
   });
 });

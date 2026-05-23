@@ -1,13 +1,15 @@
 'use client';
 
 import { Frontmatter } from '@/app/types/article';
+import { editorInputClassName } from '../../components/EditorShell';
 
 interface FrontmatterFormProps {
   value: Frontmatter;
   onChange: (value: Frontmatter) => void;
+  className?: string;
 }
 
-export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
+export function FrontmatterForm({ value, onChange, className }: FrontmatterFormProps) {
   const handleChange = (field: keyof Frontmatter, fieldValue: string | string[]) => {
     onChange({ ...value, [field]: fieldValue });
   };
@@ -18,11 +20,15 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
   };
 
   return (
-    <div className="space-y-4 p-4 bg-gray-50 border-b border-gray-200">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* 标题 */}
-        <div className="md:col-span-2">
-          <label htmlFor="frontmatter-title" className="block text-xs font-mono text-gray-500 mb-1">
+    <div className={`rounded-token-card border border-border bg-surface p-4 shadow-token-card ${className || ''}`}>
+      <div className="mb-4">
+        <p className="font-mono text-xs text-accent">frontmatter</p>
+        <h2 className="mt-1 text-base font-semibold text-fg">文章信息</h2>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        <div>
+          <label htmlFor="frontmatter-title" className="block text-xs font-mono text-muted mb-1">
             title
           </label>
           <input
@@ -31,42 +37,41 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
             value={value.title}
             onChange={(e) => handleChange('title', e.target.value)}
             placeholder="文章标题"
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={editorInputClassName}
           />
         </div>
 
-        {/* 日期 */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+          <div>
+            <label htmlFor="frontmatter-date" className="block text-xs font-mono text-muted mb-1">
+              date
+            </label>
+            <input
+              id="frontmatter-date"
+              type="date"
+              value={value.date}
+              onChange={(e) => handleChange('date', e.target.value)}
+              className={editorInputClassName}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="frontmatter-tags" className="block text-xs font-mono text-muted mb-1">
+              tags
+            </label>
+            <input
+              id="frontmatter-tags"
+              type="text"
+              value={value.tags.join(', ')}
+              onChange={(e) => handleTagsChange(e.target.value)}
+              placeholder="标签1, 标签2, 标签3"
+              className={editorInputClassName}
+            />
+          </div>
+        </div>
+
         <div>
-          <label htmlFor="frontmatter-date" className="block text-xs font-mono text-gray-500 mb-1">
-            date
-          </label>
-          <input
-            id="frontmatter-date"
-            type="date"
-            value={value.date}
-            onChange={(e) => handleChange('date', e.target.value)}
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        {/* 标签 */}
-        <div>
-          <label htmlFor="frontmatter-tags" className="block text-xs font-mono text-gray-500 mb-1">
-            tags
-          </label>
-          <input
-            id="frontmatter-tags"
-            type="text"
-            value={value.tags.join(', ')}
-            onChange={(e) => handleTagsChange(e.target.value)}
-            placeholder="标签1, 标签2, 标签3"
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-
-        {/* 描述 */}
-        <div className="md:col-span-2">
-          <label htmlFor="frontmatter-description" className="block text-xs font-mono text-gray-500 mb-1">
+          <label htmlFor="frontmatter-description" className="block text-xs font-mono text-muted mb-1">
             description
           </label>
           <textarea
@@ -75,7 +80,7 @@ export function FrontmatterForm({ value, onChange }: FrontmatterFormProps) {
             onChange={(e) => handleChange('description', e.target.value)}
             placeholder="文章描述"
             rows={2}
-            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className={`${editorInputClassName} resize-none`}
           />
         </div>
       </div>

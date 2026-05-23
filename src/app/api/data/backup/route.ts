@@ -15,9 +15,11 @@ import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 type BackupRequestBody = {
     articles?: unknown;
     navigation?: unknown;
+    settings?: unknown;
     data?: {
         articles?: unknown;
         navigation?: unknown;
+        settings?: unknown;
     };
 };
 
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest) {
         counts: {
             articles: result.articles,
             categories: result.categories,
+            settings: result.settings,
         },
         remoteBackup,
     });

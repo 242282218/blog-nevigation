@@ -106,4 +106,30 @@ describe('markdown runtime article source', () => {
       })
     );
   });
+
+  it('uses stored runtime article slugs instead of deriving URLs from mutable titles', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([
+      {
+        id: 'runtime-article-003',
+        slug: 'stable-runtime-url',
+        title: 'Renamed Runtime Post',
+        date: '2026-03-07',
+        description: 'Public URL should stay stable',
+        tags: ['runtime'],
+        content: '## Stable content',
+        createdAt: 5,
+        updatedAt: 6,
+      },
+    ]);
+
+    const { getPostBySlugArray, getPosts } = await importMarkdownModule();
+    const [post] = getPosts();
+
+    expect(post.slug).toBe('stable-runtime-url');
+    expect(getPostBySlugArray(['stable-runtime-url'])).toEqual(
+      expect.objectContaining({
+        content: '## Stable content',
+      })
+    );
+  });
 });

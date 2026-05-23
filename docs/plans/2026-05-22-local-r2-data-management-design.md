@@ -33,7 +33,8 @@ All backup exports use one JSON envelope:
   "source": "local",
   "data": {
     "articles": [],
-    "navigation": []
+    "navigation": [],
+    "settings": {}
   }
 }
 ```

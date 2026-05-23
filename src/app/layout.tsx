@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
-import { JetBrains_Mono, IBM_Plex_Sans } from 'next/font/google';
+import { JetBrains_Mono, IBM_Plex_Sans, Source_Serif_4 } from 'next/font/google';
 import './globals.css';
-import { Header } from './components/header';
+import { AppShell } from './components/layout';
+import { readSiteSettingsFromDisk } from '@/lib/editor-data-storage';
 
 const jetbrains = JetBrains_Mono({
     subsets: ['latin'],
@@ -14,10 +15,20 @@ const ibmPlex = IBM_Plex_Sans({
     variable: '--font-ibm-plex',
 });
 
-export const metadata: Metadata = {
-    title: '个人技术博客导航',
-    description: '个人技术文章、常用链接和知识入口',
-};
+const sourceSerif = Source_Serif_4({
+    subsets: ['latin'],
+    weight: ['400', '500', '600'],
+    variable: '--font-source-serif',
+});
+
+export function generateMetadata(): Metadata {
+    const settings = readSiteSettingsFromDisk();
+
+    return {
+        title: settings.siteName,
+        description: settings.siteDescription,
+    };
+}
 
 export default function RootLayout({
     children,
@@ -25,15 +36,12 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="zh-CN" className={`${jetbrains.variable} ${ibmPlex.variable}`}>
-            <body className="min-h-screen antialiased selection:bg-accent-200">
+        <html lang="zh-CN" className={`${jetbrains.variable} ${ibmPlex.variable} ${sourceSerif.variable}`}>
+            <body className="min-h-screen antialiased">
                 <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-link focus:text-white focus:rounded-lg focus:shadow-lg">
                     跳转到主内容
                 </a>
-                <Header />
-                <main id="main-content" className="mx-auto min-h-[calc(100vh-4rem)] max-w-6xl px-4 py-8 sm:px-6 md:py-12">
-                    {children}
-                </main>
+                <AppShell>{children}</AppShell>
             </body>
         </html>
     );

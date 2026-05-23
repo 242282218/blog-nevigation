@@ -1,8 +1,9 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import type { Category, Tool } from '@/app/types/navigation';
 import defaultNavData from '@/content/seeds/navigation/data/tools.json';
+import { useSyncedResource } from '@/app/hooks/useSyncedResource';
 import { parseNavigationData } from '@/lib/navigation-data';
 
 const STORAGE_KEY = 'blog-navigation-data';
@@ -83,54 +84,13 @@ async function saveNavDataToServer(categories: Category[]): Promise<void> {
 }
 
 export function useNavigationData() {
-  const [data, setData] = useState<Category[]>(parseNavigationData(defaultNavData) ?? []);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initialize(): Promise<void> {
-      const remoteData = await loadNavDataFromServer();
-
-      if (cancelled) {
-        return;
-      }
-
-      if (remoteData) {
-        setData(remoteData);
-        saveNavDataToStorage(remoteData);
-      } else {
-        const localData = loadNavDataFromStorage();
-        if (localData) {
-          setData(localData);
-        }
-      }
-
-      setIsLoaded(true);
-    }
-
-    void initialize();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    saveNavDataToStorage(data);
-
-    const timer = window.setTimeout(() => {
-      void saveNavDataToServer(data);
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [data, isLoaded]);
+  const { data, setData, isLoaded } = useSyncedResource<Category[]>({
+    initialValue: () => parseNavigationData(defaultNavData) ?? [],
+    loadLocal: loadNavDataFromStorage,
+    saveLocal: saveNavDataToStorage,
+    loadRemote: loadNavDataFromServer,
+    saveRemote: saveNavDataToServer,
+  });
 
   const addCategory = useCallback((category: Omit<Category, 'tools'> & { tools?: Tool[] }): Category => {
     const newCategory: Category = {
@@ -140,7 +100,7 @@ export function useNavigationData() {
 
     setData((previous) => [...previous, newCategory]);
     return newCategory;
-  }, []);
+  }, [setData]);
 
   const updateCategory = useCallback((index: number, updates: Partial<Category>): Category | null => {
     let updated: Category | null = null;
@@ -157,7 +117,7 @@ export function useNavigationData() {
     });
 
     return updated;
-  }, []);
+  }, [setData]);
 
   const deleteCategory = useCallback((index: number): boolean => {
     let success = false;
@@ -172,7 +132,7 @@ export function useNavigationData() {
     });
 
     return success;
-  }, []);
+  }, [setData]);
 
   const addTool = useCallback((categoryIndex: number, tool: Tool): Tool | null => {
     let added: Tool | null = null;
@@ -192,7 +152,7 @@ export function useNavigationData() {
     });
 
     return added;
-  }, []);
+  }, [setData]);
 
   const updateTool = useCallback(
     (categoryIndex: number, toolIndex: number, updates: Partial<Tool>): Tool | null => {
@@ -221,7 +181,7 @@ export function useNavigationData() {
 
       return updated;
     },
-    []
+    [setData]
   );
 
   const deleteTool = useCallback((categoryIndex: number, toolIndex: number): boolean => {
@@ -247,7 +207,7 @@ export function useNavigationData() {
     });
 
     return success;
-  }, []);
+  }, [setData]);
 
   const exportData = useCallback((): string => JSON.stringify(data, null, 2), [data]);
 
@@ -265,11 +225,11 @@ export function useNavigationData() {
       console.error('Failed to import navigation data:', error);
       return false;
     }
-  }, []);
+  }, [setData]);
 
   const resetToDefault = useCallback((): void => {
     setData(parseNavigationData(defaultNavData) ?? []);
-  }, []);
+  }, [setData]);
 
   return {
     data,

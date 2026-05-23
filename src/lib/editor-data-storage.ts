@@ -2,45 +2,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Article } from '@/app/types/article';
 import type { Category } from '@/app/types/navigation';
+import { filterArticlesData } from '@/lib/article-data';
 import { parseNavigationData } from '@/lib/navigation-data';
+import {
+    createDefaultSiteSettings,
+    parseSiteSettings,
+    type SiteSettings,
+} from '@/lib/site-settings';
 
 const ARTICLES_FILE_NAME = 'articles.json';
 const NAVIGATION_FILE_NAME = 'tools.json';
+const SETTINGS_FILE_NAME = 'site.json';
 
 export class EditorDataRootNotConfiguredError extends Error {
     constructor() {
         super('BLOG_DATA_ROOT is not configured.');
         this.name = 'EditorDataRootNotConfiguredError';
     }
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}
-
-export function isStringArray(value: unknown): value is string[] {
-    return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-export function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
-export function isArticle(value: unknown): value is Article {
-    if (!isRecord(value)) {
-        return false;
-    }
-
-    return (
-        typeof value.id === 'string' &&
-        typeof value.title === 'string' &&
-        typeof value.date === 'string' &&
-        typeof value.description === 'string' &&
-        isStringArray(value.tags) &&
-        typeof value.content === 'string' &&
-        isFiniteNumber(value.createdAt) &&
-        isFiniteNumber(value.updatedAt)
-    );
 }
 
 function readJsonFile(filePath: string | null): unknown | null {
@@ -96,6 +74,11 @@ export function getNavigationDataFilePath(): string | null {
     return root ? path.join(root, 'navigation', NAVIGATION_FILE_NAME) : null;
 }
 
+export function getSiteSettingsDataFilePath(): string | null {
+    const root = getEditorDataRoot();
+    return root ? path.join(root, 'settings', SETTINGS_FILE_NAME) : null;
+}
+
 export function getDefaultNavigationSeedFilePath(): string {
     return path.join(
         process.cwd(),
@@ -110,11 +93,7 @@ export function getDefaultNavigationSeedFilePath(): string {
 export function readArticlesFromDisk(): Article[] {
     const raw = readJsonFile(getArticlesDataFilePath());
 
-    if (!Array.isArray(raw)) {
-        return [];
-    }
-
-    return raw.filter(isArticle);
+    return filterArticlesData(raw);
 }
 
 export function writeArticlesToDisk(articles: Article[]): void {
@@ -146,4 +125,14 @@ export function readNavigationFromDisk(): Category[] {
 
 export function writeNavigationToDisk(categories: Category[]): void {
     writeJsonFile(getNavigationDataFilePath(), categories);
+}
+
+export function readSiteSettingsFromDisk(): SiteSettings {
+    const parsed = parseSiteSettings(readJsonFile(getSiteSettingsDataFilePath()));
+
+    return parsed ?? createDefaultSiteSettings();
+}
+
+export function writeSiteSettingsToDisk(settings: SiteSettings): void {
+    writeJsonFile(getSiteSettingsDataFilePath(), settings);
 }

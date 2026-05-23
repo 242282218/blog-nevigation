@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Compass, FileText, Lock, Search } from 'lucide-react';
+import { Compass, FileText, Lock, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const ADMIN_SHORTCUT = ':admin';
@@ -44,27 +44,27 @@ function SearchResultItem({
     const content = (
         <>
             <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 text-sm font-medium text-gray-800 transition-colors group-hover:text-accent">
+                <div className="min-w-0 text-sm font-medium text-fg transition-colors group-hover:text-accent">
                     {result.title}
                 </div>
-                <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-mono text-gray-400">
+                <span className="shrink-0 rounded-token-badge bg-surface px-1.5 py-0.5 text-[10px] font-mono text-subtle border border-border-soft">
                     {label}
                 </span>
             </div>
             {result.description && (
-                <div className="mt-1 line-clamp-1 text-xs text-gray-500">
+                <div className="mt-1 line-clamp-1 text-xs text-muted">
                     {result.description}
                 </div>
             )}
             {result.meta && (
-                <div className="mt-1 text-[11px] font-mono text-gray-400">
+                <div className="mt-1 text-[11px] font-mono text-subtle">
                     {result.meta}
                 </div>
             )}
         </>
     );
 
-    const className = 'group block border-b border-gray-100 px-4 py-3 transition-colors last:border-0 hover:bg-accent-50/70';
+    const className = 'group block border-b border-border-soft px-4 py-3 transition-colors last:border-0 hover:bg-accent-50';
 
     if (result.external) {
         return (
@@ -228,19 +228,19 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                 }}
                 aria-label={compact ? '搜索文章和链接' : undefined}
                 className={cn(
-                    'flex min-h-9 items-center gap-2 rounded-lg border border-gray-200 bg-white/85 text-xs font-mono text-gray-400 shadow-button transition-all hover:border-gray-300 hover:bg-white',
+                    'flex min-h-9 items-center gap-2 rounded-token-input border border-border bg-surface text-xs font-mono text-subtle transition-colors duration-token-fast hover:border-border-focus hover:bg-surface-elevated',
                     compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[260px] px-3 py-1.5'
                 )}
             >
                 {compact ? (
-                    <Search className="h-4 w-4 text-gray-500" />
+                    <Search className="h-4 w-4 text-muted" />
                 ) : (
                     <>
-                        <Search className="h-3.5 w-3.5 text-accent" />
-                        <span className="flex-1 text-left text-gray-500">
+                        <Search className="h-3.5 w-3.5 text-subtle" />
+                        <span className="flex-1 text-left text-muted">
                             {isOpen && query ? query : placeholder || placeholders[0]}
                         </span>
-                        <kbd className="hidden items-center gap-0.5 rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] sm:inline-flex">
+                        <kbd className="hidden items-center gap-0.5 rounded-token-badge bg-surface px-1.5 py-0.5 font-mono text-[10px] text-subtle border border-border-soft sm:inline-flex">
                             Ctrl+K
                         </kbd>
                     </>
@@ -250,14 +250,14 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
             {isOpen && (
                 <div
                     className={cn(
-                        'z-50 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg',
+                        'z-token-dropdown overflow-hidden rounded-token-card border border-border bg-surface-elevated shadow-token-lg',
                         compact
                             ? 'fixed left-4 right-4 top-[4.25rem]'
                             : 'absolute top-full left-0 right-0 mt-2 min-w-[360px]'
                     )}
                 >
-                    <div className="flex items-center gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-3">
-                        <Search className="h-4 w-4 text-accent" />
+                    <div className="flex items-center gap-2 border-b border-border-soft bg-surface px-4 py-3">
+                        <Search className="h-4 w-4 text-subtle" />
                         <input
                             ref={inputRef}
                             type="text"
@@ -265,14 +265,14 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                             onChange={(e) => setQuery(e.target.value)}
                             placeholder={`搜索文章或链接，输入 ${ADMIN_SHORTCUT} 进编辑区`}
                             aria-label="搜索文章或链接"
-                            className="flex-1 bg-transparent text-sm text-gray-700 outline-none placeholder:text-gray-400"
+                            className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
                             autoFocus
                         />
-                        <kbd className="text-[10px] font-mono text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">ESC</kbd>
+                        <kbd className="text-[10px] font-mono text-subtle bg-surface px-1.5 py-0.5 rounded-token-badge border border-border-soft">ESC</kbd>
                     </div>
 
                     {isLoading && (
-                        <div className="px-4 py-6 text-center text-sm text-gray-400 font-mono">
+                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
                             <span className="animate-pulse">搜索中...</span>
                         </div>
                     )}
@@ -290,28 +290,28 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                     )}
 
                     {!isLoading && errorMessage && (
-                        <div className="px-4 py-6 text-center text-sm text-red-500 font-mono">
-                            <span className="text-red-400">!</span> {errorMessage}
+                        <div className="px-4 py-6 text-center text-sm font-mono text-danger">
+                            <span className="text-danger">!</span> {errorMessage}
                         </div>
                     )}
 
                     {!isLoading && !errorMessage && query && !showAdminMenu && results.length === 0 && (
-                        <div className="px-4 py-6 text-center text-sm text-gray-400 font-mono">
+                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
                             <span className="text-accent">!</span> 未找到匹配的文章或链接
                         </div>
                     )}
 
                     {!isLoading && !query && (
-                        <div className="px-4 py-3 text-xs text-gray-400 font-mono border-t border-gray-100">
+                        <div className="px-4 py-3 text-xs font-mono text-subtle border-t border-border-soft">
                             输入关键词搜索文章和链接
                         </div>
                     )}
 
                     {showAdminMenu && (
-                        <div className="border-t border-gray-100">
-                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
-                                <div className="flex items-center gap-2 text-sm font-mono text-gray-600">
-                                    <Lock className="w-4 h-4 text-amber-500" />
+                        <div className="border-t border-border-soft">
+                            <div className="px-4 py-2 bg-surface border-b border-border-soft">
+                                <div className="flex items-center gap-2 text-sm font-mono text-muted">
+                                    <Lock className="w-4 h-4 text-warning" />
                                     <span>受保护编辑区</span>
                                 </div>
                             </div>
@@ -322,12 +322,12 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                         closeSearch();
                                         router.push('/editor/blog');
                                     }}
-                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-gray-50"
+                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
                                 >
-                                    <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <FileText className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
                                     <div className="text-left">
-                                        <div className="text-sm font-medium text-gray-700">写文章</div>
-                                        <div className="text-xs text-gray-400">创建新的博客文章</div>
+                                        <div className="text-sm font-medium text-fg">写文章</div>
+                                        <div className="text-xs text-subtle">创建新的博客文章</div>
                                     </div>
                                 </button>
                                 <button
@@ -336,12 +336,26 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                         closeSearch();
                                         router.push('/editor/navigation');
                                     }}
-                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors duration-200 hover:bg-gray-50"
+                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
                                 >
-                                    <Compass className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                    <Compass className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
                                     <div className="text-left">
-                                        <div className="text-sm font-medium text-gray-700">编辑导航</div>
-                                        <div className="text-xs text-gray-400">管理导航链接和分类</div>
+                                        <div className="text-sm font-medium text-fg">编辑导航</div>
+                                        <div className="text-xs text-subtle">管理导航链接和分类</div>
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        closeSearch();
+                                        router.push('/editor/settings');
+                                    }}
+                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
+                                >
+                                    <Settings className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
+                                    <div className="text-left">
+                                        <div className="text-sm font-medium text-fg">站点设置</div>
+                                        <div className="text-xs text-subtle">管理公开站点信息</div>
                                     </div>
                                 </button>
                             </div>

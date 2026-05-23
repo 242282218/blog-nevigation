@@ -2,13 +2,14 @@
 
 import { Suspense } from 'react';
 import { NewArticleContent } from './NewArticleContent';
+import { EditorPage } from '../../components/EditorShell';
 
 export default function NewArticlePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">加载中...</div>
-      </div>
+      <EditorPage className="flex items-center justify-center">
+        <div className="animate-pulse text-subtle">加载中...</div>
+      </EditorPage>
     }>
       <NewArticleContent />
     </Suspense>

@@ -47,9 +47,18 @@ describe('runtime data migration scripts', () => {
         tools: [],
       },
     ];
+    const settings = {
+      siteName: 'Portable Site',
+      siteDescription: 'Portable settings',
+      workspaceLabel: 'workspace / portable',
+      heroTitleLineOne: 'Portable',
+      heroTitleLineTwo: 'Runtime Data',
+      heroDescription: 'Settings travel with the backup envelope.',
+    };
 
     writeJson(path.join(sourceRoot, 'articles', 'articles.json'), [article]);
     writeJson(path.join(sourceRoot, 'navigation', 'tools.json'), navigation);
+    writeJson(path.join(sourceRoot, 'settings', 'site.json'), settings);
 
     execFileSync(
       process.execPath,
@@ -63,8 +72,14 @@ describe('runtime data migration scripts', () => {
         version: 1,
         source: 'local',
         data: {
-          articles: [article],
+          articles: [
+            expect.objectContaining({
+              ...article,
+              slug: expect.any(String),
+            }),
+          ],
           navigation,
+          settings,
         },
       })
     );
@@ -75,7 +90,13 @@ describe('runtime data migration scripts', () => {
       { encoding: 'utf8' }
     );
 
-    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([article]);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        ...article,
+        slug: expect.any(String),
+      }),
+    ]);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
   });
 });

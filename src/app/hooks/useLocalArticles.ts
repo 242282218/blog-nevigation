@@ -1,7 +1,9 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import type { Article, Frontmatter } from '@/app/types/article';
+import { useSyncedResource } from '@/app/hooks/useSyncedResource';
+import { createArticleSlug, filterArticlesData } from '@/lib/article-data';
 import {
   parseMarkdownWithFrontmatter,
   serializeMarkdownWithFrontmatter,
@@ -18,41 +20,6 @@ function getTodayString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isArticle(value: unknown): value is Article {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Record<string, unknown>;
-
-  return (
-    typeof candidate.id === 'string' &&
-    typeof candidate.title === 'string' &&
-    typeof candidate.date === 'string' &&
-    typeof candidate.description === 'string' &&
-    isStringArray(candidate.tags) &&
-    typeof candidate.content === 'string' &&
-    isFiniteNumber(candidate.createdAt) &&
-    isFiniteNumber(candidate.updatedAt)
-  );
-}
-
-function parseArticles(value: unknown): Article[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter(isArticle);
-}
-
 function loadArticlesFromStorage(): Article[] {
   if (typeof window === 'undefined') {
     return [];
@@ -60,7 +27,7 @@ function loadArticlesFromStorage(): Article[] {
 
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? parseArticles(JSON.parse(stored)) : [];
+    return stored ? filterArticlesData(JSON.parse(stored)) : [];
   } catch (error) {
     console.error('Failed to load articles from localStorage:', error);
     return [];
@@ -92,7 +59,7 @@ async function loadArticlesFromServer(): Promise<Article[] | null> {
     }
 
     const payload = (await response.json()) as { articles?: unknown };
-    return parseArticles(payload.articles);
+    return filterArticlesData(payload.articles);
   } catch (error) {
     console.error('Failed to load articles from server:', error);
     return null;
@@ -123,51 +90,17 @@ async function saveArticlesToServer(articles: Article[]): Promise<void> {
 }
 
 export function useLocalArticles() {
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function initialize(): Promise<void> {
-      const remoteArticles = await loadArticlesFromServer();
-
-      if (cancelled) {
-        return;
-      }
-
-      if (remoteArticles) {
-        setArticles(remoteArticles);
-        saveArticlesToStorage(remoteArticles);
-      } else {
-        setArticles(loadArticlesFromStorage());
-      }
-
-      setIsLoaded(true);
-    }
-
-    void initialize();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLoaded) {
-      return;
-    }
-
-    saveArticlesToStorage(articles);
-
-    const timer = window.setTimeout(() => {
-      void saveArticlesToServer(articles);
-    }, 300);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [articles, isLoaded]);
+  const {
+    data: articles,
+    setData: setArticles,
+    isLoaded,
+  } = useSyncedResource<Article[]>({
+    initialValue: [],
+    loadLocal: loadArticlesFromStorage,
+    saveLocal: saveArticlesToStorage,
+    loadRemote: loadArticlesFromServer,
+    saveRemote: saveArticlesToServer,
+  });
 
   const createArticle = useCallback((frontmatter: Frontmatter, content: string): Article => {
     const now = Date.now();
@@ -181,10 +114,11 @@ export function useLocalArticles() {
       createdAt: now,
       updatedAt: now,
     };
+    newArticle.slug = createArticleSlug(newArticle);
 
     setArticles((previous) => [newArticle, ...previous]);
     return newArticle;
-  }, []);
+  }, [setArticles]);
 
   const updateArticle = useCallback((id: string, updates: Partial<Article>): Article | null => {
     let updated: Article | null = null;
@@ -206,7 +140,7 @@ export function useLocalArticles() {
     );
 
     return updated;
-  }, []);
+  }, [setArticles]);
 
   const updateArticleContent = useCallback(
     (id: string, frontmatter: Frontmatter, content: string): Article | null =>
@@ -231,7 +165,7 @@ export function useLocalArticles() {
       setArticles((previous) => previous.filter((article) => article.id !== id));
       return true;
     },
-    [articles]
+    [articles, setArticles]
   );
 
   const getArticleById = useCallback(
@@ -280,7 +214,7 @@ export function useLocalArticles() {
 
   const clearAllArticles = useCallback((): void => {
     setArticles([]);
-  }, []);
+  }, [setArticles]);
 
   return {
     articles,

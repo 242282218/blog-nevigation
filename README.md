@@ -108,6 +108,8 @@ npm run data:export -- ./data ./output/blog-navigation-backup.json
 npm run data:import -- ./output/blog-navigation-backup.json ./data
 ```
 
+备份包包含文章、导航和站点设置；旧备份缺少站点设置时会使用默认设置恢复。
+
 ## 常用命令
 
 ```bash

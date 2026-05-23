@@ -4,8 +4,10 @@ import {
     getDefaultNavigationSeedFilePath,
     getEditorDataRoot,
     isEditorDataRootConfigured,
+    readSiteSettingsFromDisk,
     writeArticlesToDisk,
 } from '@/lib/editor-data-storage';
+import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
 
@@ -36,5 +38,11 @@ describe('editor data storage configuration', () => {
         delete process.env.BLOG_DATA_ROOT;
 
         expect(() => writeArticlesToDisk([])).toThrow(EditorDataRootNotConfiguredError);
+    });
+
+    it('falls back to default site settings when runtime settings are missing', () => {
+        delete process.env.BLOG_DATA_ROOT;
+
+        expect(readSiteSettingsFromDisk()).toEqual(DEFAULT_SITE_SETTINGS);
     });
 });

@@ -25,15 +25,15 @@ export function StatusIndicator() {
     }, []);
 
     return (
-        <div className="hidden min-h-9 items-center gap-3 rounded-lg border border-gray-200 bg-white/85 px-3 py-1.5 md:flex">
+        <div className="hidden min-h-9 items-center gap-3 rounded-token-button border border-border bg-surface px-3 py-1.5 md:flex">
             <div className="flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
+                <span className="relative flex h-1.5 w-1.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success"></span>
                 </span>
-                <span className="text-xs font-mono text-gray-500">online</span>
+                <span className="text-xs font-mono text-subtle">online</span>
             </div>
-            <div className="text-xs font-mono text-gray-600 tabular-nums border-l border-gray-200 pl-3">
+            <div className="text-xs font-mono text-muted tabular-nums border-l border-border pl-3">
                 {time ?? '--:--'}
             </div>
         </div>

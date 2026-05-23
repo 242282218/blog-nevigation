@@ -10,15 +10,15 @@ export function MacButtons({ opacity = 1, className }: MacButtonsProps) {
         <div className={cn("flex gap-2", className)}>
             <div
                 className="w-3 h-3 rounded-full shadow-sm border border-black/10"
-                style={{ backgroundColor: 'var(--color-mac-red)', opacity }}
+                style={{ backgroundColor: 'var(--mac-red)', opacity }}
             />
             <div
                 className="w-3 h-3 rounded-full shadow-sm border border-black/10"
-                style={{ backgroundColor: 'var(--color-mac-yellow)', opacity }}
+                style={{ backgroundColor: 'var(--mac-yellow)', opacity }}
             />
             <div
                 className="w-3 h-3 rounded-full shadow-sm border border-black/10"
-                style={{ backgroundColor: 'var(--color-mac-green)', opacity }}
+                style={{ backgroundColor: 'var(--mac-green)', opacity }}
             />
         </div>
     );

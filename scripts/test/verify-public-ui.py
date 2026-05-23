@@ -59,6 +59,15 @@ def main():
             verify_page(page, "/blog", "技术文章归档", console_errors, page_errors)
             page.screenshot(path=OUTPUT_DIR / f"blog-{name}.png", full_page=True)
 
+            verify_page(
+                page,
+                "/posts/2025-02-28-react-performance-optimization",
+                "React 性能优化实践指南",
+                console_errors,
+                page_errors,
+            )
+            page.screenshot(path=OUTPUT_DIR / f"post-{name}.png", full_page=True)
+
             verify_page(page, "/navigation", "常用链接导航", console_errors, page_errors)
             page.get_by_placeholder("搜索工具、标签或域名").fill("MDN")
             expect(page.get_by_text("MDN Web Docs").first).to_be_visible()

@@ -1,12 +1,20 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Plus, Download, Upload, RotateCcw, Folder, Link2, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Plus, Download, Upload, RotateCcw, Folder, Link2, Trash2, Edit2, X, Check } from 'lucide-react';
 import { useNavigationData } from '@/app/hooks/useNavigationData';
 import { Tool } from '@/app/types/navigation';
 import { isValidNavigationUrl } from '@/lib/navigation-data';
+import { EmptyState, StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from '../components/LogoutButton';
+import {
+  EditorButton,
+  EditorMain,
+  EditorPage,
+  EditorPanel,
+  EditorTopBar,
+  editorInputClassName,
+} from '../components/EditorShell';
 
 function normalizeTagsInput(value: string): string[] {
   return value.split(',').map((tag) => tag.trim()).filter(Boolean);
@@ -53,8 +61,8 @@ export default function NavigationEditorPage() {
   const [showAddTool, setShowAddTool] = useState<number | null>(null);
   const [categoryFormError, setCategoryFormError] = useState('');
   const [toolFormError, setToolFormError] = useState('');
+  const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'info'; text: string } | null>(null);
 
-  // 表单状态
   const [categoryForm, setCategoryForm] = useState({ name: '', icon: 'folder', slug: '' });
   const [toolForm, setToolForm] = useState<Tool>({
     icon: 'link',
@@ -64,7 +72,6 @@ export default function NavigationEditorPage() {
     tags: [],
   });
 
-  // 添加分类
   const handleAddCategory = useCallback(() => {
     if (!categoryForm.name.trim()) {
       setCategoryFormError('请填写分类名称。');
@@ -78,10 +85,10 @@ export default function NavigationEditorPage() {
     });
     setCategoryForm({ name: '', icon: 'folder', slug: '' });
     setCategoryFormError('');
+    setMessage({ tone: 'success', text: '分类已添加。' });
     setShowAddCategory(false);
   }, [categoryForm, addCategory]);
 
-  // 添加工具
   const handleAddTool = useCallback(
     (categoryIndex: number) => {
       const normalizedTool = {
@@ -110,12 +117,12 @@ export default function NavigationEditorPage() {
         tags: [],
       });
       setToolFormError('');
+      setMessage({ tone: 'success', text: '工具链接已添加。' });
       setShowAddTool(null);
     },
     [toolForm, addTool]
   );
 
-  // 导出数据
   const handleExport = useCallback(() => {
     const json = exportData();
     const blob = new Blob([json], { type: 'application/json' });
@@ -127,9 +134,14 @@ export default function NavigationEditorPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    setMessage({ tone: 'success', text: '导航数据已导出。' });
   }, [exportData]);
 
-  // 导入数据
+  const handleReset = useCallback(() => {
+    resetToDefault();
+    setMessage({ tone: 'info', text: '导航数据已重置为种子数据。' });
+  }, [resetToDefault]);
+
   const handleImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -139,7 +151,10 @@ export default function NavigationEditorPage() {
       reader.onload = (event) => {
         const content = event.target?.result as string;
         if (content) {
-          importData(content);
+          const imported = importData(content);
+          setMessage(imported
+            ? { tone: 'success', text: '导航数据已导入。' }
+            : { tone: 'danger', text: '导航数据导入失败，请检查 JSON 格式。' });
         }
       };
       reader.readAsText(file);
@@ -150,128 +165,126 @@ export default function NavigationEditorPage() {
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">加载中...</div>
-      </div>
+      <EditorPage className="flex items-center justify-center">
+        <div className="animate-pulse text-subtle">加载中...</div>
+      </EditorPage>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* 顶部导航 */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link
-                href="/navigation"
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="返回导航页"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
-              </Link>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">导航编辑器</h1>
-                <p className="text-sm text-gray-500">
-                  {data.length} 个分类，{data.reduce((acc, cat) => acc + cat.tools.length, 0)} 个工具
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
+    <EditorPage className="pb-20">
+      <EditorTopBar
+        title="导航编辑器"
+        description={`${data.length} 个分类，${data.reduce((acc, cat) => acc + cat.tools.length, 0)} 个工具`}
+        eyebrow="editor.navigation"
+        backHref="/editor"
+        actions={(
+          <>
               <LogoutButton />
-              {/* 导入 */}
-              <label className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+              <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm font-medium text-fg transition hover:border-border hover:bg-surface focus-within:ring-2 focus-within:ring-link focus-within:ring-offset-2">
                 <Upload className="w-4 h-4" />
                 <span className="hidden sm:inline">导入</span>
                 <input type="file" accept=".json" onChange={handleImport} className="hidden" />
               </label>
 
-              {/* 导出 */}
-              <button
+              <EditorButton
                 onClick={handleExport}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 <Download className="w-4 h-4" />
                 <span className="hidden sm:inline">导出</span>
-              </button>
+              </EditorButton>
 
-              {/* 重置 */}
-              <button
-                onClick={resetToDefault}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              <EditorButton
+                onClick={handleReset}
               >
                 <RotateCcw className="w-4 h-4" />
                 <span className="hidden sm:inline">重置</span>
-              </button>
+              </EditorButton>
 
-              {/* 添加分类 */}
-              <button
+              <EditorButton
                 onClick={() => setShowAddCategory(true)}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+                variant="primary"
               >
                 <Plus className="w-4 h-4" />
                 添加分类
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+              </EditorButton>
+          </>
+        )}
+      />
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-        {/* 添加分类表单 */}
+      <EditorMain className="space-y-6">
+        {message ? (
+          <StatusMessage tone={message.tone}>
+            {message.text}
+          </StatusMessage>
+        ) : null}
+
         {showAddCategory && (
-          <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">添加分类</h3>
+          <EditorPanel className="p-6">
+            <h3 className="text-lg font-medium text-fg mb-4">添加分类</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <input
                 type="text"
                 placeholder="分类名称"
                 value={categoryForm.name}
                 onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={editorInputClassName}
               />
               <input
                 type="text"
                 placeholder="图标 (可选)"
                 value={categoryForm.icon}
                 onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
-                className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={editorInputClassName}
               />
               <input
                 type="text"
                 placeholder="slug (可选)"
                 value={categoryForm.slug}
                 onChange={(e) => setCategoryForm({ ...categoryForm, slug: e.target.value })}
-                className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={editorInputClassName}
               />
             </div>
             {categoryFormError ? (
               <p className="mt-3 text-sm text-red-500">{categoryFormError}</p>
             ) : null}
             <div className="mt-4 flex gap-2">
-              <button
+              <EditorButton
                 onClick={handleAddCategory}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+                variant="primary"
               >
                 确认添加
-              </button>
-              <button
+              </EditorButton>
+              <EditorButton
                 onClick={() => setShowAddCategory(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                variant="ghost"
               >
                 取消
-              </button>
+              </EditorButton>
             </div>
-          </div>
+          </EditorPanel>
         )}
 
-        {/* 分类列表 */}
-        <div className="space-y-8">
+        {data.length === 0 ? (
+          <EmptyState
+            icon={Folder}
+            title="还没有导航分类"
+            description="添加一个分类后，就可以开始整理常用工具链接。"
+            action={(
+              <EditorButton
+                onClick={() => setShowAddCategory(true)}
+                variant="accent"
+              >
+                <Plus className="h-4 w-4" />
+                添加分类
+              </EditorButton>
+            )}
+          />
+        ) : (
+          <div className="space-y-8">
           {data.map((category, categoryIndex) => (
-            <div key={categoryIndex} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-              {/* 分类头部 */}
-              <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <EditorPanel key={categoryIndex} className="overflow-hidden">
+              <div className="flex flex-col gap-3 border-b border-border bg-background/70 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                 {editingCategory === categoryIndex ? (
                   <div className="flex items-center gap-4 flex-1">
                     <input
@@ -279,75 +292,84 @@ export default function NavigationEditorPage() {
                       defaultValue={category.name}
                       onBlur={(e) => {
                         updateCategory(categoryIndex, { name: e.target.value });
+                        setMessage({ tone: 'success', text: '分类名称已更新。' });
                         setEditingCategory(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           updateCategory(categoryIndex, { name: e.currentTarget.value });
+                          setMessage({ tone: 'success', text: '分类名称已更新。' });
                           setEditingCategory(null);
                         }
                       }}
-                      className="px-3 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={editorInputClassName}
                       autoFocus
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3">
-                    <Folder className="w-5 h-5 text-blue-500" />
-                    <h2 className="text-lg font-medium text-gray-900">{category.name}</h2>
-                    <span className="text-sm text-gray-400">({category.tools.length})</span>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Folder className="h-5 w-5 shrink-0 text-accent" />
+                    <h2 className="min-w-0 text-lg font-medium text-fg">{category.name}</h2>
+                    <span className="text-sm text-subtle">({category.tools.length})</span>
                   </div>
                 )}
 
-                <div className="flex items-center gap-1">
+                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                  <div className="flex items-center gap-1">
                   <button
                     onClick={() => setEditingCategory(categoryIndex)}
-                    className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                    className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
                     aria-label={`编辑分类：${category.name}`}
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => deleteCategory(categoryIndex)}
-                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={() => {
+                      const deleted = deleteCategory(categoryIndex);
+                      setMessage(deleted
+                        ? { tone: 'success', text: '分类已删除。' }
+                        : { tone: 'danger', text: '分类删除失败。' });
+                    }}
+                    className="rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600"
                     aria-label={`删除分类：${category.name}`}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
-                  <button
+                  </div>
+                  <EditorButton
                     onClick={() => setShowAddTool(categoryIndex)}
-                    className="ml-2 flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                    className="min-h-8 whitespace-nowrap px-3 py-1.5"
+                    variant="accent"
                   >
                     <Plus className="w-3 h-3" />
                     添加工具
-                  </button>
+                  </EditorButton>
                 </div>
               </div>
 
-              {/* 添加工具表单 */}
               {showAddTool === categoryIndex && (
-                <div className="p-4 border-b border-gray-200 bg-blue-50/50">
+                <div className="border-b border-border bg-accent-50/60 p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input
                       type="text"
                       placeholder="工具名称 *"
                       value={toolForm.title}
                       onChange={(e) => setToolForm({ ...toolForm, title: e.target.value })}
-                      className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={editorInputClassName}
                     />
                     <input
                       type="text"
                       placeholder="URL *"
                       value={toolForm.url}
                       onChange={(e) => setToolForm({ ...toolForm, url: e.target.value })}
-                      className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={editorInputClassName}
                     />
                     <input
                       type="text"
                       placeholder="描述"
                       value={toolForm.description}
                       onChange={(e) => setToolForm({ ...toolForm, description: e.target.value })}
-                      className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={editorInputClassName}
                     />
                     <input
                       type="text"
@@ -359,58 +381,63 @@ export default function NavigationEditorPage() {
                           tags: normalizeTagsInput(e.target.value),
                         })
                       }
-                      className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={editorInputClassName}
                     />
                   </div>
                   {toolFormError ? (
-                    <p className="mt-3 text-sm text-red-500">{toolFormError}</p>
+                    <p className="mt-3 text-sm text-error-600">{toolFormError}</p>
                   ) : null}
                   <div className="mt-4 flex gap-2">
-                    <button
+                    <EditorButton
                       onClick={() => handleAddTool(categoryIndex)}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+                      variant="primary"
                     >
                       确认添加
-                    </button>
-                    <button
+                    </EditorButton>
+                    <EditorButton
                       onClick={() => setShowAddTool(null)}
-                      className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                      variant="ghost"
                     >
                       取消
-                    </button>
+                    </EditorButton>
                   </div>
                 </div>
               )}
 
-              {/* 工具列表 */}
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-border-soft">
                 {category.tools.map((tool, toolIndex) => (
                   <ToolItem
                     key={toolIndex}
                     tool={tool}
                     onEdit={() => setEditingTool({ categoryIndex, toolIndex })}
-                    onDelete={() => deleteTool(categoryIndex, toolIndex)}
+                    onDelete={() => {
+                      const deleted = deleteTool(categoryIndex, toolIndex);
+                      setMessage(deleted
+                        ? { tone: 'success', text: '工具链接已删除。' }
+                        : { tone: 'danger', text: '工具链接删除失败。' });
+                    }}
                     isEditing={
                       editingTool?.categoryIndex === categoryIndex &&
                       editingTool?.toolIndex === toolIndex
                     }
                     onSave={(updates) => {
                       updateTool(categoryIndex, toolIndex, updates);
+                      setMessage({ tone: 'success', text: '工具链接已更新。' });
                       setEditingTool(null);
                     }}
                     onCancel={() => setEditingTool(null)}
                   />
                 ))}
               </div>
-            </div>
+            </EditorPanel>
           ))}
-        </div>
-      </main>
-    </div>
+          </div>
+        )}
+      </EditorMain>
+    </EditorPage>
   );
 }
 
-// 工具项组件
 interface ToolItemProps {
   tool: Tool;
   onEdit: () => void;
@@ -446,68 +473,70 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
 
   if (isEditing) {
     return (
-      <div className="p-4 bg-blue-50/50">
+      <div className="bg-accent-50/60 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <input
             type="text"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={editorInputClassName}
           />
           <input
             type="text"
             value={form.url}
             onChange={(e) => setForm({ ...form, url: e.target.value })}
-            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={editorInputClassName}
           />
           <input
             type="text"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={editorInputClassName}
           />
           <input
             type="text"
             value={form.tags.join(', ')}
             onChange={(e) => setForm({ ...form, tags: normalizeTagsInput(e.target.value) })}
-            className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={editorInputClassName}
           />
         </div>
         {errorMessage ? (
-          <p className="mt-3 text-sm text-red-500">{errorMessage}</p>
+          <p className="mt-3 text-sm text-error-600">{errorMessage}</p>
         ) : null}
         <div className="mt-4 flex gap-2">
-          <button
+          <EditorButton
             onClick={handleSave}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+            className="min-h-8 px-3 py-1.5"
+            variant="primary"
           >
             <Check className="w-3 h-3" />
             保存
-          </button>
-          <button
+          </EditorButton>
+          <EditorButton
             onClick={onCancel}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="min-h-8 px-3 py-1.5"
+            variant="ghost"
           >
             <X className="w-3 h-3" />
             取消
-          </button>
+          </EditorButton>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-between px-6 py-3 hover:bg-gray-50 transition-colors group">
+    <div className="group flex items-center justify-between px-6 py-3 transition-colors hover:bg-background/70">
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Link2 className="w-4 h-4 text-gray-400" />
+        <Link2 className="w-4 h-4 text-subtle" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-gray-900 truncate">{tool.title}</span>
+            <span className="font-medium text-fg truncate">{tool.title}</span>
             {tool.tags.length > 0 && (
-              <span className="text-xs text-gray-400">({tool.tags.join(', ')})</span>
+              <span className="text-xs text-subtle">({tool.tags.join(', ')})</span>
             )}
           </div>
-          <div className="text-sm text-gray-500 truncate">{tool.description || tool.url}</div>
+          <div className="text-sm text-muted truncate">{tool.description || tool.url}</div>
         </div>
       </div>
       <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -515,21 +544,21 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
           href={tool.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+          className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
           aria-label={`打开工具：${tool.title}`}
         >
           <Link2 className="w-4 h-4" />
         </a>
         <button
           onClick={onEdit}
-          className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+          className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
           aria-label={`编辑工具：${tool.title}`}
         >
           <Edit2 className="w-4 h-4" />
         </button>
         <button
           onClick={onDelete}
-          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+          className="rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600"
           aria-label={`删除工具：${tool.title}`}
         >
           <Trash2 className="w-4 h-4" />
