@@ -25,6 +25,7 @@ type SettingsMessage = {
 type SettingsResponse = {
     persistent?: boolean;
     settings?: SiteSettings;
+    revision?: string | null;
     message?: string;
 };
 
@@ -107,6 +108,7 @@ function trimSettings(settings: SiteSettings): SiteSettings {
 export default function EditorSettingsPage() {
     const [settings, setSettings] = useState<SiteSettings>(createDefaultSiteSettings);
     const [persistent, setPersistent] = useState(false);
+    const [revision, setRevision] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<SettingsMessage | null>(null);
@@ -129,6 +131,7 @@ export default function EditorSettingsPage() {
                 if (isMounted) {
                     setSettings(payload?.settings ?? createDefaultSiteSettings());
                     setPersistent(Boolean(payload?.persistent));
+                    setRevision(typeof payload?.revision === 'string' ? payload.revision : null);
                 }
             } catch (error) {
                 console.error('Failed to load site settings:', error);
@@ -181,15 +184,22 @@ export default function EditorSettingsPage() {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ settings: nextSettings }),
+                    body: JSON.stringify({ settings: nextSettings, revision }),
                 });
                 const payload = (await response.json().catch(() => null)) as SettingsResponse | null;
+
+                if (response.status === 409 && payload?.settings) {
+                    setSettings(payload.settings);
+                    setRevision(typeof payload.revision === 'string' ? payload.revision : null);
+                    throw new Error(payload.message || '站点设置已被其他会话更新，请确认后再保存。');
+                }
 
                 if (!response.ok) {
                     throw new Error(payload?.message || '站点设置保存失败。');
                 }
 
                 setSettings(payload?.settings ?? nextSettings);
+                setRevision(typeof payload?.revision === 'string' ? payload.revision : revision);
                 setMessage({ tone: 'success', text: '站点设置已保存，刷新公开页面后生效。' });
             } catch (error) {
                 console.error('Failed to save site settings:', error);
@@ -201,7 +211,7 @@ export default function EditorSettingsPage() {
                 setIsSaving(false);
             }
         },
-        [settings]
+        [revision, settings]
     );
 
     return (

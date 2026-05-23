@@ -4,9 +4,11 @@ import { isRecord, parseArticlesData } from '@/lib/article-data';
 import {
     getEditorDataRoot,
     isEditorDataRootConfigured,
+    readEditorDataManifest,
     readArticlesFromDisk,
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
+    type EditorDataManifest,
     writeArticlesToDisk,
     writeNavigationToDisk,
     writeSiteSettingsToDisk,
@@ -34,6 +36,7 @@ export interface EditorBackupPayload {
     source: EditorBackupSource;
     persistent: boolean;
     dataRoot: string | null;
+    manifest?: EditorDataManifest;
     data: EditorBackupData;
 }
 
@@ -53,6 +56,7 @@ export function createEditorBackupPayload(
         source,
         persistent: isEditorDataRootConfigured(),
         dataRoot: getEditorDataRoot(),
+        manifest: isEditorDataRootConfigured() ? readEditorDataManifest() : undefined,
         data,
     };
 }

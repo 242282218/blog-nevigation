@@ -50,10 +50,16 @@ navigation. Missing settings restore to defaults.
 
 ## Later Phases
 
-- Add `data/manifest.json` with schema version, content hash, and last backup
-  time.
-- Add optimistic write checks for editor saves to reduce multi-tab overwrite
-  risk.
+- Extend `data/manifest.json` with backup timestamps and optional integrity
+  checks for copied data directories.
 - Split deployment docs into server, migration, and Cloudflare R2 guides.
 - Introduce a storage provider interface before any Cloudflare Workers/D1/R2
   native migration.
+
+## Implemented Follow-up
+
+The server now writes `manifest.json` beside the runtime data. It tracks a
+revision, hash, and update time for articles, navigation, and settings. Editor
+GET responses include the current resource revision; PUT requests can include
+that revision and receive `409` when another session has updated the same
+resource first.

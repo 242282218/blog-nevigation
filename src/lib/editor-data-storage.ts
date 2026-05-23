@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { Article } from '@/app/types/article';
 import type { Category } from '@/app/types/navigation';
 import { filterArticlesData } from '@/lib/article-data';
@@ -13,6 +14,22 @@ import {
 const ARTICLES_FILE_NAME = 'articles.json';
 const NAVIGATION_FILE_NAME = 'tools.json';
 const SETTINGS_FILE_NAME = 'site.json';
+const MANIFEST_FILE_NAME = 'manifest.json';
+const MANIFEST_VERSION = 1;
+
+export type EditorDataResourceName = 'articles' | 'navigation' | 'settings';
+
+export interface EditorDataResourceManifest {
+    revision: string;
+    hash: string;
+    updatedAt: string;
+}
+
+export interface EditorDataManifest {
+    version: typeof MANIFEST_VERSION;
+    updatedAt: string;
+    resources: Partial<Record<EditorDataResourceName, EditorDataResourceManifest>>;
+}
 
 export class EditorDataRootNotConfiguredError extends Error {
     constructor() {
@@ -55,6 +72,75 @@ function writeJsonFile(filePath: string | null, value: unknown): void {
     }
 }
 
+function hashJson(value: unknown): string {
+    return createHash('sha256')
+        .update(JSON.stringify(value))
+        .digest('hex');
+}
+
+function createResourceManifest(value: unknown): EditorDataResourceManifest {
+    const hash = hashJson(value);
+    const updatedAt = new Date().toISOString();
+
+    return {
+        revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
+        hash,
+        updatedAt,
+    };
+}
+
+function isResourceManifest(value: unknown): value is EditorDataResourceManifest {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+
+    const candidate = value as Partial<EditorDataResourceManifest>;
+
+    return (
+        typeof candidate.revision === 'string' &&
+        typeof candidate.hash === 'string' &&
+        typeof candidate.updatedAt === 'string'
+    );
+}
+
+function parseManifest(value: unknown): EditorDataManifest | null {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const candidate = value as Partial<EditorDataManifest>;
+
+    if (candidate.version !== MANIFEST_VERSION || !candidate.resources) {
+        return null;
+    }
+
+    const resources: EditorDataManifest['resources'] = {};
+
+    for (const resource of ['articles', 'navigation', 'settings'] as const) {
+        const manifest = candidate.resources[resource];
+
+        if (isResourceManifest(manifest)) {
+            resources[resource] = manifest;
+        }
+    }
+
+    return {
+        version: MANIFEST_VERSION,
+        updatedAt: typeof candidate.updatedAt === 'string'
+            ? candidate.updatedAt
+            : new Date().toISOString(),
+        resources,
+    };
+}
+
+function createEmptyManifest(): EditorDataManifest {
+    return {
+        version: MANIFEST_VERSION,
+        updatedAt: new Date().toISOString(),
+        resources: {},
+    };
+}
+
 export function getEditorDataRoot(): string | null {
     const configured = process.env.BLOG_DATA_ROOT?.trim();
     return configured && configured.length > 0 ? configured : null;
@@ -79,6 +165,56 @@ export function getSiteSettingsDataFilePath(): string | null {
     return root ? path.join(root, 'settings', SETTINGS_FILE_NAME) : null;
 }
 
+export function getEditorDataManifestFilePath(): string | null {
+    const root = getEditorDataRoot();
+    return root ? path.join(root, MANIFEST_FILE_NAME) : null;
+}
+
+export function readEditorDataManifest(): EditorDataManifest {
+    return parseManifest(readJsonFile(getEditorDataManifestFilePath())) ?? createEmptyManifest();
+}
+
+export function writeEditorDataManifest(manifest: EditorDataManifest): void {
+    writeJsonFile(getEditorDataManifestFilePath(), manifest);
+}
+
+export function touchEditorDataResourceManifest(
+    resource: EditorDataResourceName,
+    value: unknown
+): EditorDataResourceManifest {
+    const manifest = readEditorDataManifest();
+    const resourceManifest = createResourceManifest(value);
+    const nextManifest: EditorDataManifest = {
+        version: MANIFEST_VERSION,
+        updatedAt: resourceManifest.updatedAt,
+        resources: {
+            ...manifest.resources,
+            [resource]: resourceManifest,
+        },
+    };
+
+    writeEditorDataManifest(nextManifest);
+    return resourceManifest;
+}
+
+export function getEditorDataResourceManifest(
+    resource: EditorDataResourceName,
+    value: unknown
+): EditorDataResourceManifest | null {
+    if (!isEditorDataRootConfigured()) {
+        return null;
+    }
+
+    const manifest = readEditorDataManifest();
+    const resourceManifest = manifest.resources[resource];
+
+    if (resourceManifest) {
+        return resourceManifest;
+    }
+
+    return touchEditorDataResourceManifest(resource, value);
+}
+
 export function getDefaultNavigationSeedFilePath(): string {
     return path.join(
         process.cwd(),
@@ -96,8 +232,9 @@ export function readArticlesFromDisk(): Article[] {
     return filterArticlesData(raw);
 }
 
-export function writeArticlesToDisk(articles: Article[]): void {
+export function writeArticlesToDisk(articles: Article[]): EditorDataResourceManifest {
     writeJsonFile(getArticlesDataFilePath(), articles);
+    return touchEditorDataResourceManifest('articles', articles);
 }
 
 export function readNavigationFromDisk(): Category[] {
@@ -123,8 +260,9 @@ export function readNavigationFromDisk(): Category[] {
     return seedParsed;
 }
 
-export function writeNavigationToDisk(categories: Category[]): void {
+export function writeNavigationToDisk(categories: Category[]): EditorDataResourceManifest {
     writeJsonFile(getNavigationDataFilePath(), categories);
+    return touchEditorDataResourceManifest('navigation', categories);
 }
 
 export function readSiteSettingsFromDisk(): SiteSettings {
@@ -133,6 +271,7 @@ export function readSiteSettingsFromDisk(): SiteSettings {
     return parsed ?? createDefaultSiteSettings();
 }
 
-export function writeSiteSettingsToDisk(settings: SiteSettings): void {
+export function writeSiteSettingsToDisk(settings: SiteSettings): EditorDataResourceManifest {
     writeJsonFile(getSiteSettingsDataFilePath(), settings);
+    return touchEditorDataResourceManifest('settings', settings);
 }

@@ -46,7 +46,7 @@ function saveArticlesToStorage(articles: Article[]): void {
   }
 }
 
-async function loadArticlesFromServer(): Promise<Article[] | null> {
+async function loadArticlesFromServer() {
   try {
     const response = await fetch(ARTICLES_API_PATH, {
       method: 'GET',
@@ -58,15 +58,22 @@ async function loadArticlesFromServer(): Promise<Article[] | null> {
       return null;
     }
 
-    const payload = (await response.json()) as { articles?: unknown };
-    return filterArticlesData(payload.articles);
+    const payload = (await response.json()) as { articles?: unknown; revision?: unknown };
+
+    return {
+      data: filterArticlesData(payload.articles),
+      revision: typeof payload.revision === 'string' ? payload.revision : null,
+    };
   } catch (error) {
     console.error('Failed to load articles from server:', error);
     return null;
   }
 }
 
-async function saveArticlesToServer(articles: Article[]): Promise<void> {
+async function saveArticlesToServer(
+  articles: Article[],
+  context: { revision: string | null }
+) {
   try {
     const response = await fetch(ARTICLES_API_PATH, {
       method: 'PUT',
@@ -74,8 +81,21 @@ async function saveArticlesToServer(articles: Article[]): Promise<void> {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ articles }),
+      body: JSON.stringify({ articles, revision: context.revision }),
     });
+
+    const payload = (await response.json().catch(() => null)) as {
+      articles?: unknown;
+      revision?: unknown;
+    } | null;
+
+    if (response.status === 409) {
+      return {
+        conflict: true as const,
+        data: filterArticlesData(payload?.articles),
+        revision: typeof payload?.revision === 'string' ? payload.revision : null,
+      };
+    }
 
     if (!response.ok) {
       if (response.status === 503) {
@@ -84,6 +104,10 @@ async function saveArticlesToServer(articles: Article[]): Promise<void> {
 
       console.error('Failed to persist articles to server:', response.status);
     }
+
+    return {
+      revision: typeof payload?.revision === 'string' ? payload.revision : context.revision,
+    };
   } catch (error) {
     console.error('Failed to persist articles to server:', error);
   }

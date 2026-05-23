@@ -71,6 +71,23 @@ describe('runtime data migration scripts', () => {
       expect.objectContaining({
         version: 1,
         source: 'local',
+        manifest: expect.objectContaining({
+          version: 1,
+          resources: expect.objectContaining({
+            articles: expect.objectContaining({
+              revision: expect.any(String),
+              hash: expect.any(String),
+            }),
+            navigation: expect.objectContaining({
+              revision: expect.any(String),
+              hash: expect.any(String),
+            }),
+            settings: expect.objectContaining({
+              revision: expect.any(String),
+              hash: expect.any(String),
+            }),
+          }),
+        }),
         data: {
           articles: [
             expect.objectContaining({
@@ -98,5 +115,15 @@ describe('runtime data migration scripts', () => {
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'))).toEqual(
+      expect.objectContaining({
+        version: 1,
+        resources: expect.objectContaining({
+          articles: expect.objectContaining({
+            revision: expect.any(String),
+          }),
+        }),
+      })
+    );
   });
 });

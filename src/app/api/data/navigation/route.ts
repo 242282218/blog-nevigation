@@ -4,6 +4,7 @@ import {
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
+    getEditorDataResourceManifest,
     isEditorDataRootConfigured,
     readNavigationFromDisk,
     writeNavigationToDisk,
@@ -13,6 +14,7 @@ import { parseNavigationData } from '@/lib/navigation-data';
 
 type NavigationRequestBody = {
     categories?: unknown;
+    revision?: unknown;
 };
 
 export async function GET(request: NextRequest) {
@@ -22,9 +24,13 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
+    const categories = readNavigationFromDisk();
+    const resourceManifest = getEditorDataResourceManifest('navigation', categories);
+
     return NextResponse.json({
         persistent: isEditorDataRootConfigured(),
-        categories: readNavigationFromDisk(),
+        revision: resourceManifest?.revision ?? null,
+        categories,
     });
 }
 
@@ -51,13 +57,29 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    writeNavigationToDisk(parsed);
+    const currentCategories = readNavigationFromDisk();
+    const currentManifest = getEditorDataResourceManifest('navigation', currentCategories);
+    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
+
+    if (expectedRevision && currentManifest?.revision !== expectedRevision) {
+        return NextResponse.json(
+            {
+                message: '导航数据已被其他会话更新，请刷新后重试。',
+                revision: currentManifest?.revision ?? null,
+                categories: currentCategories,
+            },
+            { status: 409 }
+        );
+    }
+
+    const resourceManifest = writeNavigationToDisk(parsed);
     const remoteBackup = await syncCurrentBackupToRemote({
         reason: 'navigation-write',
     });
 
     return NextResponse.json({
         success: true,
+        revision: resourceManifest.revision,
         remoteBackup,
     });
 }

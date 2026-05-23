@@ -109,6 +109,7 @@ npm run data:import -- ./output/blog-navigation-backup.json ./data
 ```
 
 备份包包含文章、导航和站点设置；旧备份缺少站点设置时会使用默认设置恢复。
+导入后会生成 `data/manifest.json`，用于记录文章、导航和站点设置的修订号与内容哈希。
 
 ## 常用命令
 

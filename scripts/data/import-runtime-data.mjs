@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
+const MANIFEST_VERSION = 1;
 const DEFAULT_SITE_SETTINGS = {
   siteName: '个人技术博客导航',
   siteDescription: '个人技术文章、常用链接和知识入口',
@@ -41,6 +43,39 @@ function normalizeIdSuffix(value) {
 function createArticleSlug(article) {
   const base = normalizeSlugPart(article.title) || 'article';
   return `${base}-${normalizeIdSuffix(article.id)}`;
+}
+
+function hashJson(value) {
+  return createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex');
+}
+
+function createResourceManifest(value) {
+  const hash = hashJson(value);
+  const updatedAt = new Date().toISOString();
+
+  return {
+    revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
+    hash,
+    updatedAt,
+  };
+}
+
+function createManifest(data) {
+  const articles = createResourceManifest(data.articles);
+  const navigation = createResourceManifest(data.navigation);
+  const settings = createResourceManifest(data.settings);
+
+  return {
+    version: MANIFEST_VERSION,
+    updatedAt: settings.updatedAt,
+    resources: {
+      articles,
+      navigation,
+      settings,
+    },
+  };
 }
 
 function normalizeArticleSlug(value) {
@@ -116,10 +151,12 @@ const backupFile = path.resolve(backupFileArg);
 const dataRoot = resolveDataRoot(dataRootArg);
 const payload = JSON.parse(fs.readFileSync(backupFile, 'utf8'));
 const data = parseBackupData(payload);
+const manifest = createManifest(data);
 
 writeJsonAtomically(path.join(dataRoot, 'articles', 'articles.json'), data.articles);
 writeJsonAtomically(path.join(dataRoot, 'navigation', 'tools.json'), data.navigation);
 writeJsonAtomically(path.join(dataRoot, 'settings', 'site.json'), data.settings);
+writeJsonAtomically(path.join(dataRoot, 'manifest.json'), manifest);
 
 console.log(JSON.stringify({
   dataRoot,
@@ -127,4 +164,5 @@ console.log(JSON.stringify({
   articles: data.articles.length,
   categories: data.navigation.length,
   settings: true,
+  manifest: true,
 }, null, 2));

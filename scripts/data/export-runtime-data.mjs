@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const BACKUP_VERSION = 1;
+const MANIFEST_VERSION = 1;
 const DEFAULT_SITE_SETTINGS = {
   siteName: '个人技术博客导航',
   siteDescription: '个人技术文章、常用链接和知识入口',
@@ -57,6 +59,39 @@ function normalizeIdSuffix(value) {
 function createArticleSlug(article) {
   const base = normalizeSlugPart(article.title) || 'article';
   return `${base}-${normalizeIdSuffix(article.id)}`;
+}
+
+function hashJson(value) {
+  return createHash('sha256')
+    .update(JSON.stringify(value))
+    .digest('hex');
+}
+
+function createResourceManifest(value) {
+  const hash = hashJson(value);
+  const updatedAt = new Date().toISOString();
+
+  return {
+    revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
+    hash,
+    updatedAt,
+  };
+}
+
+function createManifest(data) {
+  const articles = createResourceManifest(data.articles);
+  const navigation = createResourceManifest(data.navigation);
+  const settings = createResourceManifest(data.settings);
+
+  return {
+    version: MANIFEST_VERSION,
+    updatedAt: settings.updatedAt,
+    resources: {
+      articles,
+      navigation,
+      settings,
+    },
+  };
 }
 
 function normalizeArticleSlug(value) {
@@ -118,12 +153,14 @@ const settings = readJsonObject(
   path.join(dataRoot, 'settings', 'site.json'),
   DEFAULT_SITE_SETTINGS
 );
+const manifest = createManifest({ articles, navigation, settings });
 const payload = {
   version: BACKUP_VERSION,
   exportedAt: new Date().toISOString(),
   source: 'local',
   persistent: true,
   dataRoot,
+  manifest,
   data: {
     articles,
     navigation,
@@ -140,4 +177,5 @@ console.log(JSON.stringify({
   articles: articles.length,
   categories: navigation.length,
   settings: true,
+  manifest: true,
 }, null, 2));
