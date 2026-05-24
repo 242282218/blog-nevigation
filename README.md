@@ -152,3 +152,10 @@ npm run check
 npm run build
 npm run start
 ```
+
+本地或测试机已有服务运行时，可执行 UI 冒烟脚本：
+
+```bash
+BASE_URL=http://127.0.0.1:3000 npm run smoke:public
+BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=change-me npm run smoke:editor
+```

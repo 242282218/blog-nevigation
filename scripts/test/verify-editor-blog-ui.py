@@ -5,7 +5,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from editor_auth import create_authenticated_context
 
-BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:3210")
+BASE_URL = os.environ.get("BASE_URL") or os.environ.get("TEST_BASE_URL", "http://127.0.0.1:3210")
 SCREENSHOT_PATH = Path("output/editor-blog-ui.png")
 MOBILE_SCREENSHOT_PATH = Path("output/editor-blog-new-mobile-ui.png")
 DEBUG_HTML_PATH = Path("output/editor-blog-ui-debug.html")
@@ -31,12 +31,15 @@ def main() -> None:
         page.goto(f"{BASE_URL}/editor/blog", wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
 
-        if page.get_by_role("heading", name="博客管理").count() == 0:
+        blog_heading = page.get_by_role("heading", name="博客管理")
+
+        try:
+            expect(blog_heading).to_be_visible()
+        except AssertionError:
             DEBUG_HTML_PATH.write_text(page.content(), encoding="utf-8")
             page.screenshot(path=str(SCREENSHOT_PATH), full_page=True)
             raise AssertionError(f"Blog editor page did not render. Current URL: {page.url}")
 
-        expect(page.get_by_role("heading", name="博客管理")).to_be_visible()
         expect(page.get_by_role("heading", name="开始一篇新文章")).to_be_visible()
         page.get_by_role("button", name="模板库", exact=True).click()
         expect(page.get_by_text("排障复盘")).to_be_visible()

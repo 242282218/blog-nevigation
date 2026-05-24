@@ -49,6 +49,8 @@ Use the smallest secure path that preserves existing deployments:
   persistence, session rotation, logout revocation, and middleware Host trust.
 - Updated editor Playwright verification scripts to authenticate through
   `/api/editor-auth` instead of hand-built session cookies.
+- Added npm smoke entry points for public and editor Playwright verification
+  scripts so UI checks can be run consistently on local or test hosts.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.
@@ -94,6 +96,7 @@ must be verified by GitHub Actions after pushing this change.
 
 ## Follow-up Backlog
 
-- Consider adding a bounded Playwright smoke job in CI with screenshot artifacts.
+- Consider wiring `npm run smoke:public` into a bounded CI job with screenshot
+  artifacts once browser installation time is acceptable.
 - Revisit the remaining moderate Next/PostCSS audit item when Next publishes a
   version that no longer vendors the vulnerable PostCSS range.
