@@ -1,7 +1,6 @@
 export const EDITOR_SESSION_COOKIE = 'editor_session';
 export const EDITOR_SESSION_MAX_AGE = 60 * 60 * 8;
-
-const SESSION_NAMESPACE = 'blog-navigation-editor-session:v1';
+export const SESSION_NAMESPACE = 'blog-navigation-editor-session:v1';
 
 function getCryptoApi(): Crypto {
     if (!globalThis.crypto) {

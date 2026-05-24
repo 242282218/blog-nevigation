@@ -31,6 +31,7 @@ __mocks__
 
 *.md
 !README.md
+!content/seeds/posts/**/*.md
 
 docs
 design-system

@@ -2,7 +2,8 @@
 # 生产部署用 Docker Compose 文件
 # 使用说明：
 #   1. 将此文件复制到服务器部署目录（DEPLOY_PATH）
-#   2. 在同目录下创建 .env 文件，填写 EDITOR_ACCESS_TOKEN
+#   2. 在同目录下创建 .env 文件，配置 EDITOR_ACCESS_TOKEN
+#      或 EDITOR_RUNTIME_AUTH_SETUP_TOKEN
 #   3. GitHub Actions 会自动通过 SSH 使用此文件部署
 #
 # 注意：此文件使用 GHCR 远程镜像，不在服务器上构建
@@ -24,7 +25,10 @@ services:
       PORT: 3000
       BLOG_DATA_ROOT: /var/lib/blog-navigation
       NEXT_TELEMETRY_DISABLED: 1
-      EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
+      EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN:-}
+      EDITOR_AUTH_INTERNAL_ORIGIN: ${EDITOR_AUTH_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
+      EDITOR_RUNTIME_AUTH_SETUP_TOKEN: ${EDITOR_RUNTIME_AUTH_SETUP_TOKEN:-}
+      EDITOR_ALLOW_RUNTIME_AUTH_SETUP: ${EDITOR_ALLOW_RUNTIME_AUTH_SETUP:-false}
       # 无 HTTPS 时设为 false，允许 HTTP 下使用 session cookie
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # 可选：Cloudflare R2 远端备份

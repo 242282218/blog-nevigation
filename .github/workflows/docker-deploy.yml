@@ -48,7 +48,7 @@ jobs:
         run: npm run lint
 
       - name: Run type check
-        run: npx tsc --noEmit --incremental false --pretty false
+        run: npm run typecheck
 
       - name: Run tests
         run: npm run test:run

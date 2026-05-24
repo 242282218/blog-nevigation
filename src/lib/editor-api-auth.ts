@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     EDITOR_SESSION_COOKIE,
-    getEditorAccessToken,
-    isValidEditorSession,
 } from '@/lib/editor-auth';
+import {
+    isRuntimeEditorAuthConfigured,
+    isValidRuntimeEditorSession,
+} from '@/lib/editor-auth-runtime';
 
 export async function ensureEditorSession(request: NextRequest): Promise<NextResponse | null> {
-    if (!getEditorAccessToken()) {
+    if (!isRuntimeEditorAuthConfigured()) {
         return NextResponse.json(
             {
-                message: '未配置 EDITOR_ACCESS_TOKEN，编辑区已被锁定。',
+                message: '未初始化编辑口令，编辑区已被锁定。',
             },
             { status: 503 }
         );
@@ -17,7 +19,7 @@ export async function ensureEditorSession(request: NextRequest): Promise<NextRes
 
     const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
 
-    if (!(await isValidEditorSession(session))) {
+    if (!(await isValidRuntimeEditorSession(session))) {
         return NextResponse.json(
             {
                 message: '未授权访问编辑数据。',

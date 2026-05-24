@@ -1,6 +1,6 @@
 # 个人技术博客导航
 
-基于 Next.js 的个人技术博客和常用链接导航，包含受 `EDITOR_ACCESS_TOKEN` 保护的编辑器。
+基于 Next.js 的个人技术博客和常用链接导航，包含受服务端口令保护的编辑器。
 
 ## 本地开发
 
@@ -30,6 +30,7 @@ npm run dev
 
 - 不配置 `BLOG_DATA_ROOT` 时，站点使用种子数据运行，编辑器数据仅保存在当前浏览器，不会写入服务器磁盘。
 - Docker 部署已默认设置 `BLOG_DATA_ROOT=/var/lib/blog-navigation`。
+- 推荐用 `EDITOR_ACCESS_TOKEN` 固定编辑口令；如果不想把编辑口令放进 `.env`，可配置一次性 `EDITOR_RUNTIME_AUTH_SETUP_TOKEN` 后在 `/editor/login` 初始化运行时口令。
 
 ## 部署
 
@@ -82,7 +83,10 @@ docker compose -f compose.prod.yaml logs --tail=100 app
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `EDITOR_ACCESS_TOKEN` | 编辑器访问密码（必填） | — |
+| `EDITOR_ACCESS_TOKEN` | 编辑器访问口令；配置后优先使用环境变量认证 | — |
+| `EDITOR_RUNTIME_AUTH_SETUP_TOKEN` | 首次运行时初始化密钥；仅用于未配置 `EDITOR_ACCESS_TOKEN` 时初始化编辑口令 | — |
+| `EDITOR_ALLOW_RUNTIME_AUTH_SETUP` | 是否允许无初始化密钥的首次运行时初始化；生产环境不建议开启 | `false` |
+| `EDITOR_AUTH_INTERNAL_ORIGIN` | 生产 middleware 校验运行时会话时使用的可信内部地址 | Docker 默认 `http://127.0.0.1:3000` |
 | `APP_PORT` | 宿主机端口 | `3000` |
 | `COOKIE_SECURE` | HTTPS 下设为 `true` | `false` |
 | `R2_BACKUP_ENABLED` | 是否启用 Cloudflare R2 远端备份 | `false` |

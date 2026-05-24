@@ -34,6 +34,18 @@ docker compose -f compose.prod.yaml up -d
 
 Set `COOKIE_SECURE=true` after HTTPS is enabled.
 
+`EDITOR_ACCESS_TOKEN` is the simplest production authentication path. If you
+prefer to initialize the editor password from the login page, omit
+`EDITOR_ACCESS_TOKEN`, set `EDITOR_RUNTIME_AUTH_SETUP_TOKEN` to a one-time setup
+secret, start the container, then open `/editor/login` and enter that setup
+secret plus the new editor password. Do not enable
+`EDITOR_ALLOW_RUNTIME_AUTH_SETUP=true` on a public production host unless the
+host is otherwise isolated.
+
+Docker Compose sets `EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3000` by
+default so production middleware can verify runtime editor sessions without
+trusting the public request Host header.
+
 ## Update
 
 ```bash
@@ -63,7 +75,7 @@ data/
 ```
 
 `data/` is the migration boundary. It contains article data, navigation data,
-site settings, and `manifest.json`.
+site settings, editor runtime auth settings, and `manifest.json`.
 
 Run data verification from a source checkout, passing the production data path:
 

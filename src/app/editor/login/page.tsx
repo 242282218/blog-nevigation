@@ -3,9 +3,13 @@ import { redirect } from 'next/navigation';
 import {
     EDITOR_SESSION_COOKIE,
     getSafeEditorNextPath,
-    isEditorAuthConfigured,
-    isValidEditorSession,
 } from '@/lib/editor-auth';
+import {
+    isRuntimeEditorAuthConfigured,
+    isRuntimeEditorAuthSetupEnabled,
+    isRuntimeEditorAuthSetupTokenRequired,
+    isValidRuntimeEditorSession,
+} from '@/lib/editor-auth-runtime';
 import { EditorLoginForm } from './EditorLoginForm';
 
 interface EditorLoginPageProps {
@@ -20,13 +24,15 @@ export default async function EditorLoginPage({
     const nextPath = getSafeEditorNextPath(searchParams?.next);
     const session = cookies().get(EDITOR_SESSION_COOKIE)?.value;
 
-    if (await isValidEditorSession(session)) {
+    if (await isValidRuntimeEditorSession(session)) {
         redirect(nextPath);
     }
 
     return (
         <EditorLoginForm
-            authConfigured={isEditorAuthConfigured()}
+            authConfigured={isRuntimeEditorAuthConfigured()}
+            setupEnabled={isRuntimeEditorAuthSetupEnabled()}
+            setupTokenRequired={isRuntimeEditorAuthSetupTokenRequired()}
             nextPath={nextPath}
         />
     );

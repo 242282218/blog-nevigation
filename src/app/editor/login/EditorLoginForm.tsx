@@ -1,9 +1,10 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Lock, LogIn } from 'lucide-react';
+import { KeyRound, Lock, LogIn, Terminal } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import {
     EditorButton,
@@ -14,17 +15,50 @@ import {
 
 interface EditorLoginFormProps {
     authConfigured: boolean;
+    setupEnabled: boolean;
+    setupTokenRequired: boolean;
     nextPath: string;
+}
+
+function EditorInitializationGuide() {
+    return (
+        <section
+            className="rounded-token-card border border-border bg-warm-50 p-4"
+            aria-labelledby="editor-initialization-title"
+        >
+            <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-token-card bg-warm-100 text-muted">
+                    <Terminal className="h-4 w-4" />
+                </div>
+                <div>
+                    <h2 id="editor-initialization-title" className="text-sm font-semibold text-fg">
+                        初次使用初始化引导
+                    </h2>
+                    <p className="mt-1 text-sm leading-6 text-muted">
+                        设置成功后会写入服务器运行时配置文件，并立即创建登录会话。
+                        之后回到本页输入这次设置的口令即可进入编辑区。
+                    </p>
+                </div>
+            </div>
+        </section>
+    );
 }
 
 export function EditorLoginForm({
     authConfigured,
+    setupEnabled,
+    setupTokenRequired,
     nextPath,
 }: EditorLoginFormProps) {
     const router = useRouter();
     const [secret, setSecret] = useState('');
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [setupSecret, setSetupSecret] = useState('');
+    const [setupConfirmSecret, setSetupConfirmSecret] = useState('');
+    const [setupToken, setSetupToken] = useState('');
+    const [setupErrorMessage, setSetupErrorMessage] = useState<string | null>(null);
+    const [isInitializing, setIsInitializing] = useState(false);
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -61,6 +95,58 @@ export function EditorLoginForm({
         }
     };
 
+    const handleInitialize = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+
+        const normalizedSecret = setupSecret.trim();
+
+        if (normalizedSecret.length < 8) {
+            setSetupErrorMessage('编辑口令至少需要 8 个字符。');
+            return;
+        }
+
+        if (normalizedSecret !== setupConfirmSecret.trim()) {
+            setSetupErrorMessage('两次输入的编辑口令不一致。');
+            return;
+        }
+
+        if (setupTokenRequired && !setupToken.trim()) {
+            setSetupErrorMessage('请输入初始化密钥。');
+            return;
+        }
+
+        setIsInitializing(true);
+        setSetupErrorMessage(null);
+
+        try {
+            const response = await fetch('/api/editor-auth', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    secret: normalizedSecret,
+                    confirmSecret: setupConfirmSecret.trim(),
+                    setupToken: setupToken.trim(),
+                }),
+            });
+
+            if (!response.ok) {
+                const payload = await response.json().catch(() => null);
+                throw new Error(payload?.message ?? '初始化失败，请稍后重试。');
+            }
+
+            router.replace(nextPath);
+            router.refresh();
+        } catch (error) {
+            setSetupErrorMessage(
+                error instanceof Error ? error.message : '初始化失败，请稍后重试。'
+            );
+        } finally {
+            setIsInitializing(false);
+        }
+    };
+
     return (
         <EditorPage className="flex items-center justify-center px-4 py-8">
             <EditorPanel className="w-full max-w-md p-6 sm:p-8">
@@ -76,47 +162,137 @@ export function EditorLoginForm({
                     </div>
                 </div>
 
-                <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
-                    <div>
-                        <label htmlFor="editor-login-secret" className="mb-2 block text-sm font-medium text-fg">
-                            编辑口令
-                        </label>
-                        <input
-                            id="editor-login-secret"
-                            type="password"
-                            value={secret}
-                            onChange={(event) => setSecret(event.target.value)}
-                            disabled={!authConfigured || isSubmitting}
-                            autoComplete="current-password"
-                            aria-describedby={errorMessage ? 'editor-login-error' : undefined}
-                            aria-invalid={Boolean(errorMessage)}
-                            className={`${editorInputClassName} px-4 py-3`}
-                            placeholder="输入 EDITOR_ACCESS_TOKEN"
-                        />
-                    </div>
+                {authConfigured ? (
+                    <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+                        <div>
+                            <label htmlFor="editor-login-secret" className="mb-2 block text-sm font-medium text-fg">
+                                编辑口令
+                            </label>
+                            <input
+                                id="editor-login-secret"
+                                type="password"
+                                value={secret}
+                                onChange={(event) => setSecret(event.target.value)}
+                                disabled={isSubmitting}
+                                autoComplete="current-password"
+                                aria-describedby={errorMessage ? 'editor-login-error' : undefined}
+                                aria-invalid={Boolean(errorMessage)}
+                                className={`${editorInputClassName} px-4 py-3`}
+                                placeholder="输入编辑口令"
+                            />
+                        </div>
 
-                    {!authConfigured && (
+                        {errorMessage && (
+                            <StatusMessage id="editor-login-error" tone="danger">
+                                {errorMessage}
+                            </StatusMessage>
+                        )}
+
+                        <EditorButton
+                            type="submit"
+                            disabled={isSubmitting || !secret.trim()}
+                            className="w-full py-3"
+                            variant="primary"
+                        >
+                            <LogIn className="h-4 w-4" />
+                            <span>{isSubmitting ? '登录中...' : '进入编辑区'}</span>
+                        </EditorButton>
+                    </form>
+                ) : setupEnabled ? (
+                    <form className="mt-8 space-y-4" onSubmit={handleInitialize}>
                         <StatusMessage tone="warning">
-                            当前环境未配置 `EDITOR_ACCESS_TOKEN`，因此编辑区登录已禁用。
+                            当前还没有初始化编辑口令。请在这里设置一个新口令，完成后会自动进入编辑区。
                         </StatusMessage>
-                    )}
+                        <EditorInitializationGuide />
 
-                    {errorMessage && (
-                        <StatusMessage id="editor-login-error" tone="danger">
-                            {errorMessage}
+                        {setupTokenRequired ? (
+                            <div>
+                                <label htmlFor="editor-setup-token" className="mb-2 block text-sm font-medium text-fg">
+                                    初始化密钥
+                                </label>
+                                <input
+                                    id="editor-setup-token"
+                                    type="password"
+                                    value={setupToken}
+                                    onChange={(event) => setSetupToken(event.target.value)}
+                                    disabled={isInitializing}
+                                    autoComplete="one-time-code"
+                                    className={`${editorInputClassName} px-4 py-3`}
+                                    placeholder="输入服务器配置的初始化密钥"
+                                />
+                            </div>
+                        ) : null}
+
+                        <div>
+                            <label htmlFor="editor-setup-secret" className="mb-2 block text-sm font-medium text-fg">
+                                设置编辑口令
+                            </label>
+                            <input
+                                id="editor-setup-secret"
+                                type="password"
+                                value={setupSecret}
+                                onChange={(event) => setSetupSecret(event.target.value)}
+                                disabled={isInitializing}
+                                autoComplete="new-password"
+                                className={`${editorInputClassName} px-4 py-3`}
+                                placeholder="至少 8 个字符"
+                            />
+                        </div>
+
+                        <div>
+                            <label htmlFor="editor-setup-confirm-secret" className="mb-2 block text-sm font-medium text-fg">
+                                确认编辑口令
+                            </label>
+                            <input
+                                id="editor-setup-confirm-secret"
+                                type="password"
+                                value={setupConfirmSecret}
+                                onChange={(event) => setSetupConfirmSecret(event.target.value)}
+                                disabled={isInitializing}
+                                autoComplete="new-password"
+                                aria-describedby={setupErrorMessage ? 'editor-setup-error' : undefined}
+                                aria-invalid={Boolean(setupErrorMessage)}
+                                className={`${editorInputClassName} px-4 py-3`}
+                                placeholder="再次输入编辑口令"
+                            />
+                        </div>
+
+                        {setupErrorMessage && (
+                            <StatusMessage id="editor-setup-error" tone="danger">
+                                {setupErrorMessage}
+                            </StatusMessage>
+                        )}
+
+                        <EditorButton
+                            type="submit"
+                            disabled={
+                                isInitializing ||
+                                !setupSecret.trim() ||
+                                !setupConfirmSecret.trim() ||
+                                (setupTokenRequired && !setupToken.trim())
+                            }
+                            className="w-full py-3"
+                            variant="primary"
+                        >
+                            <KeyRound className="h-4 w-4" />
+                            <span>{isInitializing ? '初始化中...' : '初始化并进入编辑区'}</span>
+                        </EditorButton>
+                    </form>
+                ) : (
+                    <div className="mt-8 space-y-4">
+                        <StatusMessage tone="danger">
+                            编辑口令尚未初始化，且服务器未开启首次初始化。请先在服务器设置
+                            <code className="mx-1 rounded border border-border-soft bg-surface px-1 py-0.5 font-mono text-xs">
+                                EDITOR_RUNTIME_AUTH_SETUP_TOKEN
+                            </code>
+                            或配置
+                            <code className="mx-1 rounded border border-border-soft bg-surface px-1 py-0.5 font-mono text-xs">
+                                EDITOR_ACCESS_TOKEN
+                            </code>
+                            。
                         </StatusMessage>
-                    )}
-
-                    <EditorButton
-                        type="submit"
-                        disabled={!authConfigured || isSubmitting || !secret.trim()}
-                        className="w-full py-3"
-                        variant="primary"
-                    >
-                        <LogIn className="h-4 w-4" />
-                        <span>{isSubmitting ? '登录中...' : '进入编辑区'}</span>
-                    </EditorButton>
-                </form>
+                    </div>
+                )}
 
                 <div className="mt-6 text-sm text-muted">
                     <Link href="/" className="text-fg underline underline-offset-4">

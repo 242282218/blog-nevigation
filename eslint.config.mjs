@@ -75,10 +75,9 @@ export default [
         },
         rules: {
             ...reactPlugin.configs.recommended.rules,
-            ...reactHooksPlugin.configs.recommended.rules,
             ...jsxA11yPlugin.configs.recommended.rules,
+            'react-hooks/rules-of-hooks': 'error',
             'react-hooks/exhaustive-deps': 'warn',
-            'react-hooks/rules-of-hooks': 'off',
             'jsx-a11y/label-has-associated-control': 'off',
             'jsx-a11y/no-autofocus': 'off',
             'no-undef': 'off',
