@@ -16,7 +16,8 @@ def assert_no_horizontal_overflow(page):
 
 
 def verify_page(page, path, heading, console_errors, page_errors):
-    page.goto(f"{BASE_URL}{path}", wait_until="networkidle")
+    page.goto(f"{BASE_URL}{path}", wait_until="domcontentloaded", timeout=90000)
+    page.wait_for_load_state("networkidle", timeout=90000)
     try:
         expect(page.locator("h1").filter(has_text=heading).first).to_be_visible()
     except AssertionError:

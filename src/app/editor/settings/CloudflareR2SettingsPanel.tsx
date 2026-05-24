@@ -317,11 +317,12 @@ export function CloudflareR2SettingsPanel() {
                             </p>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                         <EditorButton
                             type="button"
                             onClick={() => handleRemoteAction('sync')}
                             disabled={!canRunRemoteAction}
+                            className="w-full sm:w-auto"
                         >
                             <CloudUpload className="h-4 w-4" />
                             同步云端
@@ -331,6 +332,7 @@ export function CloudflareR2SettingsPanel() {
                             variant="danger"
                             onClick={() => handleRemoteAction('restore')}
                             disabled={!canRunRemoteAction}
+                            className="w-full sm:w-auto"
                         >
                             <CloudDownload className="h-4 w-4" />
                             云端恢复
@@ -344,7 +346,7 @@ export function CloudflareR2SettingsPanel() {
                     </div>
                 ) : null}
 
-                <div className="mb-5 grid gap-3 rounded-token-card border border-border-soft bg-background p-4 text-sm md:grid-cols-4">
+                <div className="mb-5 grid grid-cols-2 gap-3 rounded-token-card border border-border-soft bg-background p-4 text-sm md:grid-cols-4">
                     <div>
                         <p className="font-mono text-xs text-subtle">status</p>
                         <p className="mt-1 text-muted">
@@ -447,11 +449,18 @@ export function CloudflareR2SettingsPanel() {
                         </span>
                     </label>
 
+                    {!persistent ? (
+                        <StatusMessage tone="info" className="px-3 py-2">
+                            未配置 BLOG_DATA_ROOT，R2 配置无法保存到服务器。
+                        </StatusMessage>
+                    ) : null}
+
                     <div className="flex justify-end">
                         <EditorButton
                             type="submit"
                             variant="primary"
                             disabled={!persistent || isLoading || isSaving || isRemoteBusy}
+                            className="w-full sm:w-auto"
                         >
                             <Save className="h-4 w-4" />
                             {isSaving ? '保存中...' : '保存 R2 配置'}

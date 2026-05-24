@@ -2,7 +2,7 @@ import { getPosts } from '@/lib/markdown';
 import { readNavigationFromDisk, readSiteSettingsFromDisk } from '@/lib/editor-data-storage';
 import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, BookOpen, Compass, Database } from 'lucide-react';
+import { ArrowRight, BookOpen, Compass, Database, FileJson, RotateCw } from 'lucide-react';
 import { EmptyState, MetricCard, PageHero, PostCard, SectionHeading } from './components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -15,10 +15,10 @@ export default function Home() {
     const latestPosts = posts.slice(0, 4);
 
     return (
-        <div className="space-y-token-section pb-16">
+        <div className="space-y-14 pb-16 md:space-y-16">
             <PageHero
                 eyebrow={(
-                    <span className="inline-flex items-center gap-2.5 rounded-token-badge border border-border-soft bg-surface px-3 py-1.5">
+                    <span className="inline-flex items-center gap-2.5 rounded-token-badge border border-border-soft bg-surface-elevated px-3 py-1.5">
                         <Image src="/logo.svg" alt="" width={20} height={20} className="h-5 w-5 rounded-sm" priority />
                         {settings.workspaceLabel}
                     </span>
@@ -54,13 +54,13 @@ export default function Home() {
                     </>
                 )}
                 aside={(
-                    <aside className="rounded-token-card border border-warm-700 bg-warm-900 p-5 text-surface md:p-6">
-                    <div className="mb-5 flex items-center justify-between border-b border-white/10 pb-4">
+                    <aside className="rounded-token-card border border-border bg-surface-elevated p-5 text-fg shadow-token-sm md:p-6">
+                    <div className="mb-5 flex items-center justify-between border-b border-border-soft pb-4">
                         <div>
-                            <p className="font-mono text-xs text-warm-500">system.index</p>
-                            <h2 className="mt-1 font-serif text-xl font-medium text-surface">当前内容</h2>
+                            <p className="font-mono text-xs text-subtle">system.index</p>
+                            <h2 className="mt-1 text-lg font-semibold text-fg">当前内容</h2>
                         </div>
-                        <Database className="h-5 w-5 text-accent-soft" />
+                        <Database className="h-5 w-5 text-accent" />
                     </div>
 
                     <div className="space-y-3">
@@ -75,26 +75,25 @@ export default function Home() {
                                     label={item.label}
                                     value={item.value}
                                     icon={item.icon}
-                                    tone="dark"
                                 />
                             );
                         })}
                     </div>
 
-                    <div className="mt-5 rounded-token-card border border-white/10 bg-white/[0.03] p-4">
+                    <div className="mt-5 rounded-token-card border border-border-soft bg-bg p-4">
                         <div className="flex items-center gap-2 text-sm font-medium text-surface">
                             <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                            local-first data
+                            <span className="text-fg">local-first data</span>
                         </div>
-                        <p className="mt-2 text-sm leading-relaxed text-warm-500">
-                            运行时数据集中在服务器 <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-sm text-warm-400">data/</code>，可通过 JSON 备份包或 R2 镜像迁移。
+                        <p className="mt-2 text-sm leading-relaxed text-muted">
+                            运行时数据集中在服务器 <code className="rounded border border-border-soft bg-surface px-1 py-0.5 font-mono text-sm text-subtle">data/</code>，可通过 JSON 备份包或 R2 镜像迁移。
                         </p>
                     </div>
                 </aside>
                 )}
             />
 
-            <section className="grid gap-8 lg:grid-cols-[1fr_280px]">
+            <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div>
                     <SectionHeading
                         eyebrow="recent posts"
@@ -123,19 +122,29 @@ export default function Home() {
                     )}
                 </div>
 
-                <div className="rounded-token-card border border-border bg-surface p-5 md:p-6">
+                <div className="rounded-token-card border border-border bg-surface-elevated p-5 md:p-6">
                     <SectionHeading
                         eyebrow="data portability"
                         title="迁移边界"
                         className="mb-0 block"
                     />
-                    <div className="mt-5 space-y-4 text-sm leading-relaxed text-muted">
-                        <p>
-                            部署目录只需要保留 <code className="rounded bg-surface px-1 py-0.5 font-mono text-sm text-subtle border border-border-soft">compose.prod.yaml</code>、
-                            <code className="rounded bg-surface px-1 py-0.5 font-mono text-sm text-subtle border border-border-soft">.env</code> 和
-                            <code className="rounded bg-surface px-1 py-0.5 font-mono text-sm text-subtle border border-border-soft">data/</code>。
-                        </p>
-                        <p>离线迁移使用内置导入导出脚本；远端容灾使用 R2 最新备份。</p>
+                    <div className="mt-5 space-y-3">
+                        {[
+                            { icon: FileJson, title: '必要文件', text: 'compose.prod.yaml、.env 和 data/ 构成最小迁移边界。' },
+                            { icon: RotateCw, title: '恢复路径', text: '离线导入导出脚本处理本地迁移，R2 保留远端容灾副本。' },
+                        ].map((item) => {
+                            const Icon = item.icon;
+
+                            return (
+                                <div key={item.title} className="flex gap-3 rounded-token-card border border-border-soft bg-bg p-3">
+                                    <Icon className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                                    <div>
+                                        <p className="text-sm font-medium text-fg">{item.title}</p>
+                                        <p className="mt-1 text-sm leading-relaxed text-muted">{item.text}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </section>

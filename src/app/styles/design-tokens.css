@@ -70,8 +70,8 @@
    * ============================================ */
 
   /* Surfaces */
-  --bg: var(--warm-100);
-  --surface: var(--warm-50);
+  --bg: #f7f8f5;
+  --surface: #fbfbf8;
   --surface-elevated: #ffffff;
 
   /* Text */
@@ -80,8 +80,8 @@
   --subtle: var(--warm-500);
 
   /* Borders */
-  --border: var(--cool-100);
-  --border-soft: #f0eee6;
+  --border: #e3e6de;
+  --border-soft: #eef0ea;
   --border-focus: var(--blue-500);
 
   /* Accent — single primary accent */
@@ -117,7 +117,7 @@
   --card-padding: 24px;
   --card-padding-sm: 16px;
   --card-shadow: none;
-  --card-shadow-hover: 0 4px 16px rgba(26, 25, 23, 0.06);
+  --card-shadow-hover: 0 8px 24px rgba(26, 25, 23, 0.07);
 
   /* Button */
   --button-radius: 6px;
@@ -135,7 +135,7 @@
 
   /* Header */
   --header-height: 64px;
-  --header-bg: rgba(245, 244, 237, 0.88);
+  --header-bg: rgba(247, 248, 245, 0.9);
   --header-border: var(--border);
   --header-shadow: 0 1px 0 rgba(26, 25, 23, 0.06);
 
@@ -236,7 +236,7 @@
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
 
-  --letter-spacing-tight: -0.01em;
+  --letter-spacing-tight: 0;
   --letter-spacing-normal: 0;
   --letter-spacing-wide: 0.02em;
   --letter-spacing-caps: 0.06em;

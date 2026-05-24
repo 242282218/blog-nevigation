@@ -19,7 +19,7 @@ export function PageHero({
   className,
 }: PageHeroProps) {
   const gridClass = aside
-    ? 'lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end'
+    ? 'lg:grid-cols-[minmax(0,1fr)_340px] lg:items-end'
     : 'lg:grid-cols-1';
 
   return (
@@ -36,7 +36,7 @@ export function PageHero({
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="max-w-4xl font-serif text-4xl font-medium leading-tight tracking-token-tight text-fg md:text-5xl">
+        <h1 className="max-w-4xl text-4xl font-semibold leading-tight tracking-token-normal text-fg md:text-5xl">
           {title}
         </h1>
         {description ? (

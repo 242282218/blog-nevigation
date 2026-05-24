@@ -72,7 +72,7 @@ export default function BlogPage() {
                                 className="scroll-mt-24"
                             >
                                 <div className="mb-5 flex items-center justify-between border-b border-border pb-3">
-                                    <h2 className="font-serif text-2xl font-medium text-fg">{year}</h2>
+                                    <h2 className="text-2xl font-semibold text-fg">{year}</h2>
                                     <span className="rounded-token-badge bg-surface px-2 py-1 font-mono text-xs text-subtle border border-border-soft">
                                         {postsByYear[year].length} entries
                                     </span>
@@ -86,7 +86,7 @@ export default function BlogPage() {
                                             <Link
                                                 key={post.slug}
                                                 href={`/posts/${post.slug}`}
-                                                className="group grid gap-4 rounded-token-card border border-border bg-surface p-4 transition-shadow duration-token-normal ease-token-out hover:shadow-token-card-hover hover:border-accent-200 md:grid-cols-[120px_1fr_auto] md:items-center"
+                                                className="group grid gap-4 rounded-token-card border border-border bg-surface-elevated p-4 transition-shadow duration-token-normal ease-token-out hover:border-accent-200 hover:shadow-token-card-hover md:grid-cols-[120px_1fr_auto] md:items-center"
                                             >
                                                 <div className="flex items-center gap-2 font-mono text-xs text-subtle">
                                                     <CalendarDays className="h-4 w-4 text-subtle" />
@@ -95,7 +95,7 @@ export default function BlogPage() {
                                                         : 'UNTRACKED'}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <h3 className="text-base font-medium text-fg transition-colors duration-token-fast group-hover:text-accent">
+                                                    <h3 className="text-base font-semibold text-fg transition-colors duration-token-fast group-hover:text-accent">
                                                         {post.title}
                                                     </h3>
                                                     {post.description ? (

@@ -1,23 +1,43 @@
 import os
+import hashlib
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
 BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:3210")
 EDITOR_TOKEN = os.environ.get("EDITOR_ACCESS_TOKEN", "playwright-token")
+SESSION_NAMESPACE = "blog-navigation-editor-session:v1"
 SCREENSHOT_PATH = Path("output/editor-blog-ui.png")
+MOBILE_SCREENSHOT_PATH = Path("output/editor-blog-new-mobile-ui.png")
 DEBUG_HTML_PATH = Path("output/editor-blog-ui-debug.html")
 
 
-def login_if_needed(page) -> None:
-    if "/editor/login" not in page.url:
-        return
+def create_session_value(secret: str) -> str:
+    return hashlib.sha256(f"{SESSION_NAMESPACE}:{secret.strip()}".encode()).hexdigest()
 
-    page.locator("input[type='password']").fill(EDITOR_TOKEN)
-    page.get_by_role("button", name="进入编辑区").click()
-    page.wait_for_load_state("networkidle")
-    page.goto(f"{BASE_URL}/editor/blog", wait_until="domcontentloaded")
-    page.wait_for_load_state("networkidle")
+
+def assert_no_horizontal_overflow(page) -> None:
+    overflow = page.evaluate(
+        "() => document.documentElement.scrollWidth - window.innerWidth"
+    )
+    assert overflow <= 1, f"Page has horizontal overflow: {overflow}px"
+
+
+def create_authenticated_context(browser, viewport):
+    context = browser.new_context(viewport=viewport)
+    context.add_cookies(
+        [
+            {
+                "name": "editor_session",
+                "value": create_session_value(EDITOR_TOKEN),
+                "url": BASE_URL,
+                "httpOnly": True,
+                "sameSite": "Lax",
+            }
+        ]
+    )
+
+    return context
 
 
 def main() -> None:
@@ -25,12 +45,12 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1440, "height": 960})
+        context = create_authenticated_context(browser, {"width": 1440, "height": 960})
+        page = context.new_page()
         page.set_default_navigation_timeout(90000)
 
         page.goto(f"{BASE_URL}/editor/blog", wait_until="domcontentloaded")
         page.wait_for_load_state("networkidle")
-        login_if_needed(page)
 
         if page.get_by_role("heading", name="博客管理").count() == 0:
             DEBUG_HTML_PATH.write_text(page.content(), encoding="utf-8")
@@ -52,8 +72,38 @@ def main() -> None:
         page.get_by_role("button", name="预览").click()
         expect(page.get_by_role("button", name="复制代码")).to_be_visible()
         expect(page.get_by_text("typescript")).to_be_visible()
+        assert_no_horizontal_overflow(page)
 
         page.screenshot(path=str(SCREENSHOT_PATH), full_page=True)
+
+        mobile_context = create_authenticated_context(browser, {"width": 390, "height": 844})
+        mobile_page = mobile_context.new_page()
+        mobile_page.set_default_navigation_timeout(90000)
+        mobile_page.goto(f"{BASE_URL}/editor/blog/new?template=blank", wait_until="domcontentloaded")
+        mobile_page.wait_for_load_state("networkidle")
+        expect(mobile_page.get_by_role("heading", name="新建文章")).to_be_visible()
+
+        mobile_editor = mobile_page.locator("#article-markdown-editor")
+        expect(mobile_editor).to_be_visible()
+        expect(mobile_page.get_by_role("button", name="写作")).to_have_attribute("aria-pressed", "true")
+        assert_no_horizontal_overflow(mobile_page)
+
+        mobile_editor.fill("# Mobile\n\nContent")
+        expect(mobile_editor).to_have_value("# Mobile\n\nContent")
+        toolbar = mobile_page.locator("[data-editor-toolbar]")
+        expect(toolbar).to_be_visible()
+
+        mobile_page.get_by_role("button", name="预览").click()
+        expect(mobile_page.locator("[data-preview-pane]")).to_be_visible()
+        expect(mobile_page.get_by_role("heading", name="Mobile")).to_be_visible()
+        assert_no_horizontal_overflow(mobile_page)
+
+        mobile_page.get_by_role("button", name="分栏").click()
+        expect(mobile_page.get_by_role("button", name="分栏")).to_have_attribute("aria-pressed", "true")
+        expect(mobile_page.locator("[data-editor-workspace]")).to_be_visible()
+        assert_no_horizontal_overflow(mobile_page)
+
+        mobile_page.screenshot(path=str(MOBILE_SCREENSHOT_PATH), full_page=True)
         browser.close()
 
 

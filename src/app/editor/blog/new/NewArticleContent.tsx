@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -225,6 +226,7 @@ export function NewArticleContent() {
   const [savedSnapshot, setSavedSnapshot] = useState('');
   const [loadedArticleKey, setLoadedArticleKey] = useState('');
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const hasSelectedInitialMode = useRef(false);
   const deferredContent = useDeferredValue(content);
 
   const currentSnapshot = useMemo(() => createSnapshot(frontmatter, content), [content, frontmatter]);
@@ -234,6 +236,18 @@ export function NewArticleContent() {
   const headings = useMemo(() => getHeadings(content), [content]);
   const editingArticle = editId ? getArticleById(editId) : undefined;
   const missingArticle = Boolean(editId && isLoaded && loadedArticleKey === articleKey && !editingArticle);
+
+  useEffect(() => {
+    if (hasSelectedInitialMode.current) {
+      return;
+    }
+
+    hasSelectedInitialMode.current = true;
+
+    if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 767px)').matches) {
+      setEditorMode('write');
+    }
+  }, []);
 
   useEffect(() => {
     if (!isLoaded || loadedArticleKey === articleKey) {
@@ -525,8 +539,9 @@ export function NewArticleContent() {
             </div>
 
             <div
+              data-editor-workspace
               className={cn(
-                'grid h-[calc(100vh-250px)] min-h-[620px]',
+                'grid h-[min(620px,calc(100svh-260px))] min-h-[420px] md:h-[min(720px,calc(100vh-240px))] md:min-h-[560px] lg:h-[calc(100vh-250px)] lg:min-h-[620px]',
                 editorMode === 'split' ? 'grid-rows-2 lg:grid-cols-2 lg:grid-rows-1' : 'grid-cols-1'
               )}
             >

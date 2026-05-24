@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Lock, LogIn } from 'lucide-react';
+import { StatusMessage } from '@/app/components/ui';
 import {
     EditorButton,
     EditorPage,
@@ -61,8 +62,8 @@ export function EditorLoginForm({
     };
 
     return (
-        <EditorPage className="flex items-center justify-center px-4">
-            <EditorPanel className="w-full max-w-md p-8">
+        <EditorPage className="flex items-center justify-center px-4 py-8">
+            <EditorPanel className="w-full max-w-md p-6 sm:p-8">
                 <div className="flex items-center gap-3 text-fg">
                     <div className="flex h-11 w-11 items-center justify-center rounded-token-card border border-accent-200 bg-accent-50 text-accent">
                         <Lock className="h-5 w-5" />
@@ -76,31 +77,34 @@ export function EditorLoginForm({
                 </div>
 
                 <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
-                    <label className="block">
-                        <span className="mb-2 block text-sm font-medium text-fg">
+                    <div>
+                        <label htmlFor="editor-login-secret" className="mb-2 block text-sm font-medium text-fg">
                             编辑口令
-                        </span>
+                        </label>
                         <input
+                            id="editor-login-secret"
                             type="password"
                             value={secret}
                             onChange={(event) => setSecret(event.target.value)}
                             disabled={!authConfigured || isSubmitting}
                             autoComplete="current-password"
+                            aria-describedby={errorMessage ? 'editor-login-error' : undefined}
+                            aria-invalid={Boolean(errorMessage)}
                             className={`${editorInputClassName} px-4 py-3`}
                             placeholder="输入 EDITOR_ACCESS_TOKEN"
                         />
-                    </label>
+                    </div>
 
                     {!authConfigured && (
-                        <p className="rounded-token-card border border-warning-light bg-warning-50 px-4 py-3 text-sm text-fg">
+                        <StatusMessage tone="warning">
                             当前环境未配置 `EDITOR_ACCESS_TOKEN`，因此编辑区登录已禁用。
-                        </p>
+                        </StatusMessage>
                     )}
 
                     {errorMessage && (
-                        <p className="rounded-lg border border-error-light bg-error-50 px-4 py-3 text-sm text-error-600">
+                        <StatusMessage id="editor-login-error" tone="danger">
                             {errorMessage}
-                        </p>
+                        </StatusMessage>
                     )}
 
                     <EditorButton

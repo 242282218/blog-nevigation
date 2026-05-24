@@ -81,6 +81,7 @@ describe('EditorHomePage', () => {
     );
     expect(getButtonByText(container, '同步云端').disabled).toBe(true);
     expect(getButtonByText(container, '云端恢复').disabled).toBe(true);
+    expect(container.textContent).toContain('R2 未配置完整，云端同步和云端恢复暂不可用。');
   });
 
   it('enables remote backup actions when R2 is configured', async () => {

@@ -107,4 +107,33 @@ describe('NavigationEditorPage', () => {
     expect(container.textContent).toContain('导航已保存在本机，但同步到服务器失败');
     expect(container.textContent).toContain('服务器未配置持久化数据目录');
   });
+
+  it('requires a second click before deleting a tool link', () => {
+    act(() => {
+      root.render(<NavigationEditorPage />);
+    });
+
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === '删除工具：OpenAI'
+    );
+
+    expect(deleteButton).toBeTruthy();
+
+    act(() => {
+      deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(deleteToolMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('再次点击删除按钮确认删除工具链接');
+
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === '确认删除工具：OpenAI'
+    );
+
+    act(() => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(deleteToolMock).toHaveBeenCalledWith(0, 0);
+  });
 });

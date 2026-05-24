@@ -29,7 +29,7 @@ export function PreviewPane({ content }: PreviewPaneProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div data-preview-pane className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex min-h-11 items-center justify-between border-b border-border bg-background/80 px-4">
         <div className="flex items-center gap-2 text-sm font-medium text-fg">
           <Eye className="h-4 w-4 text-subtle" />

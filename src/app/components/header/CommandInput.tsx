@@ -240,7 +240,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                     setIsOpen(true);
                     setTimeout(() => inputRef.current?.focus(), 0);
                 }}
-                aria-label={compact ? '搜索文章和链接' : undefined}
+                aria-label="搜索文章和链接"
                 className={cn(
                     'flex min-h-9 items-center gap-2 rounded-token-input border border-border bg-surface text-xs font-mono text-subtle transition-colors duration-token-fast hover:border-border-focus hover:bg-surface-elevated',
                     compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[260px] px-3 py-1.5'

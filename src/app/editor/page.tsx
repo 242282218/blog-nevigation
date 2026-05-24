@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Compass, ArrowRight, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
+import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from './components/LogoutButton';
 import { createRestoreActionMessage } from './backup-action-message';
@@ -232,48 +232,6 @@ export default function EditorHomePage() {
         description="管理博客文章、导航链接和可迁移数据"
         actions={(
           <>
-            <EditorButton
-              type="button"
-              onClick={handleBackup}
-              disabled={isBusy}
-            >
-              <Download className="h-4 w-4" />
-              <span>{isBusy ? '处理中...' : '备份数据'}</span>
-            </EditorButton>
-
-            <EditorButton
-              type="button"
-              onClick={openRestorePicker}
-              disabled={isBusy}
-            >
-              <Upload className="h-4 w-4" />
-              <span>{isBusy ? '处理中...' : '恢复数据'}</span>
-            </EditorButton>
-            <EditorButton
-              type="button"
-              onClick={handleRemoteSync}
-              disabled={!canRunRemoteAction}
-            >
-              <CloudUpload className="h-4 w-4" />
-              <span>{isBusy ? '处理中...' : '同步云端'}</span>
-            </EditorButton>
-
-            <EditorButton
-              type="button"
-              onClick={handleRemoteRestore}
-              disabled={!canRunRemoteAction}
-            >
-              <CloudDownload className="h-4 w-4" />
-              <span>{isBusy ? '处理中...' : '云端恢复'}</span>
-            </EditorButton>
-            <input
-              ref={restoreInputRef}
-              type="file"
-              accept=".json"
-              className="hidden"
-              onChange={handleRestore}
-            />
-
             <LogoutButton />
           </>
         )}
@@ -312,7 +270,7 @@ export default function EditorHomePage() {
           />
         </section>
 
-        <EditorPanel className="grid gap-4 p-5 md:grid-cols-[1fr_auto] md:items-center">
+        <EditorPanel className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <p className="font-mono text-xs text-accent">portable data</p>
             <h2 className="mt-1 text-lg font-semibold text-fg">运行时数据边界</h2>
@@ -320,8 +278,60 @@ export default function EditorHomePage() {
               服务器数据集中在 <code className="rounded-token-card bg-surface px-1.5 py-0.5 font-mono text-fg">data/</code>，
               本页提供 JSON 离线备份与 R2 镜像操作。
             </p>
+            {!canRunRemoteAction ? (
+              <p className="mt-3 text-xs leading-5 text-subtle">
+                {isRemoteStatusLoading ? '正在检查 R2 配置状态。' : 'R2 未配置完整，云端同步和云端恢复暂不可用。'}
+              </p>
+            ) : null}
           </div>
-          <ArrowRight className="hidden h-5 w-5 text-subtle md:block" />
+
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:justify-end">
+            <EditorButton
+              type="button"
+              onClick={handleBackup}
+              disabled={isBusy}
+              className="w-full sm:w-auto"
+            >
+              <Download className="h-4 w-4" />
+              <span>{isBusy ? '处理中...' : '备份数据'}</span>
+            </EditorButton>
+
+            <EditorButton
+              type="button"
+              onClick={openRestorePicker}
+              disabled={isBusy}
+              className="w-full sm:w-auto"
+            >
+              <Upload className="h-4 w-4" />
+              <span>{isBusy ? '处理中...' : '恢复数据'}</span>
+            </EditorButton>
+            <EditorButton
+              type="button"
+              onClick={handleRemoteSync}
+              disabled={!canRunRemoteAction}
+              className="w-full sm:w-auto"
+            >
+              <CloudUpload className="h-4 w-4" />
+              <span>{isBusy ? '处理中...' : '同步云端'}</span>
+            </EditorButton>
+
+            <EditorButton
+              type="button"
+              onClick={handleRemoteRestore}
+              disabled={!canRunRemoteAction}
+              className="w-full sm:w-auto"
+            >
+              <CloudDownload className="h-4 w-4" />
+              <span>{isBusy ? '处理中...' : '云端恢复'}</span>
+            </EditorButton>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={handleRestore}
+            />
+          </div>
         </EditorPanel>
       </EditorMain>
     </EditorPage>

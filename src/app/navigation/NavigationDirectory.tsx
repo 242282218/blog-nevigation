@@ -40,9 +40,9 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
 
     return (
         <div className="space-y-10">
-            <section className="rounded-[1.75rem] border border-white/80 bg-white/62 p-4 shadow-[0_18px_60px_rgba(63,33,25,0.07)] backdrop-blur-xl md:p-5">
-                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-stretch">
-                    <div className="rounded-[1.35rem] border border-border-soft bg-surface-elevated/86 p-3">
+            <section className="rounded-token-card border border-border bg-surface-elevated p-4 md:p-5">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px] lg:items-stretch">
+                    <div className="rounded-token-card border border-border-soft bg-bg p-3">
                         <div className="mb-3 flex items-center justify-between gap-3 px-1">
                             <div>
                                 <p className="font-mono text-xs uppercase tracking-token-caps text-accent">Find a resource</p>
@@ -54,7 +54,7 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                                 live filter
                             </span>
                         </div>
-                        <label className="flex min-h-[56px] items-center gap-3 rounded-2xl border border-border bg-white px-4 py-3 shadow-sm transition-colors duration-token-fast focus-within:border-link focus-within:bg-surface-elevated">
+                        <label className="flex min-h-[52px] items-center gap-3 rounded-token-input border border-border bg-surface-elevated px-4 py-3 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
                             <Search className="h-5 w-5 text-accent" />
                             <input
                                 value={query}
@@ -75,7 +75,7 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                         </label>
                     </div>
 
-                    <div className="flex flex-col justify-between rounded-[1.35rem] border border-border-soft bg-[linear-gradient(135deg,rgba(26,25,23,0.92),rgba(63,33,25,0.88))] p-5 text-white">
+                    <div className="flex flex-col justify-between rounded-token-card border border-warm-700 bg-warm-900 p-5 text-white">
                         <div className="flex items-center justify-between gap-3">
                             <Layers className="h-5 w-5 text-accent-200" />
                             <span className="font-mono text-xs text-white/55" aria-live="polite">
@@ -98,7 +98,7 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                         aria-pressed={activeSlug === 'all'}
                         className={activeSlug === 'all'
                             ? 'min-h-10 shrink-0 rounded-token-full bg-fg px-4 py-2 text-sm font-medium text-surface shadow-token-md'
-                            : 'min-h-10 shrink-0 rounded-token-full border border-white/80 bg-white/64 px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
+                            : 'min-h-10 shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
                     >
                         全部
                     </button>
@@ -110,7 +110,7 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                             aria-pressed={activeSlug === category.slug}
                             className={activeSlug === category.slug
                                 ? 'min-h-10 shrink-0 rounded-token-full bg-fg px-4 py-2 text-sm font-medium text-surface shadow-token-md'
-                                : 'min-h-10 shrink-0 rounded-token-full border border-white/80 bg-white/64 px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
+                                : 'min-h-10 shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
                         >
                             {category.name}
                             <span className="ml-2 font-mono text-xs opacity-60">{category.tools.length}</span>
@@ -136,7 +136,7 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                                     <p className="font-mono text-xs tracking-token-caps text-accent uppercase">
                                         0{categoryIndex + 1} / {category.slug}
                                     </p>
-                                    <h2 className="mt-2 font-serif text-3xl font-medium leading-tight tracking-token-tight text-fg md:text-4xl">
+                                    <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-token-normal text-fg md:text-3xl">
                                         {category.name}
                                     </h2>
                                 </div>

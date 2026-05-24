@@ -24,27 +24,26 @@ export function CategoryCard({ title, description, url, tags, className }: Categ
     return (
         <div
             className={cn(
-                "group h-full overflow-hidden rounded-[1.35rem] border border-white/80 bg-white/72",
-                "shadow-[0_1px_0_rgba(255,255,255,0.9),0_14px_44px_rgba(63,33,25,0.05)] backdrop-blur",
+                "group h-full overflow-hidden rounded-token-card border border-border bg-surface-elevated",
                 "transition duration-token-normal ease-token-out",
-                "hover:-translate-y-1 hover:border-accent-200 hover:bg-white/88 hover:shadow-[0_22px_60px_rgba(63,33,25,0.1)]",
+                "hover:-translate-y-0.5 hover:border-accent-200 hover:shadow-token-card-hover",
                 "focus-within:border-link-light focus-within:shadow-token-md",
                 className
             )}
         >
-            <div className="flex items-center justify-between border-b border-border-soft/80 bg-surface/48 px-4 py-3">
+            <div className="flex items-center justify-between border-b border-border-soft bg-bg px-4 py-3">
                 <div className="flex min-w-0 items-center gap-2">
                     <Link2 className="h-3.5 w-3.5 shrink-0 text-accent transition-colors group-hover:text-link" />
                     <span className="truncate font-mono text-xs text-subtle">{hostname}</span>
                 </div>
-                <span className="flex shrink-0 items-center gap-1.5 rounded-token-full bg-white/72 px-2 py-1 font-mono text-[0.68rem] uppercase tracking-token-caps text-subtle">
+                <span className="flex shrink-0 items-center gap-1.5 rounded-token-full border border-border-soft bg-surface px-2 py-1 font-mono text-[0.68rem] uppercase tracking-token-caps text-subtle">
                     open
                     <ArrowUpRight className="h-3 w-3 transition-transform duration-token-fast group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                 </span>
             </div>
 
             <div className="flex h-full flex-col gap-4 p-5">
-                <h4 className="min-w-0 font-serif text-xl font-medium leading-snug tracking-token-tight text-fg transition-colors group-hover:text-accent-700">
+                <h4 className="min-w-0 text-lg font-semibold leading-snug tracking-token-normal text-fg transition-colors group-hover:text-accent-700">
                     {title}
                 </h4>
 
@@ -57,7 +56,7 @@ export function CategoryCard({ title, description, url, tags, className }: Categ
                         visibleTags.map((tag) => (
                             <span
                                 key={tag}
-                                className="inline-flex items-center gap-1 rounded-token-full border border-border-soft bg-surface/72 px-2.5 py-1 text-xs text-subtle"
+                                className="inline-flex items-center gap-1 rounded-token-full border border-border-soft bg-bg px-2.5 py-1 text-xs text-subtle"
                             >
                                 <Tag className="h-3 w-3" />
                                 {tag}

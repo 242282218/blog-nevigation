@@ -8,6 +8,7 @@ const config: Config = {
         extend: {
             colors: {
                 bg: "var(--bg)",
+                background: "var(--bg)",
                 surface: {
                     DEFAULT: "var(--surface)",
                     elevated: "var(--surface-elevated)",
@@ -139,6 +140,8 @@ const config: Config = {
                 'token-card-hover': "var(--card-shadow-hover)",
                 'token-header': "var(--header-shadow)",
                 'token-button': "var(--button-shadow)",
+                card: "var(--card-shadow)",
+                header: "var(--header-shadow)",
             },
             transitionDuration: {
                 'token-fast': "var(--duration-fast)",
@@ -212,7 +215,7 @@ const config: Config = {
                             fontFamily: "var(--font-serif)",
                             color: "var(--fg)",
                             fontWeight: "500",
-                            letterSpacing: "-0.01em",
+                            letterSpacing: "0",
                         },
                         code: {
                             color: "var(--accent)",

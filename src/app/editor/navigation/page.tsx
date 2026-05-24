@@ -20,6 +20,10 @@ function normalizeTagsInput(value: string): string[] {
   return value.split(',').map((tag) => tag.trim()).filter(Boolean);
 }
 
+function editorFieldLabelClassName() {
+  return 'mb-1.5 block text-xs font-mono text-muted';
+}
+
 function validateTool(tool: Tool): string | null {
   if (!tool.title.trim()) {
     return '请填写工具名称。';
@@ -61,6 +65,7 @@ export default function NavigationEditorPage() {
   const [editingTool, setEditingTool] = useState<{ categoryIndex: number; toolIndex: number } | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [showAddTool, setShowAddTool] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [categoryFormError, setCategoryFormError] = useState('');
   const [toolFormError, setToolFormError] = useState('');
   const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'info'; text: string } | null>(null);
@@ -144,6 +149,44 @@ export default function NavigationEditorPage() {
     setMessage({ tone: 'info', text: '导航数据已重置为种子数据。' });
   }, [resetToDefault]);
 
+  const handleDeleteCategory = useCallback((categoryIndex: number) => {
+    const confirmKey = `category:${categoryIndex}`;
+
+    if (deleteConfirm !== confirmKey) {
+      setDeleteConfirm(confirmKey);
+      setMessage({ tone: 'info', text: '再次点击删除按钮确认删除分类。' });
+      window.setTimeout(() => {
+        setDeleteConfirm((current) => (current === confirmKey ? null : current));
+      }, 3000);
+      return;
+    }
+
+    const deleted = deleteCategory(categoryIndex);
+    setDeleteConfirm(null);
+    setMessage(deleted
+      ? { tone: 'success', text: '分类已删除。' }
+      : { tone: 'danger', text: '分类删除失败。' });
+  }, [deleteCategory, deleteConfirm]);
+
+  const handleDeleteTool = useCallback((categoryIndex: number, toolIndex: number) => {
+    const confirmKey = `tool:${categoryIndex}:${toolIndex}`;
+
+    if (deleteConfirm !== confirmKey) {
+      setDeleteConfirm(confirmKey);
+      setMessage({ tone: 'info', text: '再次点击删除按钮确认删除工具链接。' });
+      window.setTimeout(() => {
+        setDeleteConfirm((current) => (current === confirmKey ? null : current));
+      }, 3000);
+      return;
+    }
+
+    const deleted = deleteTool(categoryIndex, toolIndex);
+    setDeleteConfirm(null);
+    setMessage(deleted
+      ? { tone: 'success', text: '工具链接已删除。' }
+      : { tone: 'danger', text: '工具链接删除失败。' });
+  }, [deleteConfirm, deleteTool]);
+
   const handleImport = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -182,34 +225,34 @@ export default function NavigationEditorPage() {
         backHref="/editor"
         actions={(
           <>
-              <LogoutButton />
-              <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm font-medium text-fg transition hover:border-border hover:bg-surface focus-within:ring-2 focus-within:ring-link focus-within:ring-offset-2">
-                <Upload className="w-4 h-4" />
-                <span className="hidden sm:inline">导入</span>
-                <input type="file" accept=".json" onChange={handleImport} className="hidden" />
-              </label>
+            <LogoutButton />
+            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm font-medium text-fg transition hover:border-border hover:bg-surface focus-within:ring-2 focus-within:ring-link focus-within:ring-offset-2">
+              <Upload className="h-4 w-4" />
+              <span className="hidden sm:inline">导入</span>
+              <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+            </label>
 
-              <EditorButton
-                onClick={handleExport}
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">导出</span>
-              </EditorButton>
+            <EditorButton
+              onClick={handleExport}
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">导出</span>
+            </EditorButton>
 
-              <EditorButton
-                onClick={handleReset}
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="hidden sm:inline">重置</span>
-              </EditorButton>
+            <EditorButton
+              onClick={handleReset}
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span className="hidden sm:inline">重置</span>
+            </EditorButton>
 
-              <EditorButton
-                onClick={() => setShowAddCategory(true)}
-                variant="primary"
-              >
-                <Plus className="w-4 h-4" />
-                添加分类
-              </EditorButton>
+            <EditorButton
+              onClick={() => setShowAddCategory(true)}
+              variant="primary"
+            >
+              <Plus className="h-4 w-4" />
+              添加分类
+            </EditorButton>
           </>
         )}
       />
@@ -235,32 +278,41 @@ export default function NavigationEditorPage() {
 
         {showAddCategory && (
           <EditorPanel className="p-6">
-            <h3 className="text-lg font-medium text-fg mb-4">添加分类</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input
-                type="text"
-                placeholder="分类名称"
-                value={categoryForm.name}
-                onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
-                className={editorInputClassName}
-              />
-              <input
-                type="text"
-                placeholder="图标 (可选)"
-                value={categoryForm.icon}
-                onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
-                className={editorInputClassName}
-              />
-              <input
-                type="text"
-                placeholder="slug (可选)"
-                value={categoryForm.slug}
-                onChange={(e) => setCategoryForm({ ...categoryForm, slug: e.target.value })}
-                className={editorInputClassName}
-              />
+            <h3 className="mb-4 text-lg font-medium text-fg">添加分类</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label>
+                <span className={editorFieldLabelClassName()}>分类名称</span>
+                <input
+                  type="text"
+                  placeholder="常用入口"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  className={editorInputClassName}
+                />
+              </label>
+              <label>
+                <span className={editorFieldLabelClassName()}>图标</span>
+                <input
+                  type="text"
+                  placeholder="folder"
+                  value={categoryForm.icon}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+                  className={editorInputClassName}
+                />
+              </label>
+              <label>
+                <span className={editorFieldLabelClassName()}>Slug</span>
+                <input
+                  type="text"
+                  placeholder="quick-access"
+                  value={categoryForm.slug}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, slug: e.target.value })}
+                  className={editorInputClassName}
+                />
+              </label>
             </div>
             {categoryFormError ? (
-              <p className="mt-3 text-sm text-red-500">{categoryFormError}</p>
+              <p className="mt-3 text-sm text-error-600">{categoryFormError}</p>
             ) : null}
             <div className="mt-4 flex gap-2">
               <EditorButton
@@ -296,155 +348,165 @@ export default function NavigationEditorPage() {
           />
         ) : (
           <div className="space-y-8">
-          {data.map((category, categoryIndex) => (
-            <EditorPanel key={categoryIndex} className="overflow-hidden">
-              <div className="flex flex-col gap-3 border-b border-border bg-background/70 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-                {editingCategory === categoryIndex ? (
-                  <div className="flex items-center gap-4 flex-1">
-                    <input
-                      type="text"
-                      defaultValue={category.name}
-                      onBlur={(e) => {
-                        updateCategory(categoryIndex, { name: e.target.value });
-                        setMessage({ tone: 'success', text: '分类名称已更新。' });
-                        setEditingCategory(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+            {data.map((category, categoryIndex) => (
+              <EditorPanel key={categoryIndex} className="overflow-hidden">
+                <div className="flex flex-col gap-4 border-b border-border bg-background/70 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
+                  {editingCategory === categoryIndex ? (
+                    <label className="flex-1">
+                      <span className={editorFieldLabelClassName()}>分类名称</span>
+                      <input
+                        type="text"
+                        defaultValue={category.name}
+                        onBlur={(e) => {
                           updateCategory(categoryIndex, { name: e.currentTarget.value });
                           setMessage({ tone: 'success', text: '分类名称已更新。' });
                           setEditingCategory(null);
-                        }
-                      }}
-                      className={editorInputClassName}
-                      autoFocus
-                    />
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            updateCategory(categoryIndex, { name: e.currentTarget.value });
+                            setMessage({ tone: 'success', text: '分类名称已更新。' });
+                            setEditingCategory(null);
+                          }
+                        }}
+                        className={editorInputClassName}
+                        autoFocus
+                      />
+                    </label>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Folder className="h-5 w-5 shrink-0 text-accent" />
+                      <div className="min-w-0">
+                        <h2 className="truncate text-lg font-medium text-fg">{category.name}</h2>
+                        <p className="mt-0.5 font-mono text-xs text-subtle">{category.tools.length} tools</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-end">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditingCategory(categoryIndex)}
+                        className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent focus:ring-2 focus:ring-link focus:ring-offset-2"
+                        aria-label={`编辑分类：${category.name}`}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory(categoryIndex)}
+                        className={deleteConfirm === `category:${categoryIndex}`
+                          ? 'rounded-token-card bg-error-50 p-2 text-error-600 transition-colors focus:ring-2 focus:ring-link focus:ring-offset-2'
+                          : 'rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600 focus:ring-2 focus:ring-link focus:ring-offset-2'}
+                        aria-label={`${deleteConfirm === `category:${categoryIndex}` ? '确认删除分类' : '删除分类'}：${category.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <EditorButton
+                      onClick={() => setShowAddTool(categoryIndex)}
+                      className="min-h-8 whitespace-nowrap px-3 py-1.5"
+                      variant="accent"
+                    >
+                      <Plus className="h-3 w-3" />
+                      添加工具
+                    </EditorButton>
                   </div>
-                ) : (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Folder className="h-5 w-5 shrink-0 text-accent" />
-                    <h2 className="min-w-0 text-lg font-medium text-fg">{category.name}</h2>
-                    <span className="text-sm text-subtle">({category.tools.length})</span>
+                </div>
+
+                {showAddTool === categoryIndex && (
+                  <div className="border-b border-border bg-accent-50/60 p-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <label>
+                        <span className={editorFieldLabelClassName()}>工具名称</span>
+                        <input
+                          type="text"
+                          placeholder="MDN Web Docs"
+                          value={toolForm.title}
+                          onChange={(e) => setToolForm({ ...toolForm, title: e.target.value })}
+                          className={editorInputClassName}
+                        />
+                      </label>
+                      <label>
+                        <span className={editorFieldLabelClassName()}>URL</span>
+                        <input
+                          type="text"
+                          placeholder="https://developer.mozilla.org"
+                          value={toolForm.url}
+                          onChange={(e) => setToolForm({ ...toolForm, url: e.target.value })}
+                          className={editorInputClassName}
+                        />
+                      </label>
+                      <label>
+                        <span className={editorFieldLabelClassName()}>描述</span>
+                        <input
+                          type="text"
+                          placeholder="说明这个入口解决什么问题"
+                          value={toolForm.description}
+                          onChange={(e) => setToolForm({ ...toolForm, description: e.target.value })}
+                          className={editorInputClassName}
+                        />
+                      </label>
+                      <label>
+                        <span className={editorFieldLabelClassName()}>标签</span>
+                        <input
+                          type="text"
+                          placeholder="文档, Web, 参考"
+                          value={toolForm.tags.join(', ')}
+                          onChange={(e) =>
+                            setToolForm({
+                              ...toolForm,
+                              tags: normalizeTagsInput(e.target.value),
+                            })
+                          }
+                          className={editorInputClassName}
+                        />
+                      </label>
+                    </div>
+                    {toolFormError ? (
+                      <p className="mt-3 text-sm text-error-600">{toolFormError}</p>
+                    ) : null}
+                    <div className="mt-4 flex gap-2">
+                      <EditorButton
+                        onClick={() => handleAddTool(categoryIndex)}
+                        variant="primary"
+                      >
+                        确认添加
+                      </EditorButton>
+                      <EditorButton
+                        onClick={() => setShowAddTool(null)}
+                        variant="ghost"
+                      >
+                        取消
+                      </EditorButton>
+                    </div>
                   </div>
                 )}
 
-                <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-                  <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setEditingCategory(categoryIndex)}
-                    className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
-                    aria-label={`编辑分类：${category.name}`}
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      const deleted = deleteCategory(categoryIndex);
-                      setMessage(deleted
-                        ? { tone: 'success', text: '分类已删除。' }
-                        : { tone: 'danger', text: '分类删除失败。' });
-                    }}
-                    className="rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600"
-                    aria-label={`删除分类：${category.name}`}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                  </div>
-                  <EditorButton
-                    onClick={() => setShowAddTool(categoryIndex)}
-                    className="min-h-8 whitespace-nowrap px-3 py-1.5"
-                    variant="accent"
-                  >
-                    <Plus className="w-3 h-3" />
-                    添加工具
-                  </EditorButton>
-                </div>
-              </div>
-
-              {showAddTool === categoryIndex && (
-                <div className="border-b border-border bg-accent-50/60 p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input
-                      type="text"
-                      placeholder="工具名称 *"
-                      value={toolForm.title}
-                      onChange={(e) => setToolForm({ ...toolForm, title: e.target.value })}
-                      className={editorInputClassName}
-                    />
-                    <input
-                      type="text"
-                      placeholder="URL *"
-                      value={toolForm.url}
-                      onChange={(e) => setToolForm({ ...toolForm, url: e.target.value })}
-                      className={editorInputClassName}
-                    />
-                    <input
-                      type="text"
-                      placeholder="描述"
-                      value={toolForm.description}
-                      onChange={(e) => setToolForm({ ...toolForm, description: e.target.value })}
-                      className={editorInputClassName}
-                    />
-                    <input
-                      type="text"
-                      placeholder="标签 (逗号分隔)"
-                      value={toolForm.tags.join(', ')}
-                      onChange={(e) =>
-                        setToolForm({
-                          ...toolForm,
-                          tags: normalizeTagsInput(e.target.value),
-                        })
+                <div className="divide-y divide-border-soft">
+                  {category.tools.map((tool, toolIndex) => (
+                    <ToolItem
+                      key={toolIndex}
+                      tool={tool}
+                      onEdit={() => setEditingTool({ categoryIndex, toolIndex })}
+                      onDelete={() => handleDeleteTool(categoryIndex, toolIndex)}
+                      isDeleting={deleteConfirm === `tool:${categoryIndex}:${toolIndex}`}
+                      isEditing={
+                        editingTool?.categoryIndex === categoryIndex &&
+                        editingTool?.toolIndex === toolIndex
                       }
-                      className={editorInputClassName}
+                      onSave={(updates) => {
+                        updateTool(categoryIndex, toolIndex, updates);
+                        setMessage({ tone: 'success', text: '工具链接已更新。' });
+                        setEditingTool(null);
+                      }}
+                      onCancel={() => setEditingTool(null)}
                     />
-                  </div>
-                  {toolFormError ? (
-                    <p className="mt-3 text-sm text-error-600">{toolFormError}</p>
-                  ) : null}
-                  <div className="mt-4 flex gap-2">
-                    <EditorButton
-                      onClick={() => handleAddTool(categoryIndex)}
-                      variant="primary"
-                    >
-                      确认添加
-                    </EditorButton>
-                    <EditorButton
-                      onClick={() => setShowAddTool(null)}
-                      variant="ghost"
-                    >
-                      取消
-                    </EditorButton>
-                  </div>
+                  ))}
                 </div>
-              )}
-
-              <div className="divide-y divide-border-soft">
-                {category.tools.map((tool, toolIndex) => (
-                  <ToolItem
-                    key={toolIndex}
-                    tool={tool}
-                    onEdit={() => setEditingTool({ categoryIndex, toolIndex })}
-                    onDelete={() => {
-                      const deleted = deleteTool(categoryIndex, toolIndex);
-                      setMessage(deleted
-                        ? { tone: 'success', text: '工具链接已删除。' }
-                        : { tone: 'danger', text: '工具链接删除失败。' });
-                    }}
-                    isEditing={
-                      editingTool?.categoryIndex === categoryIndex &&
-                      editingTool?.toolIndex === toolIndex
-                    }
-                    onSave={(updates) => {
-                      updateTool(categoryIndex, toolIndex, updates);
-                      setMessage({ tone: 'success', text: '工具链接已更新。' });
-                      setEditingTool(null);
-                    }}
-                    onCancel={() => setEditingTool(null)}
-                  />
-                ))}
-              </div>
-            </EditorPanel>
-          ))}
+              </EditorPanel>
+            ))}
           </div>
         )}
       </EditorMain>
@@ -457,11 +519,12 @@ interface ToolItemProps {
   onEdit: () => void;
   onDelete: () => void;
   isEditing: boolean;
+  isDeleting: boolean;
   onSave: (updates: Partial<Tool>) => void;
   onCancel: () => void;
 }
 
-function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolItemProps) {
+function ToolItem({ tool, onEdit, onDelete, isEditing, isDeleting, onSave, onCancel }: ToolItemProps) {
   const [form, setForm] = useState(tool);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -488,31 +551,43 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
   if (isEditing) {
     return (
       <div className="bg-accent-50/60 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <input
-            type="text"
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className={editorInputClassName}
-          />
-          <input
-            type="text"
-            value={form.url}
-            onChange={(e) => setForm({ ...form, url: e.target.value })}
-            className={editorInputClassName}
-          />
-          <input
-            type="text"
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className={editorInputClassName}
-          />
-          <input
-            type="text"
-            value={form.tags.join(', ')}
-            onChange={(e) => setForm({ ...form, tags: normalizeTagsInput(e.target.value) })}
-            className={editorInputClassName}
-          />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label>
+            <span className={editorFieldLabelClassName()}>工具名称</span>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              className={editorInputClassName}
+            />
+          </label>
+          <label>
+            <span className={editorFieldLabelClassName()}>URL</span>
+            <input
+              type="text"
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              className={editorInputClassName}
+            />
+          </label>
+          <label>
+            <span className={editorFieldLabelClassName()}>描述</span>
+            <input
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className={editorInputClassName}
+            />
+          </label>
+          <label>
+            <span className={editorFieldLabelClassName()}>标签</span>
+            <input
+              type="text"
+              value={form.tags.join(', ')}
+              onChange={(e) => setForm({ ...form, tags: normalizeTagsInput(e.target.value) })}
+              className={editorInputClassName}
+            />
+          </label>
         </div>
         {errorMessage ? (
           <p className="mt-3 text-sm text-error-600">{errorMessage}</p>
@@ -540,20 +615,20 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
   }
 
   return (
-    <div className="group flex items-center justify-between px-6 py-3 transition-colors hover:bg-background/70">
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Link2 className="w-4 h-4 text-subtle" />
+    <div className="group grid gap-3 px-4 py-3 transition-colors hover:bg-background/70 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6">
+      <div className="flex min-w-0 items-start gap-3">
+        <Link2 className="mt-1 h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-fg truncate">{tool.title}</span>
+          <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+            <span className="truncate font-medium text-fg">{tool.title}</span>
             {tool.tags.length > 0 && (
-              <span className="text-xs text-subtle">({tool.tags.join(', ')})</span>
+              <span className="line-clamp-1 text-xs text-subtle sm:shrink-0">({tool.tags.join(', ')})</span>
             )}
           </div>
-          <div className="text-sm text-muted truncate">{tool.description || tool.url}</div>
+          <div className="mt-1 line-clamp-2 text-sm text-muted">{tool.description || tool.url}</div>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+      <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
         <a
           href={tool.url}
           target="_blank"
@@ -564,6 +639,7 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
           <Link2 className="w-4 h-4" />
         </a>
         <button
+          type="button"
           onClick={onEdit}
           className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
           aria-label={`编辑工具：${tool.title}`}
@@ -571,9 +647,12 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, onSave, onCancel }: ToolI
           <Edit2 className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={onDelete}
-          className="rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600"
-          aria-label={`删除工具：${tool.title}`}
+          className={isDeleting
+            ? 'rounded-token-card bg-error-50 p-2 text-error-600 transition-colors focus:ring-2 focus:ring-link focus:ring-offset-2'
+            : 'rounded-token-card p-2 text-subtle transition-colors hover:bg-error-50 hover:text-error-600 focus:ring-2 focus:ring-link focus:ring-offset-2'}
+          aria-label={`${isDeleting ? '确认删除工具' : '删除工具'}：${tool.title}`}
         >
           <Trash2 className="w-4 h-4" />
         </button>

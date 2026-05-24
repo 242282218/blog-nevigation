@@ -13,7 +13,7 @@ export function PostCard({ title, description, date, href, className }: PostCard
         <a
             href={href}
             className={cn(
-                "group block rounded-token-card border border-border bg-surface p-5",
+                "group block rounded-token-card border border-border bg-surface-elevated p-5",
                 "transition-shadow duration-token-normal ease-token-out",
                 "hover:shadow-token-card-hover hover:border-accent-200",
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
@@ -22,7 +22,7 @@ export function PostCard({ title, description, date, href, className }: PostCard
         >
             <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
                 <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-medium text-fg transition-colors duration-token-fast group-hover:text-accent">
+                    <h3 className="text-base font-semibold text-fg transition-colors duration-token-fast group-hover:text-accent">
                         {title}
                     </h3>
                     {description && (

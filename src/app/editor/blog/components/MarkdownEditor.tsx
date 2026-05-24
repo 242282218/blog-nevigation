@@ -185,7 +185,10 @@ export function MarkdownEditor({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-background/80 p-2">
+      <div
+        data-editor-toolbar
+        className="flex min-h-12 items-center gap-1 overflow-x-auto border-b border-border bg-background/80 p-2 [scrollbar-width:thin]"
+      >
         <ToolbarButton onClick={toolbarActions.heading} title="标题">
           <Heading2 className="h-4 w-4" />
         </ToolbarButton>
@@ -282,5 +285,5 @@ function ToolbarButton({
 }
 
 function ToolbarDivider() {
-  return <div className="mx-1 h-5 w-px bg-border" />;
+  return <div className="mx-1 h-5 w-px shrink-0 bg-border" />;
 }

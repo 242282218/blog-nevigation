@@ -1,13 +1,12 @@
-import type { ReactNode } from 'react';
+import type { HTMLAttributes, ReactNode } from 'react';
 import { AlertCircle, CheckCircle2, Info, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type StatusTone = 'info' | 'success' | 'warning' | 'danger' | 'loading';
 
-interface StatusMessageProps {
+interface StatusMessageProps extends HTMLAttributes<HTMLDivElement> {
   tone?: StatusTone;
   children: ReactNode;
-  className?: string;
 }
 
 const toneClass: Record<StatusTone, string> = {
@@ -30,6 +29,7 @@ export function StatusMessage({
   tone = 'info',
   children,
   className,
+  ...props
 }: StatusMessageProps) {
   const Icon = iconMap[tone];
 
@@ -41,6 +41,7 @@ export function StatusMessage({
         className
       )}
       role={tone === 'danger' ? 'alert' : 'status'}
+      {...props}
     >
       <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', tone === 'loading' ? 'animate-spin' : '')} />
       <div>{children}</div>
