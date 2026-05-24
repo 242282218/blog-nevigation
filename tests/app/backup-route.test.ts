@@ -38,6 +38,11 @@ function writeJson(filePath: string, value: unknown): void {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
 }
 
+function writeText(filePath: string, value: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, value, 'utf8');
+}
+
 function seedRuntimeData(dataRoot: string): void {
   writeJson(path.join(dataRoot, 'articles', 'articles.json'), [
     {
@@ -116,6 +121,24 @@ describe('backup API', () => {
           ]),
           navigation: [],
         }),
+      })
+    );
+  });
+
+  it('rejects backup export when runtime data is corrupt', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+    writeText(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), '{');
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        message: '服务器运行时数据文件损坏，请修复数据文件后重试。',
+        resource: 'articles',
       })
     );
   });

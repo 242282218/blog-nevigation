@@ -54,6 +54,12 @@ Use the smallest secure path that preserves existing deployments:
 - Added a bounded `UI Smoke` GitHub Actions workflow that builds the app, runs
   the public Playwright smoke script against `next start`, and uploads
   screenshots and server logs as failure artifacts.
+- Hardened runtime data reads so corrupt or structurally invalid JSON fails
+  explicitly instead of being treated as empty articles, default settings, or
+  seed navigation data.
+- Removed navigation seed write-back from read paths and switched missing
+  manifest revisions to deterministic derived revisions, keeping read paths
+  side-effect free while preserving write conflict checks.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

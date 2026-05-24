@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createEditorDataFileInvalidResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -24,14 +25,24 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
-    const settings = readSiteSettingsFromDisk();
-    const resourceManifest = getEditorDataResourceManifest('settings', settings);
+    try {
+        const settings = readSiteSettingsFromDisk();
+        const resourceManifest = getEditorDataResourceManifest('settings', settings);
 
-    return NextResponse.json({
-        persistent: isEditorDataRootConfigured(),
-        revision: resourceManifest?.revision ?? null,
-        settings,
-    });
+        return NextResponse.json({
+            persistent: isEditorDataRootConfigured(),
+            revision: resourceManifest?.revision ?? null,
+            settings,
+        });
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function PUT(request: NextRequest) {
@@ -57,8 +68,22 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    const currentSettings = readSiteSettingsFromDisk();
-    const currentManifest = getEditorDataResourceManifest('settings', currentSettings);
+    let currentSettings;
+    let currentManifest;
+
+    try {
+        currentSettings = readSiteSettingsFromDisk();
+        currentManifest = getEditorDataResourceManifest('settings', currentSettings);
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
+
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
 
     if (!expectedRevision || currentManifest?.revision !== expectedRevision) {

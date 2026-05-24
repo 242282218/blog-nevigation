@@ -38,6 +38,11 @@ function writeJson(filePath: string, value: unknown): void {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
 }
 
+function writeText(filePath: string, value: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, value, 'utf8');
+}
+
 function createArticle(id: string, title: string) {
   return {
     id,
@@ -83,6 +88,59 @@ afterEach(() => {
 });
 
 describe('editor data write APIs', () => {
+  it('reports corrupt article files without returning empty editor data', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    writeText(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), '{');
+
+    const response = await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        message: '服务器运行时数据文件损坏，请修复数据文件后重试。',
+        resource: 'articles',
+      })
+    );
+  });
+
+  it('reports invalid navigation files without rewriting seed data', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const navigationPath = path.join(process.env.BLOG_DATA_ROOT, 'navigation', 'tools.json');
+    writeJson(navigationPath, { invalid: true });
+
+    const response = await getNavigation(await createAuthedEditorRequest('http://localhost/api/data/navigation'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        resource: 'navigation',
+      })
+    );
+    expect(JSON.parse(fs.readFileSync(navigationPath, 'utf8'))).toEqual({ invalid: true });
+  });
+
+  it('reports invalid settings files without returning default settings', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    writeJson(path.join(process.env.BLOG_DATA_ROOT, 'settings', 'site.json'), {
+      siteName: '',
+    });
+
+    const response = await getSettings(await createAuthedEditorRequest('http://localhost/api/data/settings'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        resource: 'settings',
+      })
+    );
+  });
+
   it('rejects malformed article JSON without writing or remote sync', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();

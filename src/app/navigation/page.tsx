@@ -5,12 +5,7 @@ import { NavigationDirectory } from './NavigationDirectory';
 export const dynamic = 'force-dynamic';
 
 function getNavigationData() {
-    try {
-        return readNavigationFromDisk();
-    } catch (error) {
-        console.error("Error loading navigation data", error);
-        return [];
-    }
+    return readNavigationFromDisk();
 }
 
 export default function NavigationPage() {

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import type { Article } from '@/app/types/article';
 import type { Category } from '@/app/types/navigation';
-import { filterArticlesData } from '@/lib/article-data';
+import { parseArticlesData } from '@/lib/article-data';
 import { parseNavigationData } from '@/lib/navigation-data';
 import {
     createDefaultSiteSettings,
@@ -18,6 +18,7 @@ const MANIFEST_FILE_NAME = 'manifest.json';
 const MANIFEST_VERSION = 1;
 
 export type EditorDataResourceName = 'articles' | 'navigation' | 'settings';
+export type EditorDataFileResourceName = EditorDataResourceName | 'manifest' | 'navigation-seed';
 
 export interface EditorDataResourceManifest {
     revision: string;
@@ -38,7 +39,18 @@ export class EditorDataRootNotConfiguredError extends Error {
     }
 }
 
-function readJsonFile(filePath: string | null): unknown | null {
+export class EditorDataFileInvalidError extends Error {
+    constructor(
+        public readonly resource: EditorDataFileResourceName,
+        public readonly filePath: string,
+        public readonly reason: string
+    ) {
+        super(`Invalid editor data file for ${resource}: ${reason}`);
+        this.name = 'EditorDataFileInvalidError';
+    }
+}
+
+function readJsonFile(filePath: string | null, resource: EditorDataFileResourceName): unknown | null {
     if (!filePath || !fs.existsSync(filePath)) {
         return null;
     }
@@ -47,8 +59,16 @@ function readJsonFile(filePath: string | null): unknown | null {
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (error) {
         console.error(`[editor-data-storage] Failed to read JSON: ${filePath}`, error);
-        return null;
+        throw new EditorDataFileInvalidError(resource, filePath, 'invalid JSON');
     }
+}
+
+function createInvalidDataFileError(
+    resource: EditorDataFileResourceName,
+    filePath: string,
+    reason: string
+): EditorDataFileInvalidError {
+    return new EditorDataFileInvalidError(resource, filePath, reason);
 }
 
 function ensureParentDirectory(filePath: string): void {
@@ -143,6 +163,16 @@ function createResourceManifest(value: unknown): EditorDataResourceManifest {
         revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
         hash,
         updatedAt,
+    };
+}
+
+function createDerivedResourceManifest(value: unknown): EditorDataResourceManifest {
+    const hash = hashJson(value);
+
+    return {
+        revision: `derived-${hash}`,
+        hash,
+        updatedAt: '1970-01-01T00:00:00.000Z',
     };
 }
 
@@ -284,7 +314,20 @@ export function getEditorDataManifestFilePath(): string | null {
 }
 
 export function readEditorDataManifest(): EditorDataManifest {
-    return parseManifest(readJsonFile(getEditorDataManifestFilePath())) ?? createEmptyManifest();
+    const manifestPath = getEditorDataManifestFilePath();
+    const raw = readJsonFile(manifestPath, 'manifest');
+
+    if (raw === null) {
+        return createEmptyManifest();
+    }
+
+    const manifest = parseManifest(raw);
+
+    if (!manifest && manifestPath) {
+        throw createInvalidDataFileError('manifest', manifestPath, 'invalid manifest structure');
+    }
+
+    return manifest ?? createEmptyManifest();
 }
 
 export function writeEditorDataManifest(manifest: EditorDataManifest): void {
@@ -319,13 +362,7 @@ export function getEditorDataResourceManifest(
     }
 
     const manifest = readEditorDataManifest();
-    const resourceManifest = manifest.resources[resource];
-
-    if (resourceManifest) {
-        return resourceManifest;
-    }
-
-    return touchEditorDataResourceManifest(resource, value);
+    return manifest.resources[resource] ?? createDerivedResourceManifest(value);
 }
 
 export function getDefaultNavigationSeedFilePath(): string {
@@ -340,9 +377,20 @@ export function getDefaultNavigationSeedFilePath(): string {
 }
 
 export function readArticlesFromDisk(): Article[] {
-    const raw = readJsonFile(getArticlesDataFilePath());
+    const articlesPath = getArticlesDataFilePath();
+    const raw = readJsonFile(articlesPath, 'articles');
 
-    return filterArticlesData(raw);
+    if (raw === null) {
+        return [];
+    }
+
+    const articles = parseArticlesData(raw);
+
+    if (!articles && articlesPath) {
+        throw createInvalidDataFileError('articles', articlesPath, 'invalid articles structure');
+    }
+
+    return articles ?? [];
 }
 
 export function writeArticlesToDisk(articles: Article[]): EditorDataResourceManifest {
@@ -352,22 +400,27 @@ export function writeArticlesToDisk(articles: Article[]): EditorDataResourceMani
 
 export function readNavigationFromDisk(): Category[] {
     const navigationPath = getNavigationDataFilePath();
-    const raw = readJsonFile(navigationPath);
+    const raw = readJsonFile(navigationPath, 'navigation');
     const parsed = parseNavigationData(raw);
 
     if (parsed) {
         return parsed;
     }
 
-    const seedRaw = readJsonFile(getDefaultNavigationSeedFilePath());
+    if (raw !== null && navigationPath) {
+        throw createInvalidDataFileError('navigation', navigationPath, 'invalid navigation structure');
+    }
+
+    const seedPath = getDefaultNavigationSeedFilePath();
+    const seedRaw = readJsonFile(seedPath, 'navigation-seed');
     const seedParsed = parseNavigationData(seedRaw);
 
     if (!seedParsed) {
-        return [];
-    }
+        if (seedRaw !== null) {
+            throw createInvalidDataFileError('navigation-seed', seedPath, 'invalid navigation seed structure');
+        }
 
-    if (raw === null && navigationPath) {
-        writeNavigationToDisk(seedParsed);
+        return [];
     }
 
     return seedParsed;
@@ -379,7 +432,18 @@ export function writeNavigationToDisk(categories: Category[]): EditorDataResourc
 }
 
 export function readSiteSettingsFromDisk(): SiteSettings {
-    const parsed = parseSiteSettings(readJsonFile(getSiteSettingsDataFilePath()));
+    const settingsPath = getSiteSettingsDataFilePath();
+    const raw = readJsonFile(settingsPath, 'settings');
+
+    if (raw === null) {
+        return createDefaultSiteSettings();
+    }
+
+    const parsed = parseSiteSettings(raw);
+
+    if (!parsed && settingsPath) {
+        throw createInvalidDataFileError('settings', settingsPath, 'invalid site settings structure');
+    }
 
     return parsed ?? createDefaultSiteSettings();
 }
@@ -412,12 +476,12 @@ export function restoreEditorDataRootAtomically(data: {
         writeJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), data.settings);
         writeJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), manifest);
 
-        const stagedArticles = filterArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME)));
-        const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME)));
-        const stagedSettings = parseSiteSettings(readJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME)));
-        const stagedManifest = parseManifest(readJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME)));
+        const stagedArticles = parseArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), 'articles'));
+        const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), 'navigation'));
+        const stagedSettings = parseSiteSettings(readJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), 'settings'));
+        const stagedManifest = parseManifest(readJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), 'manifest'));
 
-        if (stagedArticles.length !== data.articles.length || !stagedNavigation || !stagedSettings) {
+        if (!stagedArticles || stagedArticles.length !== data.articles.length || !stagedNavigation || !stagedSettings) {
             throw new Error('Staged restore verification failed.');
         }
 

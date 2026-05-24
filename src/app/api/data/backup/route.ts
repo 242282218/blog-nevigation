@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createEditorDataFileInvalidResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -30,7 +31,17 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
-    return NextResponse.json(createCurrentEditorBackupPayload());
+    try {
+        return NextResponse.json(createCurrentEditorBackupPayload());
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function POST(request: NextRequest) {
@@ -45,7 +56,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => null)) as BackupRequestBody | null;
-    const result = restoreEditorBackupPayload(body);
+    let result;
+
+    try {
+        result = restoreEditorBackupPayload(body);
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 
     if (!result) {
         return NextResponse.json(

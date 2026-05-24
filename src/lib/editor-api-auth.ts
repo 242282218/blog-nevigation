@@ -6,6 +6,7 @@ import {
     isRuntimeEditorAuthConfigured,
     isValidRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
+import { EditorDataFileInvalidError } from '@/lib/editor-data-storage';
 
 export async function ensureEditorSession(request: NextRequest): Promise<NextResponse | null> {
     if (!isRuntimeEditorAuthConfigured()) {
@@ -37,5 +38,19 @@ export function createEditorDataRootRequiredResponse(): NextResponse {
             message: '未配置 BLOG_DATA_ROOT，编辑数据仅保存在当前浏览器，无法写入服务器。',
         },
         { status: 503 }
+    );
+}
+
+export function createEditorDataFileInvalidResponse(error: unknown): NextResponse | null {
+    if (!(error instanceof EditorDataFileInvalidError)) {
+        return null;
+    }
+
+    return NextResponse.json(
+        {
+            message: '服务器运行时数据文件损坏，请修复数据文件后重试。',
+            resource: error.resource,
+        },
+        { status: 500 }
     );
 }

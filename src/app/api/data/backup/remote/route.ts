@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createEditorDataFileInvalidResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -103,6 +104,12 @@ export async function POST(request: NextRequest) {
             remoteBackup,
         });
     } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
         const status = error instanceof R2BackupNotConfiguredError ? 503 : 502;
 
         return NextResponse.json(

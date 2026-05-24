@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createEditorDataFileInvalidResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -24,14 +25,24 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
-    const categories = readNavigationFromDisk();
-    const resourceManifest = getEditorDataResourceManifest('navigation', categories);
+    try {
+        const categories = readNavigationFromDisk();
+        const resourceManifest = getEditorDataResourceManifest('navigation', categories);
 
-    return NextResponse.json({
-        persistent: isEditorDataRootConfigured(),
-        revision: resourceManifest?.revision ?? null,
-        categories,
-    });
+        return NextResponse.json({
+            persistent: isEditorDataRootConfigured(),
+            revision: resourceManifest?.revision ?? null,
+            categories,
+        });
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function PUT(request: NextRequest) {
@@ -57,8 +68,22 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    const currentCategories = readNavigationFromDisk();
-    const currentManifest = getEditorDataResourceManifest('navigation', currentCategories);
+    let currentCategories;
+    let currentManifest;
+
+    try {
+        currentCategories = readNavigationFromDisk();
+        currentManifest = getEditorDataResourceManifest('navigation', currentCategories);
+    } catch (error) {
+        const invalidResponse = createEditorDataFileInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
+
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
 
     if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
