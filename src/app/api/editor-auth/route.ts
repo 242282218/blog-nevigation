@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     EDITOR_SESSION_COOKIE,
+    getEditorAccessToken,
     getEditorCookieOptions,
 } from '@/lib/editor-auth';
+import { createEditorAuthConfigInvalidResponse } from '@/lib/editor-api-auth';
 import {
     RuntimeEditorAuthAlreadyConfiguredError,
     RuntimeEditorAuthInvalidSecretError,
@@ -15,6 +17,7 @@ import {
     isValidRuntimeEditorAuthSetupToken,
     isValidRuntimeEditorSecret,
     isValidRuntimeEditorSession,
+    readRuntimeEditorAuthConfig,
     revokeRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
 
@@ -30,55 +33,98 @@ function createSessionResponse(sessionValue: string): NextResponse {
     return response;
 }
 
-export async function GET(request: NextRequest) {
-    const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
-
-    return NextResponse.json({
-        configured: isRuntimeEditorAuthConfigured(),
-        authenticated: await isValidRuntimeEditorSession(session),
-        setupEnabled: isRuntimeEditorAuthSetupEnabled(),
-        setupTokenRequired: isRuntimeEditorAuthSetupTokenRequired(),
+function clearSessionCookie(response: NextResponse): NextResponse {
+    response.cookies.set(EDITOR_SESSION_COOKIE, '', {
+        ...getEditorCookieOptions(),
+        maxAge: 0,
     });
+
+    return response;
+}
+
+export async function GET(request: NextRequest) {
+    try {
+        const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
+
+        return NextResponse.json({
+            configured: isRuntimeEditorAuthConfigured(),
+            authenticated: await isValidRuntimeEditorSession(session),
+            setupEnabled: isRuntimeEditorAuthSetupEnabled(),
+            setupTokenRequired: isRuntimeEditorAuthSetupTokenRequired(),
+        });
+    } catch (error) {
+        const invalidResponse = createEditorAuthConfigInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function POST(request: NextRequest) {
-    if (!isRuntimeEditorAuthConfigured()) {
-        return NextResponse.json(
-            {
-                message: '未初始化编辑口令，请先完成首次初始化。',
-            },
-            { status: 503 }
-        );
+    try {
+        if (!isRuntimeEditorAuthConfigured()) {
+            return NextResponse.json(
+                {
+                    message: '未初始化编辑口令，请先完成首次初始化。',
+                },
+                { status: 503 }
+            );
+        }
+
+        const body = await request.json().catch(() => null);
+        const secret = typeof body?.secret === 'string' ? body.secret : '';
+
+        if (!(await isValidRuntimeEditorSecret(secret))) {
+            return NextResponse.json(
+                {
+                    message: '口令错误。',
+                },
+                { status: 401 }
+            );
+        }
+
+        const sessionValue = getCurrentRuntimeEditorSessionValue()
+            ?? await createRuntimeEditorSession();
+
+        if (!sessionValue) {
+            return NextResponse.json(
+                {
+                    message: '未初始化编辑口令，请先完成首次初始化。',
+                },
+                { status: 503 }
+            );
+        }
+
+        return createSessionResponse(sessionValue);
+    } catch (error) {
+        const invalidResponse = createEditorAuthConfigInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
     }
-
-    const body = await request.json().catch(() => null);
-    const secret = typeof body?.secret === 'string' ? body.secret : '';
-
-    if (!(await isValidRuntimeEditorSecret(secret))) {
-        return NextResponse.json(
-            {
-                message: '口令错误。',
-            },
-            { status: 401 }
-        );
-    }
-
-    const sessionValue = getCurrentRuntimeEditorSessionValue()
-        ?? await createRuntimeEditorSession();
-
-    if (!sessionValue) {
-        return NextResponse.json(
-            {
-                message: '未初始化编辑口令，请先完成首次初始化。',
-            },
-            { status: 503 }
-        );
-    }
-
-    return createSessionResponse(sessionValue);
 }
 
 export async function PUT(request: NextRequest) {
+    try {
+        if (!getEditorAccessToken()) {
+            readRuntimeEditorAuthConfig();
+        }
+    } catch (error) {
+        const invalidResponse = createEditorAuthConfigInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
+
     const body = await request.json().catch(() => null);
     const secret = typeof body?.secret === 'string' ? body.secret : '';
     const confirmSecret = typeof body?.confirmSecret === 'string' ? body.confirmSecret : '';
@@ -115,6 +161,12 @@ export async function PUT(request: NextRequest) {
         const sessionValue = await initializeRuntimeEditorAuth(secret);
         return createSessionResponse(sessionValue);
     } catch (error) {
+        const invalidResponse = createEditorAuthConfigInvalidResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
         if (error instanceof RuntimeEditorAuthAlreadyConfiguredError) {
             return NextResponse.json(
                 {
@@ -144,14 +196,17 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE() {
-    revokeRuntimeEditorSession();
+    try {
+        revokeRuntimeEditorSession();
+    } catch (error) {
+        const invalidResponse = createEditorAuthConfigInvalidResponse(error);
 
-    const response = NextResponse.json({ success: true });
+        if (invalidResponse) {
+            return clearSessionCookie(invalidResponse);
+        }
 
-    response.cookies.set(EDITOR_SESSION_COOKIE, '', {
-        ...getEditorCookieOptions(),
-        maxAge: 0,
-    });
+        throw error;
+    }
 
-    return response;
+    return clearSessionCookie(NextResponse.json({ success: true }));
 }

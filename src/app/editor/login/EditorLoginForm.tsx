@@ -18,6 +18,7 @@ interface EditorLoginFormProps {
     setupEnabled: boolean;
     setupTokenRequired: boolean;
     nextPath: string;
+    authErrorMessage?: string | null;
 }
 
 function EditorInitializationGuide() {
@@ -49,6 +50,7 @@ export function EditorLoginForm({
     setupEnabled,
     setupTokenRequired,
     nextPath,
+    authErrorMessage = null,
 }: EditorLoginFormProps) {
     const router = useRouter();
     const [secret, setSecret] = useState('');
@@ -162,7 +164,13 @@ export function EditorLoginForm({
                     </div>
                 </div>
 
-                {authConfigured ? (
+                {authErrorMessage ? (
+                    <div className="mt-8 space-y-4">
+                        <StatusMessage tone="danger">
+                            {authErrorMessage}
+                        </StatusMessage>
+                    </div>
+                ) : authConfigured ? (
                     <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
                         <div>
                             <label htmlFor="editor-login-secret" className="mb-2 block text-sm font-medium text-fg">

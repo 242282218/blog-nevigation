@@ -172,4 +172,26 @@ describe('EditorLoginForm', () => {
     expect(container.textContent).not.toContain('初次使用初始化引导');
     expect(input?.disabled).toBe(false);
   });
+
+  it('shows a read-only error when runtime auth config is invalid', () => {
+    act(() => {
+      root.render(
+        <EditorLoginForm
+          authConfigured={false}
+          setupEnabled
+          setupTokenRequired
+          nextPath="/editor"
+          authErrorMessage="编辑口令配置文件损坏，请修复或删除后重试。"
+        />
+      );
+    });
+
+    const loginInput = container.querySelector<HTMLInputElement>('#editor-login-secret');
+    const setupInput = container.querySelector<HTMLInputElement>('#editor-setup-secret');
+
+    expect(container.textContent).toContain('编辑口令配置文件损坏');
+    expect(container.textContent).not.toContain('初次使用初始化引导');
+    expect(loginInput).toBeNull();
+    expect(setupInput).toBeNull();
+  });
 });

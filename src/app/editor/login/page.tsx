@@ -4,7 +4,9 @@ import {
     EDITOR_SESSION_COOKIE,
     getSafeEditorNextPath,
 } from '@/lib/editor-auth';
+import { EDITOR_AUTH_CONFIG_INVALID_MESSAGE } from '@/lib/editor-api-auth';
 import {
+    RuntimeEditorAuthConfigInvalidError,
     isRuntimeEditorAuthConfigured,
     isRuntimeEditorAuthSetupEnabled,
     isRuntimeEditorAuthSetupTokenRequired,
@@ -29,16 +31,32 @@ export default async function EditorLoginPage({
     const cookieStore = await cookies();
     const session = cookieStore.get(EDITOR_SESSION_COOKIE)?.value;
 
-    if (await isValidRuntimeEditorSession(session)) {
-        redirect(nextPath);
-    }
+    try {
+        if (await isValidRuntimeEditorSession(session)) {
+            redirect(nextPath);
+        }
 
-    return (
-        <EditorLoginForm
-            authConfigured={isRuntimeEditorAuthConfigured()}
-            setupEnabled={isRuntimeEditorAuthSetupEnabled()}
-            setupTokenRequired={isRuntimeEditorAuthSetupTokenRequired()}
-            nextPath={nextPath}
-        />
-    );
+        return (
+            <EditorLoginForm
+                authConfigured={isRuntimeEditorAuthConfigured()}
+                setupEnabled={isRuntimeEditorAuthSetupEnabled()}
+                setupTokenRequired={isRuntimeEditorAuthSetupTokenRequired()}
+                nextPath={nextPath}
+            />
+        );
+    } catch (error) {
+        if (!(error instanceof RuntimeEditorAuthConfigInvalidError)) {
+            throw error;
+        }
+
+        return (
+            <EditorLoginForm
+                authConfigured={false}
+                setupEnabled={false}
+                setupTokenRequired={false}
+                nextPath={nextPath}
+                authErrorMessage={EDITOR_AUTH_CONFIG_INVALID_MESSAGE}
+            />
+        );
+    }
 }

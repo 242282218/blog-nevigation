@@ -68,6 +68,9 @@ Use the smallest secure path that preserves existing deployments:
 - Hardened stored Cloudflare R2 settings so corrupt or incomplete
   `cloudflare-r2.json` files fail explicitly instead of silently disabling
   backups or falling back to `.env` credentials.
+- Hardened runtime editor auth storage so corrupt or incomplete
+  `editor-auth.json` files fail explicitly, lock editor data APIs, and show a
+  clear login-page error instead of reopening first-use setup.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

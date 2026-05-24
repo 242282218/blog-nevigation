@@ -41,6 +41,13 @@ export class RuntimeEditorAuthInvalidSecretError extends Error {
     }
 }
 
+export class RuntimeEditorAuthConfigInvalidError extends Error {
+    constructor(public readonly filePath: string) {
+        super('Stored editor auth config is invalid.');
+        this.name = 'RuntimeEditorAuthConfigInvalidError';
+    }
+}
+
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
 }
@@ -86,9 +93,9 @@ function createRuntimeEditorSessionFields(sessionValue: string) {
     };
 }
 
-function parseRuntimeEditorAuthConfig(value: unknown): RuntimeEditorAuthConfig | null {
+function parseRuntimeEditorAuthConfig(value: unknown, filePath: string): RuntimeEditorAuthConfig {
     if (!value || typeof value !== 'object') {
-        return null;
+        throw new RuntimeEditorAuthConfigInvalidError(filePath);
     }
 
     const candidate = value as Partial<RuntimeEditorAuthConfig>;
@@ -99,7 +106,7 @@ function parseRuntimeEditorAuthConfig(value: unknown): RuntimeEditorAuthConfig |
         typeof candidate.passwordHash !== 'string' ||
         typeof candidate.createdAt !== 'string'
     ) {
-        return null;
+        throw new RuntimeEditorAuthConfigInvalidError(filePath);
     }
 
     return {
@@ -141,10 +148,14 @@ export function readRuntimeEditorAuthConfig(): RuntimeEditorAuthConfig | null {
     }
 
     try {
-        return parseRuntimeEditorAuthConfig(JSON.parse(fs.readFileSync(filePath, 'utf8')));
+        return parseRuntimeEditorAuthConfig(JSON.parse(fs.readFileSync(filePath, 'utf8')), filePath);
     } catch (error) {
+        if (error instanceof RuntimeEditorAuthConfigInvalidError) {
+            throw error;
+        }
+
         console.error(`[editor-auth-runtime] Failed to read auth config: ${filePath}`, error);
-        return null;
+        throw new RuntimeEditorAuthConfigInvalidError(filePath);
     }
 }
 

@@ -40,6 +40,17 @@ function createTempDirectoryWithCleanup(prefix: string): string {
   return directory;
 }
 
+function useCorruptRuntimeAuthConfig(prefix: string): string {
+  delete process.env.EDITOR_ACCESS_TOKEN;
+  const directory = createTempDirectoryWithCleanup(prefix);
+  const configFilePath = path.join(directory, 'editor-auth.json');
+
+  fs.writeFileSync(configFilePath, '{', 'utf8');
+  process.env.EDITOR_AUTH_CONFIG_FILE = configFilePath;
+
+  return configFilePath;
+}
+
 function createJsonRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/editor-auth', {
     method: 'POST',
@@ -298,6 +309,35 @@ describe('editor auth API', () => {
       })
     );
   });
+
+  it('fails fast when the runtime auth config file is corrupt', async () => {
+    const configFilePath = useCorruptRuntimeAuthConfig('editor-auth-corrupt-api-');
+    process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
+
+    const getResponse = await GET(new NextRequest('http://localhost/api/editor-auth'));
+    const postResponse = await POST(createJsonRequest({ secret: 'new-secret' }));
+    const putResponse = await PUT(createJsonRequest({
+      secret: 'replacement-secret',
+      confirmSecret: 'replacement-secret',
+      setupToken: 'setup-token',
+    }));
+    const deleteResponse = await DELETE();
+
+    expect(getResponse.status).toBe(500);
+    expect(postResponse.status).toBe(500);
+    expect(postResponse.headers.get('set-cookie')).toBeNull();
+    expect(putResponse.status).toBe(500);
+    expect(putResponse.headers.get('set-cookie')).toBeNull();
+    expect(deleteResponse.status).toBe(500);
+    expect(deleteResponse.headers.get('set-cookie')).toContain(`${EDITOR_SESSION_COOKIE}=`);
+    expect(deleteResponse.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(fs.readFileSync(configFilePath, 'utf8')).toBe('{');
+    expect(await getResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('配置文件损坏'),
+      })
+    );
+  });
 });
 
 describe('editor API session guard', () => {
@@ -334,6 +374,19 @@ describe('editor API session guard', () => {
     expect(missingSessionResponse?.status).toBe(401);
     expect(staleSessionResponse?.status).toBe(401);
     expect(currentSessionResponse).toBeNull();
+  });
+
+  it('locks editor data APIs when the runtime auth config file is corrupt', async () => {
+    useCorruptRuntimeAuthConfig('editor-api-auth-corrupt-');
+
+    const response = await ensureEditorSession(new NextRequest('http://localhost/api/data/articles'));
+
+    expect(response?.status).toBe(500);
+    expect(await response?.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('配置文件损坏'),
+      })
+    );
   });
 });
 
