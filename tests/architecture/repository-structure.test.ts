@@ -44,6 +44,9 @@ describe('repository structure migration', () => {
         const dockerIgnore = fs.readFileSync(resolveRepoPath('.dockerignore'), 'utf8');
         const dockerfile = fs.readFileSync(resolveRepoPath('Dockerfile'), 'utf8');
         const dockerEntrypoint = fs.readFileSync(resolveRepoPath('docker-entrypoint.sh'), 'utf8');
+        const localCompose = fs.readFileSync(resolveRepoPath('compose.yaml'), 'utf8');
+        const dockerDocs = fs.readFileSync(resolveRepoPath('DOCKER.md'), 'utf8');
+        const envExample = fs.readFileSync(resolveRepoPath('.env.example'), 'utf8');
         const nodeVersion = fs.readFileSync(resolveRepoPath('.nvmrc'), 'utf8').trim();
         const packageJson = JSON.parse(fs.readFileSync(resolveRepoPath('package.json'), 'utf8')) as {
             packageManager?: string;
@@ -77,6 +80,13 @@ describe('repository structure migration', () => {
         expect(dockerEntrypoint).toContain('mkdir -p "$DATA_ROOT/articles" "$DATA_ROOT/navigation" "$DATA_ROOT/settings"');
         expect(dockerEntrypoint).toContain('chown -R nextjs:nodejs "$DATA_ROOT"');
         expect(dockerEntrypoint).toContain('exec su-exec nextjs "$@"');
+        expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
+        expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
+        expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
+        expect(dockerDocs).toContain('EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"');
+        expect(dockerDocs).toContain('-e COOKIE_SECURE=false');
+        expect(dockerDocs).toContain('deploy/compose.prod.yaml');
+        expect(dockerDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(nextConfig).toContain('Referrer-Policy');
         expect(nextConfig).toContain('strict-origin-when-cross-origin');
         expect(nextConfig).toContain('X-Content-Type-Options');
@@ -87,6 +97,8 @@ describe('repository structure migration', () => {
         expect(nextConfig).toContain('camera=(), microphone=(), geolocation=()');
         expect(deployCompose).toContain('BLOG_DATA_ROOT: /var/lib/blog-navigation');
         expect(deployCompose).toContain('./data:/var/lib/blog-navigation');
+        expect(deployCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
+        expect(deployCompose).not.toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
         expect(deployWorkflow).toContain('uses: actions/checkout@v6');
         expect(deployWorkflow).toContain('uses: actions/setup-node@v6');
         expect(deployWorkflow).toContain('uses: docker/setup-buildx-action@v4');
@@ -113,6 +125,9 @@ describe('repository structure migration', () => {
         expect(serverDocs).toContain('refuses to start if the build did not publish an immutable');
         expect(serverDocs).toContain('then runs the same health check');
         expect(serverDocs).toContain('against the rollback container');
+        expect(serverDocs).toContain('openssl rand -base64 32');
+        expect(serverDocs).toContain('COOKIE_SECURE=true');
+        expect(serverDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(migrationDocs).toContain('tool URLs must be HTTPS');
         expect(migrationDocs).toContain('Invalid backup packages fail before');
         expect(migrationDocs).toContain('replacing the target runtime data');

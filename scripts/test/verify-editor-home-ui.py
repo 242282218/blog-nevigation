@@ -17,7 +17,7 @@ def assert_no_horizontal_overflow(page) -> None:
 
 
 def verify_page(browser, viewport, screenshot_name: str) -> None:
-    context = create_authenticated_context(browser, BASE_URL, viewport, "change-me")
+    context = create_authenticated_context(browser, BASE_URL, viewport, "local-dev-only-secret")
     page = context.new_page()
     page.set_default_timeout(60000)
     page.goto(f"{BASE_URL}/editor", wait_until="domcontentloaded")

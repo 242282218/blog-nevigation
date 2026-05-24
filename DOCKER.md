@@ -9,9 +9,12 @@ docker build -t blog-navigation .
 ## Run
 
 ```bash
+EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
+
 docker run -p 3000:3000 \
-  -e EDITOR_ACCESS_TOKEN=change-me \
+  -e EDITOR_ACCESS_TOKEN="${EDITOR_ACCESS_TOKEN}" \
   -e BLOG_DATA_ROOT=/var/lib/blog-navigation \
+  -e COOKIE_SECURE=false \
   -e R2_BACKUP_ENABLED=false \
   blog-navigation
 ```
@@ -22,6 +25,9 @@ docker run -p 3000:3000 \
 cp .env.example .env
 docker compose up --build
 ```
+
+The root Compose file is for local HTTP testing. For a public server, use
+`deploy/compose.prod.yaml`; it defaults editor cookies to HTTPS-only.
 
 The compose stack uses a single bind mount: `./data:/var/lib/blog-navigation`.
 Runtime editor data stays outside the repository and can be migrated by copying

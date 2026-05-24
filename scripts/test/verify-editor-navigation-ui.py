@@ -26,7 +26,7 @@ def main() -> None:
             "desktop": {"width": 1440, "height": 960},
             "mobile": {"width": 390, "height": 844},
         }.items():
-            context = create_authenticated_context(browser, BASE_URL, viewport, "change-me")
+            context = create_authenticated_context(browser, BASE_URL, viewport, "local-dev-only-secret")
             page = context.new_page()
             page.set_default_timeout(90000)
             page.goto(f"{BASE_URL}/editor/navigation", wait_until="domcontentloaded")

@@ -29,8 +29,8 @@ services:
       EDITOR_AUTH_INTERNAL_ORIGIN: ${EDITOR_AUTH_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
       EDITOR_RUNTIME_AUTH_SETUP_TOKEN: ${EDITOR_RUNTIME_AUTH_SETUP_TOKEN:-}
       EDITOR_ALLOW_RUNTIME_AUTH_SETUP: ${EDITOR_ALLOW_RUNTIME_AUTH_SETUP:-false}
-      # 无 HTTPS 时设为 false，允许 HTTP 下使用 session cookie
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # 公网生产默认要求 HTTPS Secure Cookie；仅内网/临时 HTTP 调试显式设为 false
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # 可选：Cloudflare R2 远端备份
       R2_BACKUP_ENABLED: ${R2_BACKUP_ENABLED:-false}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}

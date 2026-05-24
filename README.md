@@ -14,7 +14,7 @@ npm ci --legacy-peer-deps
 创建 `.env.local`：
 
 ```env
-EDITOR_ACCESS_TOKEN=change-me
+EDITOR_ACCESS_TOKEN=local-dev-only-secret
 # 可选：需要本地持久化编辑数据时再配置
 BLOG_DATA_ROOT=./data
 ```
@@ -53,8 +53,12 @@ mkdir -p /opt/blog-nevigation && cd /opt/blog-nevigation
 # 下载生产 compose 文件
 curl -LO https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/compose.prod.yaml
 
-# 创建 .env，填写编辑器访问密码
-echo 'EDITOR_ACCESS_TOKEN=change-me' > .env
+# 创建 .env，使用随机编辑器访问口令
+EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
+cat > .env <<EOF
+EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
+COOKIE_SECURE=true
+EOF
 
 # 创建数据目录并启动
 mkdir -p data
@@ -89,7 +93,7 @@ docker compose -f compose.prod.yaml logs --tail=100 app
 | `EDITOR_ALLOW_RUNTIME_AUTH_SETUP` | 是否允许无初始化密钥的首次运行时初始化；生产环境不建议开启 | `false` |
 | `EDITOR_AUTH_INTERNAL_ORIGIN` | 生产 middleware 校验运行时会话时使用的可信内部地址 | Docker 默认 `http://127.0.0.1:3000` |
 | `APP_PORT` | 宿主机端口 | `3000` |
-| `COOKIE_SECURE` | HTTPS 下设为 `true` | `false` |
+| `COOKIE_SECURE` | 是否只通过 HTTPS 发送编辑器会话 Cookie；公网生产保持 `true`，仅内网 HTTP 调试设为 `false` | Docker 默认 `true` |
 | `R2_BACKUP_ENABLED` | 是否启用 Cloudflare R2 远端备份 | `false` |
 | `R2_ACCOUNT_ID` | Cloudflare Account ID | — |
 | `R2_BUCKET` | R2 Bucket 名称 | — |
@@ -141,8 +145,8 @@ npm run data:verify -- /opt/blog-nevigation/data
 可选 GitHub 加密备份：
 
 ```bash
-GITHUB_BACKUP_ENCRYPTION_KEY='change-me' npm run data:backup:github -- ./data
-GITHUB_BACKUP_ENCRYPTION_KEY='change-me' npm run data:restore:encrypted -- ./output/github-backups/<backup>.enc.json ./data
+GITHUB_BACKUP_ENCRYPTION_KEY='replace-with-a-long-random-secret' npm run data:backup:github -- ./data
+GITHUB_BACKUP_ENCRYPTION_KEY='replace-with-a-long-random-secret' npm run data:restore:encrypted -- ./output/github-backups/<backup>.enc.json ./data
 ```
 
 ## 常用命令
@@ -157,7 +161,7 @@ npm run start
 
 ```bash
 BASE_URL=http://127.0.0.1:3000 npm run smoke:public
-BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=change-me npm run smoke:editor
+BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=local-dev-only-secret npm run smoke:editor
 ```
 
 公开页面冒烟脚本会在 `UI Smoke` GitHub Actions 工作流中自动运行，并在失败时上传

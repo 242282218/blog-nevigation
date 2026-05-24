@@ -20,10 +20,12 @@ stays on the server filesystem and can be mirrored to R2.
 mkdir -p /opt/blog-nevigation && cd /opt/blog-nevigation
 curl -LO https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/compose.prod.yaml
 
-cat > .env <<'EOF'
-EDITOR_ACCESS_TOKEN=change-me
+EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
+
+cat > .env <<EOF
+EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
 APP_PORT=3000
-COOKIE_SECURE=false
+COOKIE_SECURE=true
 R2_BACKUP_ENABLED=false
 EOF
 
@@ -32,7 +34,8 @@ docker compose -f compose.prod.yaml pull
 docker compose -f compose.prod.yaml up -d
 ```
 
-Set `COOKIE_SECURE=true` after HTTPS is enabled.
+If the first start is on a private HTTP-only host, set `COOKIE_SECURE=false`
+temporarily and change it back to `true` before exposing the editor over HTTPS.
 
 `EDITOR_ACCESS_TOKEN` is the simplest production authentication path. If you
 prefer to initialize the editor password from the login page, omit

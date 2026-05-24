@@ -21,7 +21,7 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = create_authenticated_context(browser, BASE_URL, {"width": 1280, "height": 900}, "change-me")
+        context = create_authenticated_context(browser, BASE_URL, {"width": 1280, "height": 900}, "local-dev-only-secret")
         page = context.new_page()
         page.set_default_timeout(60000)
         console_errors: list[str] = []
@@ -55,7 +55,7 @@ def main() -> None:
         page.keyboard.type(":admin")
         expect(page.get_by_text("站点设置")).to_be_visible()
 
-        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "change-me")
+        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "local-dev-only-secret")
         mobile_page = mobile_context.new_page()
         mobile_page.set_default_timeout(60000)
         mobile_page.goto(f"{BASE_URL}/editor/settings", wait_until="domcontentloaded")

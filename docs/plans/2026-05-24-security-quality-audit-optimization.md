@@ -115,6 +115,27 @@ which is not an acceptable security or compatibility path. The current
 enforced threshold is high/critical while this upstream Next dependency remains
 fixed below the patched PostCSS line.
 
+## Production Deployment Defaults Follow-up
+
+The next deployment review found that the production Compose template still
+favored HTTP compatibility by default:
+
+- `deploy/compose.prod.yaml` defaulted `COOKIE_SECURE` to `false`, so a public
+  deployment could expose editor session cookies over HTTP unless the operator
+  remembered to override it.
+- First-deploy examples used predictable placeholder editor secrets, which
+  made copy-paste production setup unsafe.
+
+The chosen fix keeps local development simple while making public production
+deployments safe by default:
+
+- Docker production defaults now set `COOKIE_SECURE` to `true`.
+- Deployment docs show `openssl rand -base64 32` for the editor access token.
+- HTTP-only private starts are documented as a temporary explicit override,
+  not the default posture.
+- Architecture tests now pin the secure Compose default and reject the old
+  placeholder production token example.
+
 ## Verification
 
 Local verification completed:
