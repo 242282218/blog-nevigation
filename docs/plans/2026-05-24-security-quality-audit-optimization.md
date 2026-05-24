@@ -66,6 +66,8 @@ The next review pass focused on dependency risk without using
   `overrides` for `brace-expansion`, `picomatch`, `flatted`, and `undici`.
 - Moved CI and Docker builds from Node 20 to Node 24 after confirming Node 20
   is end-of-life as of 2026-04-30.
+- Opted GitHub Actions JavaScript actions into the Node 24 runtime ahead of
+  GitHub's forced runner migration.
 - Added `npm run audit:high` and wired it into CI so high and critical
   dependency advisories fail the build.
 

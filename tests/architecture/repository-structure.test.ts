@@ -77,6 +77,7 @@ describe('repository structure migration', () => {
         expect(nextConfig).toContain('camera=(), microphone=(), geolocation=()');
         expect(deployCompose).toContain('BLOG_DATA_ROOT: /var/lib/blog-navigation');
         expect(deployCompose).toContain('./data:/var/lib/blog-navigation');
+        expect(deployWorkflow).toContain("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'");
         expect(deployWorkflow).toContain('docker compose -f compose.prod.yaml port app 3000');
         expect(deployWorkflow).toContain('HEALTHCHECK_URL');
         expect(deployWorkflow).toContain('Build did not produce an image digest; refusing to deploy.');
