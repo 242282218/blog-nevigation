@@ -34,7 +34,7 @@ Use the smallest secure path that preserves existing deployments:
 - In production middleware, use a configured internal origin for runtime session
   checks instead of trusting the public Host header.
 - Keep React Hooks core lint rules enabled, but do not enable React Compiler
-  rules for this React 18 / Next 14 codebase yet.
+  rules for this React 18 / Next 15 codebase yet.
 - Restore seed Markdown files to the Docker build context.
 
 ## Implemented Changes
@@ -54,12 +54,34 @@ Use the smallest secure path that preserves existing deployments:
   builds.
 - Updated deployment docs for runtime auth setup and the internal auth origin.
 
+## Dependency Audit Follow-up
+
+The next review pass focused on dependency risk without using
+`npm audit fix --force`:
+
+- Upgraded `next` and `eslint-config-next` from `14.2.x` to `15.5.18`.
+- Migrated the App Router request APIs touched by the project to the Next 15
+  async form: login `searchParams`, `cookies()`, and post route `params`.
+- Upgraded Vite to `7.3.2` and pinned patched transitive versions through npm
+  `overrides` for `brace-expansion`, `picomatch`, `flatted`, and `undici`.
+- Moved CI and Docker builds from Node 20 to Node 24 after confirming Node 20
+  is end-of-life as of 2026-04-30.
+- Added `npm run audit:high` and wired it into CI so high and critical
+  dependency advisories fail the build.
+
+`npm audit` still reports two moderate advisories through Next's internal
+`postcss@8.4.31`. The audit-proposed fix is to downgrade Next to `9.3.3`,
+which is not an acceptable security or compatibility path. The current
+enforced threshold is high/critical while this upstream Next dependency remains
+fixed below the patched PostCSS line.
+
 ## Verification
 
 Local verification completed:
 
 - `npm run check`
 - `npm run build`
+- `npm run audit:high`
 - `git diff --check`
 
 Docker CLI is not installed in the local environment, so Docker image validation
@@ -67,9 +89,8 @@ must be verified by GitHub Actions after pushing this change.
 
 ## Follow-up Backlog
 
-- Add a CI Docker smoke step that starts the built image and probes `/blog` plus
-  one known seed post URL.
 - Decide whether to standardize on npm or migrate fully to pnpm, then enforce it
   with `packageManager` and CI.
 - Consider adding a bounded Playwright smoke job in CI with screenshot artifacts.
-- Audit npm vulnerabilities and upgrade dependencies without `--force` first.
+- Revisit the remaining moderate Next/PostCSS audit item when Next publishes a
+  version that no longer vendors the vulnerable PostCSS range.

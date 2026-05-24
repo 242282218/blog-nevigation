@@ -55,9 +55,9 @@ describe('repository structure migration', () => {
         expect(dockerIgnore).toMatch(/^output$/m);
         expect(dockerIgnore).toMatch(/^\.env$/m);
         expect(dockerIgnore).toMatch(/^\.env\.\*$/m);
-        expect(dockerfile).toContain('FROM node:20-alpine AS deps');
-        expect(dockerfile).toContain('FROM node:20-alpine AS builder');
-        expect(dockerfile).toContain('FROM node:20-alpine AS runner');
+        expect(dockerfile).toContain('FROM node:24-alpine AS deps');
+        expect(dockerfile).toContain('FROM node:24-alpine AS builder');
+        expect(dockerfile).toContain('FROM node:24-alpine AS runner');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/public ./public');

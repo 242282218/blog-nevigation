@@ -13,16 +13,21 @@ import {
 import { EditorLoginForm } from './EditorLoginForm';
 
 interface EditorLoginPageProps {
-    searchParams?: {
-        next?: string;
-    };
+    searchParams?: Promise<{
+        next?: string | string[];
+    }>;
 }
 
 export default async function EditorLoginPage({
     searchParams,
 }: EditorLoginPageProps) {
-    const nextPath = getSafeEditorNextPath(searchParams?.next);
-    const session = cookies().get(EDITOR_SESSION_COOKIE)?.value;
+    const resolvedSearchParams = await searchParams;
+    const rawNextPath = Array.isArray(resolvedSearchParams?.next)
+        ? resolvedSearchParams.next[0]
+        : resolvedSearchParams?.next;
+    const nextPath = getSafeEditorNextPath(rawNextPath);
+    const cookieStore = await cookies();
+    const session = cookieStore.get(EDITOR_SESSION_COOKIE)?.value;
 
     if (await isValidRuntimeEditorSession(session)) {
         redirect(nextPath);

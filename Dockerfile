@@ -1,4 +1,4 @@
-FROM node:20-alpine AS deps
+FROM node:24-alpine AS deps
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN npm ci --legacy-peer-deps --prefer-offline --no-audit --no-optional && \
     npm cache clean --force && \
     rm -rf /root/.npm /tmp/*
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ ENV NODE_ENV=production
 RUN npm run build && \
     rm -rf node_modules/.cache /tmp/*
 
-FROM node:20-alpine AS runner
+FROM node:24-alpine AS runner
 
 WORKDIR /app
 

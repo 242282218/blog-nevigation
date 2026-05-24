@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint src tests eslint.config.mjs next.config.mjs postcss.config.mjs tailwind.config.ts",
     "typecheck": "tsc --noEmit --incremental false --pretty false",
+    "audit:high": "npm audit --audit-level=high",
     "check": "npm run lint && npm run typecheck && npm run test:run",
     "test": "vitest",
     "test:run": "vitest run",
@@ -28,7 +29,7 @@
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.390.0",
-    "next": "^14.2.0",
+    "next": "^15.5.18",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-markdown": "^9.0.0",
@@ -41,25 +42,56 @@
     "@tailwindcss/typography": "^0.5.13",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@typescript-eslint/parser": "^8.59.4",
-    "@types/node": "^20.0.0",
+    "@types/node": "^22.19.19",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@typescript-eslint/parser": "^8.59.4",
     "@vitejs/plugin-react": "^5.1.4",
     "@vitest/ui": "^4.0.18",
     "autoprefixer": "^10.4.19",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^14.2.0",
+    "eslint-config-next": "^15.5.18",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^28.1.0",
+    "picomatch": "4.0.4",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.4.0",
+    "vite": "^7.3.2",
     "vitest": "^4.0.18"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
+  },
+  "overrides": {
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.13"
+    },
+    "minimatch@10.2.4": {
+      "brace-expansion": "5.0.6"
+    },
+    "minimatch@10.2.5": {
+      "brace-expansion": "5.0.6"
+    },
+    "micromatch": {
+      "picomatch": "2.3.2"
+    },
+    "anymatch": {
+      "picomatch": "2.3.2"
+    },
+    "readdirp": {
+      "picomatch": "2.3.2"
+    },
+    "@vitest/ui": {
+      "flatted": "3.4.2"
+    },
+    "flat-cache": {
+      "flatted": "3.4.2"
+    },
+    "jsdom": {
+      "undici": "7.25.0"
+    }
   }
 }

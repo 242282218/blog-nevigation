@@ -7,8 +7,9 @@ import { ArrowLeft, CalendarDays } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
-export default function PostPage({ params }: { params: { slug: string[] } }) {
-    const post = getPostBySlugArray(params.slug);
+export default async function PostPage({ params }: { params: Promise<{ slug: string[] }> }) {
+    const resolvedParams = await params;
+    const post = getPostBySlugArray(resolvedParams.slug);
 
     if (!post) {
         notFound();
