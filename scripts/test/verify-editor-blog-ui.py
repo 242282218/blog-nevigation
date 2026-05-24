@@ -1,19 +1,14 @@
 import os
-import hashlib
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
+from editor_auth import create_authenticated_context
+
 BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:3210")
-EDITOR_TOKEN = os.environ.get("EDITOR_ACCESS_TOKEN", "playwright-token")
-SESSION_NAMESPACE = "blog-navigation-editor-session:v1"
 SCREENSHOT_PATH = Path("output/editor-blog-ui.png")
 MOBILE_SCREENSHOT_PATH = Path("output/editor-blog-new-mobile-ui.png")
 DEBUG_HTML_PATH = Path("output/editor-blog-ui-debug.html")
-
-
-def create_session_value(secret: str) -> str:
-    return hashlib.sha256(f"{SESSION_NAMESPACE}:{secret.strip()}".encode()).hexdigest()
 
 
 def assert_no_horizontal_overflow(page) -> None:
@@ -23,30 +18,14 @@ def assert_no_horizontal_overflow(page) -> None:
     assert overflow <= 1, f"Page has horizontal overflow: {overflow}px"
 
 
-def create_authenticated_context(browser, viewport):
-    context = browser.new_context(viewport=viewport)
-    context.add_cookies(
-        [
-            {
-                "name": "editor_session",
-                "value": create_session_value(EDITOR_TOKEN),
-                "url": BASE_URL,
-                "httpOnly": True,
-                "sameSite": "Lax",
-            }
-        ]
-    )
-
-    return context
-
-
 def main() -> None:
     SCREENSHOT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = create_authenticated_context(browser, {"width": 1440, "height": 960})
+        context = create_authenticated_context(browser, BASE_URL, {"width": 1440, "height": 960}, "playwright-token")
         page = context.new_page()
+        page.set_default_timeout(90000)
         page.set_default_navigation_timeout(90000)
 
         page.goto(f"{BASE_URL}/editor/blog", wait_until="domcontentloaded")
@@ -76,8 +55,9 @@ def main() -> None:
 
         page.screenshot(path=str(SCREENSHOT_PATH), full_page=True)
 
-        mobile_context = create_authenticated_context(browser, {"width": 390, "height": 844})
+        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "playwright-token")
         mobile_page = mobile_context.new_page()
+        mobile_page.set_default_timeout(90000)
         mobile_page.set_default_navigation_timeout(90000)
         mobile_page.goto(f"{BASE_URL}/editor/blog/new?template=blank", wait_until="domcontentloaded")
         mobile_page.wait_for_load_state("networkidle")

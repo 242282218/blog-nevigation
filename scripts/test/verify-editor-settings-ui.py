@@ -1,18 +1,12 @@
 import os
-import hashlib
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
+from editor_auth import create_authenticated_context
 
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:3000")
-EDITOR_ACCESS_TOKEN = os.environ.get("EDITOR_ACCESS_TOKEN", "change-me")
-SESSION_NAMESPACE = "blog-navigation-editor-session:v1"
 SCREENSHOT_DIR = Path("output/playwright")
-
-
-def create_session_value(secret: str) -> str:
-    return hashlib.sha256(f"{SESSION_NAMESPACE}:{secret.strip()}".encode()).hexdigest()
 
 
 def assert_no_horizontal_overflow(page) -> None:
@@ -22,29 +16,12 @@ def assert_no_horizontal_overflow(page) -> None:
     assert overflow <= 1, f"Page has horizontal overflow: {overflow}px"
 
 
-def create_authenticated_context(browser, viewport):
-    context = browser.new_context(viewport=viewport)
-    context.add_cookies(
-        [
-            {
-                "name": "editor_session",
-                "value": create_session_value(EDITOR_ACCESS_TOKEN),
-                "url": BASE_URL,
-                "httpOnly": True,
-                "sameSite": "Lax",
-            }
-        ]
-    )
-
-    return context
-
-
 def main() -> None:
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = create_authenticated_context(browser, {"width": 1280, "height": 900})
+        context = create_authenticated_context(browser, BASE_URL, {"width": 1280, "height": 900}, "change-me")
         page = context.new_page()
         page.set_default_timeout(60000)
         console_errors: list[str] = []
@@ -78,7 +55,7 @@ def main() -> None:
         page.keyboard.type(":admin")
         expect(page.get_by_text("站点设置")).to_be_visible()
 
-        mobile_context = create_authenticated_context(browser, {"width": 390, "height": 844})
+        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "change-me")
         mobile_page = mobile_context.new_page()
         mobile_page.set_default_timeout(60000)
         mobile_page.goto(f"{BASE_URL}/editor/settings", wait_until="domcontentloaded")

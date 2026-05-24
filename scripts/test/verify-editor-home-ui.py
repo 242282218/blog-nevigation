@@ -1,17 +1,12 @@
-import hashlib
 import os
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
+from editor_auth import create_authenticated_context
+
 BASE_URL = os.environ.get("BASE_URL", "http://127.0.0.1:3000")
-EDITOR_ACCESS_TOKEN = os.environ.get("EDITOR_ACCESS_TOKEN", "change-me")
-SESSION_NAMESPACE = "blog-navigation-editor-session:v1"
 SCREENSHOT_DIR = Path("output/playwright")
-
-
-def create_session_value(secret: str) -> str:
-    return hashlib.sha256(f"{SESSION_NAMESPACE}:{secret.strip()}".encode()).hexdigest()
 
 
 def assert_no_horizontal_overflow(page) -> None:
@@ -21,25 +16,8 @@ def assert_no_horizontal_overflow(page) -> None:
     assert overflow <= 1, f"Page has horizontal overflow: {overflow}px"
 
 
-def create_authenticated_context(browser, viewport):
-    context = browser.new_context(viewport=viewport)
-    context.add_cookies(
-        [
-            {
-                "name": "editor_session",
-                "value": create_session_value(EDITOR_ACCESS_TOKEN),
-                "url": BASE_URL,
-                "httpOnly": True,
-                "sameSite": "Lax",
-            }
-        ]
-    )
-
-    return context
-
-
 def verify_page(browser, viewport, screenshot_name: str) -> None:
-    context = create_authenticated_context(browser, viewport)
+    context = create_authenticated_context(browser, BASE_URL, viewport, "change-me")
     page = context.new_page()
     page.set_default_timeout(60000)
     page.goto(f"{BASE_URL}/editor", wait_until="domcontentloaded")

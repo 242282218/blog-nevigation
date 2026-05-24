@@ -38,6 +38,8 @@ output/
 
 # Testing
 coverage/
+__pycache__/
+*.py[cod]
 
 # VitePress
 docs/.vitepress/dist/

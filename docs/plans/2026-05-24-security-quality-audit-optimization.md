@@ -47,6 +47,8 @@ Use the smallest secure path that preserves existing deployments:
 - Hardened middleware runtime auth checks with `EDITOR_AUTH_INTERNAL_ORIGIN`.
 - Added auth tests for setup gating, setup token rejection, no plaintext secret
   persistence, session rotation, logout revocation, and middleware Host trust.
+- Updated editor Playwright verification scripts to authenticate through
+  `/api/editor-auth` instead of hand-built session cookies.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.
