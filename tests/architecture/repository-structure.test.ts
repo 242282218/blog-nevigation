@@ -65,6 +65,9 @@ describe('repository structure migration', () => {
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
         expect(dockerfile).toContain('FROM node:24-alpine AS runner');
+        expect(dockerfile).toContain('RUN npm ci --legacy-peer-deps --prefer-offline --no-audit');
+        expect(dockerfile).not.toContain('--no-optional');
+        expect(dockerfile).toContain('COPY package.json package-lock.json next.config.mjs');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/public ./public');
