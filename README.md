@@ -159,3 +159,6 @@ npm run start
 BASE_URL=http://127.0.0.1:3000 npm run smoke:public
 BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=change-me npm run smoke:editor
 ```
+
+公开页面冒烟脚本会在 `UI Smoke` GitHub Actions 工作流中自动运行，并在失败时上传
+`output/playwright` 截图和服务日志用于定位。

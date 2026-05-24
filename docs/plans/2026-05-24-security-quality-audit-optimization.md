@@ -51,6 +51,9 @@ Use the smallest secure path that preserves existing deployments:
   `/api/editor-auth` instead of hand-built session cookies.
 - Added npm smoke entry points for public and editor Playwright verification
   scripts so UI checks can be run consistently on local or test hosts.
+- Added a bounded `UI Smoke` GitHub Actions workflow that builds the app, runs
+  the public Playwright smoke script against `next start`, and uploads
+  screenshots and server logs as failure artifacts.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.
@@ -89,6 +92,7 @@ Local verification completed:
 - `npm run check`
 - `npm run build`
 - `npm run audit:high`
+- `BASE_URL=http://127.0.0.1:<port> npm run smoke:ui`
 - `git diff --check`
 
 Docker CLI is not installed in the local environment, so Docker image validation
@@ -96,7 +100,7 @@ must be verified by GitHub Actions after pushing this change.
 
 ## Follow-up Backlog
 
-- Consider wiring `npm run smoke:public` into a bounded CI job with screenshot
-  artifacts once browser installation time is acceptable.
+- Consider adding authenticated editor smoke coverage to CI once the browser
+  runtime cost and secret handling are acceptable.
 - Revisit the remaining moderate Next/PostCSS audit item when Next publishes a
   version that no longer vendors the vulnerable PostCSS range.
