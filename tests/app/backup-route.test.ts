@@ -68,6 +68,14 @@ function seedRuntimeData(dataRoot: string): void {
   });
 }
 
+async function readCurrentManifest(): Promise<unknown> {
+  const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup'));
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  return payload.manifest;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockedSyncCurrentBackupToRemote.mockResolvedValue({
@@ -161,11 +169,12 @@ describe('backup API', () => {
   it('rejects invalid backup payloads without remote sync', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const currentManifest = await readCurrentManifest();
 
     const response = await POST(
       await createAuthedEditorRequest('http://localhost/api/data/backup', {
         method: 'POST',
-        body: JSON.stringify({ data: { articles: 'invalid', navigation: [] } }),
+        body: JSON.stringify({ currentManifest, data: { articles: 'invalid', navigation: [] } }),
       })
     );
 
@@ -181,11 +190,13 @@ describe('backup API', () => {
   it('restores valid backup payloads and writes a remote restore snapshot', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const currentManifest = await readCurrentManifest();
 
     const response = await POST(
       await createAuthedEditorRequest('http://localhost/api/data/backup', {
         method: 'POST',
         body: JSON.stringify({
+          currentManifest,
           version: 1,
           data: {
             articles: [
@@ -231,5 +242,64 @@ describe('backup API', () => {
       reason: 'local-restore',
       writeSnapshot: true,
     });
+  });
+
+  it('rejects stale local restores without replacing newer data', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+    const currentManifest = await readCurrentManifest();
+    const newerArticle = {
+      id: 'article-newer',
+      title: 'Newer Article',
+      date: '2026-05-25',
+      description: 'Newer article',
+      tags: [],
+      content: '# Newer',
+      slug: 'newer-article',
+      createdAt: 3,
+      updatedAt: 4,
+    };
+
+    writeJson(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), [newerArticle]);
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentManifest,
+          version: 1,
+          data: {
+            articles: [
+              {
+                id: 'article-old',
+                title: 'Old Backup Article',
+                date: '2026-05-20',
+                description: 'Old backup article',
+                tags: [],
+                content: '# Old',
+                createdAt: 1,
+                updatedAt: 2,
+              },
+            ],
+            navigation: [],
+          },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: '当前数据已被其他会话更新，请刷新后重新执行恢复。',
+        currentManifest: expect.any(Object),
+      })
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'article-newer',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 });

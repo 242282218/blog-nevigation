@@ -9,6 +9,27 @@ vi.mock('@/app/editor/components/LogoutButton', () => ({
 }));
 
 const fetchMock = vi.fn();
+const currentManifest = {
+  version: 1,
+  updatedAt: '2026-05-24T00:00:00.000Z',
+  resources: {
+    articles: {
+      revision: 'articles-revision',
+      hash: 'articles-hash',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    },
+    navigation: {
+      revision: 'navigation-revision',
+      hash: 'navigation-hash',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    },
+    settings: {
+      revision: 'settings-revision',
+      hash: 'settings-hash',
+      updatedAt: '2026-05-24T00:00:00.000Z',
+    },
+  },
+};
 
 function createJsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -101,6 +122,11 @@ describe('EditorSettingsPage', () => {
             source: 'file',
             message: null,
           },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          manifest: currentManifest,
         })
       )
       .mockResolvedValueOnce(
@@ -311,6 +337,11 @@ describe('EditorSettingsPage', () => {
       )
       .mockResolvedValueOnce(
         createJsonResponse({
+          manifest: currentManifest,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
           success: true,
           remoteBackup: {
             enabled: true,
@@ -331,6 +362,13 @@ describe('EditorSettingsPage', () => {
     await flushPromises();
 
     expect(confirmMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/data/backup/remote',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ action: 'restore', currentManifest }),
+      })
+    );
     expect(container.textContent).toContain('恢复成功，但云端快照同步失败：R2 upload failed.');
   });
 });

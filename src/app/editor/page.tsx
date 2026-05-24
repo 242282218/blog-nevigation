@@ -5,6 +5,7 @@ import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settin
 import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from './components/LogoutButton';
 import { createRestoreActionMessage } from './backup-action-message';
+import { loadCurrentBackupManifest } from './backup-current-manifest';
 import {
   EditorActionCard,
   EditorButton,
@@ -158,13 +159,14 @@ export default function EditorHomePage() {
     setMessage({ tone: 'loading', text: '正在从云端恢复数据...' });
 
     try {
+      const currentManifest = await loadCurrentBackupManifest();
       const response = await fetch('/api/data/backup/remote', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action: 'restore' }),
+        body: JSON.stringify({ action: 'restore', currentManifest }),
       });
 
       if (!response.ok) {
@@ -200,6 +202,7 @@ export default function EditorHomePage() {
     try {
       const content = await file.text();
       const backupPayload = JSON.parse(content) as BackupPayload;
+      const currentManifest = await loadCurrentBackupManifest();
 
       const response = await fetch('/api/data/backup', {
         method: 'POST',
@@ -207,7 +210,7 @@ export default function EditorHomePage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(backupPayload),
+        body: JSON.stringify({ ...backupPayload, currentManifest }),
       });
 
       if (!response.ok) {

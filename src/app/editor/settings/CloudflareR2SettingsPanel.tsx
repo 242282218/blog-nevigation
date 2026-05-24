@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Cloud, CloudDownload, CloudUpload, Save } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
+import { loadCurrentBackupManifest } from '../backup-current-manifest';
 import { createRestoreActionMessage } from '../backup-action-message';
 import {
     EditorButton,
@@ -267,13 +268,16 @@ export function CloudflareR2SettingsPanel() {
         });
 
         try {
+            const currentManifest = action === 'restore'
+                ? await loadCurrentBackupManifest()
+                : undefined;
             const response = await fetch('/api/data/backup/remote', {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ action }),
+                body: JSON.stringify({ action, currentManifest }),
             });
             const payload = (await response.json().catch(() => null)) as RemoteBackupActionResponse | null;
 

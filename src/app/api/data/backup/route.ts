@@ -12,11 +12,17 @@ import {
     restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import {
+    createRestoreConflictResponse,
+    createRestorePreconditionRequiredResponse,
+    parseRestoreCurrentManifest,
+} from './restore-precondition';
 
 type BackupRequestBody = {
     articles?: unknown;
     navigation?: unknown;
     settings?: unknown;
+    currentManifest?: unknown;
     data?: {
         articles?: unknown;
         navigation?: unknown;
@@ -56,15 +62,27 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json().catch(() => null)) as BackupRequestBody | null;
+    const currentManifest = parseRestoreCurrentManifest(body?.currentManifest);
+
+    if (!currentManifest) {
+        return createRestorePreconditionRequiredResponse();
+    }
+
     let result;
 
     try {
-        result = restoreEditorBackupPayload(body);
+        result = restoreEditorBackupPayload(body, { currentManifest });
     } catch (error) {
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
             return invalidResponse;
+        }
+
+        const conflictResponse = createRestoreConflictResponse(error);
+
+        if (conflictResponse) {
+            return conflictResponse;
         }
 
         throw error;

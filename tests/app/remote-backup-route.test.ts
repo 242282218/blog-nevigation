@@ -59,6 +59,15 @@ function writeJson(filePath: string, value: unknown): void {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
 }
 
+async function readCurrentManifest(): Promise<unknown> {
+  const { GET: getBackup } = await import('@/app/api/data/backup/route');
+  const response = await getBackup(await createAuthedEditorRequest('http://localhost/api/data/backup'));
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  return payload.manifest;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockedGetR2BackupStatus.mockReturnValue({
@@ -222,6 +231,7 @@ describe('remote backup API', () => {
       heroTitleLineTwo: 'Data',
       heroDescription: 'Invalid restore should not replace this.',
     });
+    const currentManifest = await readCurrentManifest();
     mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
       version: 1,
       data: {
@@ -234,12 +244,71 @@ describe('remote backup API', () => {
     const response = await POST(
       await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
         method: 'POST',
-        body: JSON.stringify({ action: 'restore' }),
+        body: JSON.stringify({ action: 'restore', currentManifest }),
       })
     );
 
     expect(response.status).toBe(400);
     expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale R2 restores without replacing newer local data', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-article-1',
+      title: 'Existing Article',
+      date: '2026-05-24',
+      description: 'Existing data',
+      tags: [],
+      content: '# Existing',
+      slug: 'existing-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const newerArticle = {
+      ...existingArticle,
+      id: 'newer-article-1',
+      title: 'Newer Article',
+      slug: 'newer-article',
+      updatedAt: 3,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [newerArticle]);
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [existingArticle],
+        navigation: [],
+      },
+    });
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'restore', currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'newer-article-1',
+      }),
+    ]);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 });

@@ -60,6 +60,8 @@ Use the smallest secure path that preserves existing deployments:
 - Removed navigation seed write-back from read paths and switched missing
   manifest revisions to deterministic derived revisions, keeping read paths
   side-effect free while preserving write conflict checks.
+- Added current manifest preconditions to local and R2 full-restore paths so a
+  stale restore request fails with 409 instead of overwriting newer runtime data.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

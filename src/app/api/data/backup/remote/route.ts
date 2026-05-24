@@ -12,11 +12,17 @@ import {
     getR2BackupStatus,
     R2BackupNotConfiguredError,
 } from '@/lib/r2-backup-storage';
+import {
+    createRestoreConflictResponse,
+    createRestorePreconditionRequiredResponse,
+    parseRestoreCurrentManifest,
+} from '../restore-precondition';
 
 type RemoteBackupAction = 'sync' | 'restore';
 
 type RemoteBackupRequestBody = {
     action?: unknown;
+    currentManifest?: unknown;
 };
 
 function parseAction(value: unknown): RemoteBackupAction | null {
@@ -77,8 +83,14 @@ export async function POST(request: NextRequest) {
     }
 
     try {
+        const currentManifest = parseRestoreCurrentManifest(body?.currentManifest);
+
+        if (!currentManifest) {
+            return createRestorePreconditionRequiredResponse();
+        }
+
         const payload = await downloadLatestBackupPayloadFromR2();
-        const result = restoreEditorBackupPayload(payload);
+        const result = restoreEditorBackupPayload(payload, { currentManifest });
 
         if (!result) {
             return NextResponse.json(
@@ -108,6 +120,12 @@ export async function POST(request: NextRequest) {
 
         if (invalidResponse) {
             return invalidResponse;
+        }
+
+        const conflictResponse = createRestoreConflictResponse(error);
+
+        if (conflictResponse) {
+            return conflictResponse;
         }
 
         const status = error instanceof R2BackupNotConfiguredError ? 503 : 502;

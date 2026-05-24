@@ -2,14 +2,15 @@ import type { Article } from '@/app/types/article';
 import type { Category } from '@/app/types/navigation';
 import { isRecord, parseArticlesData } from '@/lib/article-data';
 import {
+    createEditorDataManifestSnapshot,
     getEditorDataRoot,
     isEditorDataRootConfigured,
-    readEditorDataManifest,
     readArticlesFromDisk,
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
     restoreEditorDataRootAtomically,
     type EditorDataManifest,
+    type EditorDataResourceName,
 } from '@/lib/editor-data-storage';
 import { parseNavigationData } from '@/lib/navigation-data';
 import {
@@ -44,6 +45,59 @@ export interface RestoreBackupResult {
     settings: boolean;
 }
 
+interface RestoreBackupOptions {
+    currentManifest?: EditorDataManifest;
+}
+
+export class EditorBackupRestoreConflictError extends Error {
+    constructor(public readonly currentManifest: EditorDataManifest) {
+        super('Current editor data manifest does not match the restore precondition.');
+        this.name = 'EditorBackupRestoreConflictError';
+    }
+}
+
+function readCurrentEditorBackupData(): EditorBackupData {
+    return {
+        articles: readArticlesFromDisk(),
+        navigation: readNavigationFromDisk(),
+        settings: readSiteSettingsFromDisk(),
+    };
+}
+
+function isSameResourceManifest(
+    expected: EditorDataManifest['resources'][EditorDataResourceName],
+    current: EditorDataManifest['resources'][EditorDataResourceName]
+): boolean {
+    return Boolean(
+        expected &&
+        current &&
+        expected.revision === current.revision &&
+        expected.hash === current.hash
+    );
+}
+
+function isSameManifestSnapshot(expected: EditorDataManifest, current: EditorDataManifest): boolean {
+    if (expected.version !== current.version) {
+        return false;
+    }
+
+    for (const resource of ['articles', 'navigation', 'settings'] as const) {
+        if (!isSameResourceManifest(expected.resources[resource], current.resources[resource])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function assertCurrentManifestForRestore(expected: EditorDataManifest): void {
+    const currentManifest = createEditorDataManifestSnapshot(readCurrentEditorBackupData());
+
+    if (!isSameManifestSnapshot(expected, currentManifest)) {
+        throw new EditorBackupRestoreConflictError(currentManifest);
+    }
+}
+
 export function createEditorBackupPayload(
     data: EditorBackupData,
     source: EditorBackupSource = 'local'
@@ -54,16 +108,12 @@ export function createEditorBackupPayload(
         source,
         persistent: isEditorDataRootConfigured(),
         dataRoot: getEditorDataRoot(),
-        manifest: isEditorDataRootConfigured() ? readEditorDataManifest() : undefined,
+        manifest: isEditorDataRootConfigured() ? createEditorDataManifestSnapshot(data) : undefined,
         data,
     };
 }
 export function createCurrentEditorBackupPayload(): EditorBackupPayload {
-    return createEditorBackupPayload({
-        articles: readArticlesFromDisk(),
-        navigation: readNavigationFromDisk(),
-        settings: readSiteSettingsFromDisk(),
-    });
+    return createEditorBackupPayload(readCurrentEditorBackupData());
 }
 
 export function parseEditorBackupData(value: unknown): EditorBackupData | null {
@@ -87,11 +137,18 @@ export function parseEditorBackupData(value: unknown): EditorBackupData | null {
     };
 }
 
-export function restoreEditorBackupPayload(value: unknown): RestoreBackupResult | null {
+export function restoreEditorBackupPayload(
+    value: unknown,
+    options: RestoreBackupOptions = {}
+): RestoreBackupResult | null {
     const data = parseEditorBackupData(value);
 
     if (!data) {
         return null;
+    }
+
+    if (options.currentManifest) {
+        assertCurrentManifestForRestore(options.currentManifest);
     }
 
     restoreEditorDataRootAtomically(data);

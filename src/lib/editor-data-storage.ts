@@ -166,9 +166,7 @@ function createResourceManifest(value: unknown): EditorDataResourceManifest {
     };
 }
 
-function createDerivedResourceManifest(value: unknown): EditorDataResourceManifest {
-    const hash = hashJson(value);
-
+function createDerivedResourceManifest(value: unknown, hash = hashJson(value)): EditorDataResourceManifest {
     return {
         revision: `derived-${hash}`,
         hash,
@@ -238,6 +236,10 @@ function parseManifest(value: unknown): EditorDataManifest | null {
             : new Date().toISOString(),
         resources,
     };
+}
+
+export function parseEditorDataManifest(value: unknown): EditorDataManifest | null {
+    return parseManifest(value);
 }
 
 function createEmptyManifest(): EditorDataManifest {
@@ -362,7 +364,40 @@ export function getEditorDataResourceManifest(
     }
 
     const manifest = readEditorDataManifest();
-    return manifest.resources[resource] ?? createDerivedResourceManifest(value);
+    const resourceManifest = manifest.resources[resource];
+    const currentHash = hashJson(value);
+
+    if (resourceManifest?.hash === currentHash) {
+        return resourceManifest;
+    }
+
+    return createDerivedResourceManifest(value, currentHash);
+}
+
+export function createEditorDataManifestSnapshot(data: {
+    articles: Article[];
+    navigation: Category[];
+    settings: SiteSettings;
+}): EditorDataManifest {
+    const articles = getEditorDataResourceManifest('articles', data.articles);
+    const navigation = getEditorDataResourceManifest('navigation', data.navigation);
+    const settings = getEditorDataResourceManifest('settings', data.settings);
+    const updatedAts = [articles?.updatedAt, navigation?.updatedAt, settings?.updatedAt]
+        .filter((value): value is string => typeof value === 'string')
+        .sort();
+    const updatedAt = updatedAts.length > 0
+        ? updatedAts[updatedAts.length - 1]
+        : new Date().toISOString();
+
+    return {
+        version: MANIFEST_VERSION,
+        updatedAt,
+        resources: {
+            ...(articles ? { articles } : {}),
+            ...(navigation ? { navigation } : {}),
+            ...(settings ? { settings } : {}),
+        },
+    };
 }
 
 export function getDefaultNavigationSeedFilePath(): string {
