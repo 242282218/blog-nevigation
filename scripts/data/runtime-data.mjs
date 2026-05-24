@@ -99,18 +99,46 @@ function normalizeArticleSlug(value) {
   return slug.length > 0 ? slug : null;
 }
 
+function isStringArray(value) {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function normalizeArticle(article) {
+  if (!isRecord(article) || Array.isArray(article)) {
+    throw new Error('Article data must contain JSON objects.');
+  }
+
+  if (
+    typeof article.id !== 'string' ||
+    typeof article.title !== 'string' ||
+    typeof article.date !== 'string' ||
+    typeof article.description !== 'string' ||
+    !isStringArray(article.tags) ||
+    typeof article.content !== 'string' ||
+    !isFiniteNumber(article.createdAt) ||
+    !isFiniteNumber(article.updatedAt) ||
+    (article.slug !== undefined && typeof article.slug !== 'string')
+  ) {
+    throw new Error(
+      'Articles must include id, title, date, description, tags, content, createdAt, and updatedAt with valid types.'
+    );
+  }
+
+  return {
+    ...article,
+    slug: normalizeArticleSlug(article.slug) || createArticleSlug(article),
+  };
+}
+
 export function normalizeArticles(articles) {
   const slugs = new Set();
 
   return articles.map((article) => {
-    if (!isRecord(article)) {
-      throw new Error('Article data must contain JSON objects.');
-    }
-
-    const normalized = {
-      ...article,
-      slug: normalizeArticleSlug(article.slug) || createArticleSlug(article),
-    };
+    const normalized = normalizeArticle(article);
 
     if (slugs.has(normalized.slug)) {
       throw new Error(`Duplicate article slug: ${normalized.slug}`);

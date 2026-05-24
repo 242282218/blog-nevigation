@@ -81,6 +81,9 @@ Use the smallest secure path that preserves existing deployments:
 - Tightened editor article and navigation response parsing so invalid server
   `GET` or `409` conflict payloads surface as sync errors instead of replacing
   local editor state with empty data.
+- Aligned runtime data migration scripts with the app's article data contract
+  so invalid article backups or runtime files fail verification before they can
+  produce editor data that the app later rejects.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

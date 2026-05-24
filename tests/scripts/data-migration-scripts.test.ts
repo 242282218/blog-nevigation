@@ -507,6 +507,87 @@ describe('runtime data migration scripts', () => {
     expect(fs.readdirSync(targetRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
   });
 
+  it('rejects invalid article backups without replacing existing runtime data', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'invalid-article-backup.json');
+    const existingArticle = {
+      id: 'existing-invalid-article-1',
+      title: 'Existing Invalid Article Guard',
+      date: '2026-05-25',
+      description: 'Existing data must survive invalid article imports',
+      tags: ['existing'],
+      content: '# Existing Invalid Article Guard',
+      slug: 'existing-invalid-article-guard',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const existingNavigation = [
+      {
+        name: 'Existing',
+        icon: 'book',
+        slug: 'existing',
+        tools: [],
+      },
+    ];
+    const existingSettings = {
+      ...validSettings,
+      siteName: 'Existing Invalid Article Guard Site',
+    };
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), existingNavigation);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), existingSettings);
+
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot, '--write-manifest'],
+      { encoding: 'utf8' }
+    );
+
+    const existingManifest = JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'));
+
+    writeJson(backupPath, {
+      version: 1,
+      data: {
+        articles: [
+          {
+            id: 'invalid-article-1',
+            title: 'Invalid Article',
+            date: '2026-05-25',
+            description: 'createdAt has the wrong type.',
+            tags: ['invalid'],
+            content: '# Invalid Article',
+            slug: 'invalid-article',
+            createdAt: '1',
+            updatedAt: 2,
+          },
+        ],
+        navigation: [],
+        settings: existingSettings,
+      },
+    });
+
+    expect(() => {
+      execFileSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+        { encoding: 'utf8', stdio: 'pipe' }
+      );
+    }).toThrow();
+
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(
+      existingNavigation
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(
+      existingSettings
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'))).toEqual(existingManifest);
+    expect(fs.readdirSync(targetRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
+  });
+
   it('rejects invalid navigation backups without replacing existing runtime data', () => {
     const targetRoot = createTempDirectory();
     const backupPath = path.join(createTempDirectory(), 'invalid-navigation-backup.json');
@@ -586,6 +667,32 @@ describe('runtime data migration scripts', () => {
         ],
       },
     ]);
+
+    expect(() => {
+      execFileSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot],
+        { encoding: 'utf8', stdio: 'pipe' }
+      );
+    }).toThrow();
+  });
+
+  it('fails verification when runtime article data violates the public contract', () => {
+    const targetRoot = createTempDirectory();
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [
+      {
+        id: 'invalid-runtime-article-1',
+        title: 'Invalid Runtime Article',
+        date: '2026-05-25',
+        tags: ['invalid'],
+        content: '# Invalid Runtime Article',
+        slug: 'invalid-runtime-article',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
 
     expect(() => {
       execFileSync(
