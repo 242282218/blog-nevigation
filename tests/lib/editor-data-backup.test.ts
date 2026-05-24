@@ -119,6 +119,38 @@ describe('editor backup payload', () => {
     });
   });
 
+  it('parses legacy envelope backup payloads without settings', () => {
+    expect(
+      parseEditorBackupData({
+        version: 1,
+        data: {
+          articles: [article],
+          navigation,
+        },
+      })
+    ).toEqual({
+      articles: [normalizedArticle],
+      navigation,
+      settings: DEFAULT_SITE_SETTINGS,
+    });
+  });
+
+  it('rejects backup payloads with invalid settings', () => {
+    expect(
+      parseEditorBackupData({
+        version: 1,
+        data: {
+          articles: [article],
+          navigation,
+          settings: {
+            ...settings,
+            siteName: '',
+          },
+        },
+      })
+    ).toBeNull();
+  });
+
   it('restores valid backup payloads into BLOG_DATA_ROOT', () => {
     const dataRoot = createTempDataRoot();
     process.env.BLOG_DATA_ROOT = dataRoot;

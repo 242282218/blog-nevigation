@@ -62,6 +62,9 @@ Use the smallest secure path that preserves existing deployments:
   side-effect free while preserving write conflict checks.
 - Added current manifest preconditions to local and R2 full-restore paths so a
   stale restore request fails with 409 instead of overwriting newer runtime data.
+- Tightened runtime settings validation in data scripts and backup restore
+  parsing so legacy backups may omit settings, but present invalid settings are
+  rejected instead of silently falling back to defaults.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

@@ -7,6 +7,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const repoRoot = process.cwd();
 const tempDirectories: string[] = [];
+const validSettings = {
+  siteName: 'Runtime Site',
+  siteDescription: 'Runtime settings',
+  workspaceLabel: 'workspace / runtime',
+  heroTitleLineOne: 'Runtime',
+  heroTitleLineTwo: 'Data',
+  heroDescription: 'Runtime data scripts require complete settings when the file exists.',
+};
 
 function createTempDirectory(): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-data-script-'));
@@ -586,6 +594,126 @@ describe('runtime data migration scripts', () => {
         { encoding: 'utf8', stdio: 'pipe' }
       );
     }).toThrow();
+  });
+
+  it('fails verification when runtime settings data is incomplete', () => {
+    const targetRoot = createTempDirectory();
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), {
+      ...validSettings,
+      heroDescription: '',
+    });
+
+    expect(() => {
+      execFileSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot],
+        { encoding: 'utf8', stdio: 'pipe' }
+      );
+    }).toThrow();
+  });
+
+  it('rejects invalid settings backups without replacing existing runtime data', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'invalid-settings-backup.json');
+    const existingArticle = {
+      id: 'existing-settings-article-1',
+      title: 'Existing Settings Article',
+      date: '2026-05-25',
+      description: 'Existing data must survive invalid settings imports',
+      tags: ['existing'],
+      content: '# Existing Settings Article',
+      slug: 'existing-settings-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const existingNavigation = [
+      {
+        name: 'Existing',
+        icon: 'book',
+        slug: 'existing',
+        tools: [],
+      },
+    ];
+    const existingSettings = {
+      ...validSettings,
+      siteName: 'Existing Settings Site',
+    };
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), existingNavigation);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), existingSettings);
+
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot, '--write-manifest'],
+      { encoding: 'utf8' }
+    );
+
+    const existingManifest = JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'));
+
+    writeJson(backupPath, {
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+        settings: {
+          ...validSettings,
+          siteName: ' ',
+        },
+      },
+    });
+
+    expect(() => {
+      execFileSync(
+        process.execPath,
+        [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+        { encoding: 'utf8', stdio: 'pipe' }
+      );
+    }).toThrow();
+
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(
+      existingNavigation
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(
+      existingSettings
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'))).toEqual(existingManifest);
+    expect(fs.readdirSync(targetRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
+  });
+
+  it('imports legacy backups without settings using default settings', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'legacy-backup.json');
+
+    writeJson(backupPath, {
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+      },
+    });
+
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual({
+      siteName: '个人技术博客导航',
+      siteDescription: '个人技术文章、常用链接和知识入口',
+      workspaceLabel: 'workspace / blog-navigation',
+      heroTitleLineOne: '技术博客与常用链接的',
+      heroTitleLineTwo: '个人工作台',
+      heroDescription:
+        '把长期文章、开发文档、工具入口和编辑数据放在一个轻量系统里，公开阅读和服务器迁移都保持清晰。',
+    });
   });
 
   it('rolls back existing runtime files when restore replacement fails midway', async () => {

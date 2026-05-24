@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import {
-  DEFAULT_SITE_SETTINGS,
+  createDefaultSiteSettings,
   isRecord,
   normalizeArticles,
   normalizeNavigation,
+  normalizeSiteSettings,
   readJsonFile,
   restoreRuntimeDataAtomically,
   resolveDataRoot,
@@ -24,7 +25,10 @@ function parseBackupData(value) {
   return {
     articles: normalizeArticles(source.articles),
     navigation: normalizeNavigation(source.navigation),
-    settings: isRecord(source.settings) ? source.settings : DEFAULT_SITE_SETTINGS,
+    settings:
+      source.settings === undefined
+        ? createDefaultSiteSettings()
+        : normalizeSiteSettings(source.settings),
   };
 }
 

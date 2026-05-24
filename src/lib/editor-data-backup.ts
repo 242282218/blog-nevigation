@@ -124,9 +124,12 @@ export function parseEditorBackupData(value: unknown): EditorBackupData | null {
     const source = isRecord(value.data) ? value.data : value;
     const articles = parseArticlesData(source.articles);
     const navigation = parseNavigationData(source.navigation);
-    const settings = parseSiteSettings(source.settings) ?? createDefaultSiteSettings();
+    const settings =
+        source.settings === undefined
+            ? createDefaultSiteSettings()
+            : parseSiteSettings(source.settings);
 
-    if (!articles || !navigation) {
+    if (!articles || !navigation || !settings) {
         return null;
     }
 

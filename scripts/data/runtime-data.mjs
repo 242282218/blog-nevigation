@@ -14,6 +14,15 @@ export const DEFAULT_SITE_SETTINGS = {
     '把长期文章、开发文档、工具入口和编辑数据放在一个轻量系统里，公开阅读和服务器迁移都保持清晰。',
 };
 
+const SITE_SETTING_KEYS = [
+  'siteName',
+  'siteDescription',
+  'workspaceLabel',
+  'heroTitleLineOne',
+  'heroTitleLineTwo',
+  'heroDescription',
+];
+
 export function resolveDataRoot(input) {
   return path.resolve(input || process.env.BLOG_DATA_ROOT || 'data');
 }
@@ -52,6 +61,10 @@ export function readJsonObject(filePath, fallback) {
   }
 
   return parsed;
+}
+
+export function createDefaultSiteSettings() {
+  return { ...DEFAULT_SITE_SETTINGS };
 }
 
 function normalizeSlugPart(value) {
@@ -110,6 +123,32 @@ export function normalizeArticles(articles) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+export function normalizeSiteSettings(value) {
+  if (!isRecord(value) || Array.isArray(value)) {
+    throw new Error('Site settings must contain a JSON object.');
+  }
+
+  const settings = {};
+
+  for (const key of SITE_SETTING_KEYS) {
+    if (!isNonEmptyString(value[key])) {
+      throw new Error(`Site settings must include a non-empty ${key}.`);
+    }
+
+    settings[key] = value[key].trim();
+  }
+
+  return settings;
+}
+
+function readSiteSettings(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return createDefaultSiteSettings();
+  }
+
+  return normalizeSiteSettings(readJsonFile(filePath));
 }
 
 function createNavigationSlug(value) {
@@ -259,7 +298,7 @@ export function readRuntimeData(dataRoot) {
   return {
     articles: normalizeArticles(readJsonArray(path.join(dataRoot, 'articles', 'articles.json'))),
     navigation: normalizeNavigation(readJsonArray(path.join(dataRoot, 'navigation', 'tools.json'))),
-    settings: readJsonObject(path.join(dataRoot, 'settings', 'site.json'), DEFAULT_SITE_SETTINGS),
+    settings: readSiteSettings(path.join(dataRoot, 'settings', 'site.json')),
   };
 }
 
