@@ -93,8 +93,12 @@ jobs:
           done
 
           docker exec blog-navigation-smoke test -f /app/content/seeds/posts/2025-01-05-git-workflow-team-collaboration.md
-          curl --fail --silent --max-time 10 http://127.0.0.1:3210/blog | grep -q 'Git 团队协作工作流指南'
-          curl --fail --silent --max-time 10 http://127.0.0.1:3210/posts/2025-01-05-git-workflow-team-collaboration | grep -q 'Git 团队协作工作流指南'
+
+          curl --fail --silent --show-error --max-time 10 --output /tmp/blog.html http://127.0.0.1:3210/blog
+          grep -q 'Git 团队协作工作流指南' /tmp/blog.html
+
+          curl --fail --silent --show-error --max-time 10 --output /tmp/post.html http://127.0.0.1:3210/posts/2025-01-05-git-workflow-team-collaboration
+          grep -q 'Git 团队协作工作流指南' /tmp/post.html
 
       - name: Log in to Container Registry
         if: github.event_name != 'pull_request'
