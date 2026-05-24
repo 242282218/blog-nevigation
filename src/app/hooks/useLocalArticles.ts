@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import type { Article, Frontmatter } from '@/app/types/article';
 import { useSyncedResource } from '@/app/hooks/useSyncedResource';
-import { createArticleSlug, filterArticlesData } from '@/lib/article-data';
+import { createArticleSlug, filterArticlesData, parseArticlesData } from '@/lib/article-data';
 import {
   parseMarkdownWithFrontmatter,
   serializeMarkdownWithFrontmatter,
@@ -66,9 +66,17 @@ async function loadArticlesFromServer() {
     }
 
     const payload = (await response.json()) as { articles?: unknown; revision?: unknown };
+    const articles = parseArticlesData(payload.articles);
+
+    if (!articles) {
+      return {
+        error: true as const,
+        message: '服务器返回的文章数据格式无效。',
+      };
+    }
 
     return {
-      data: filterArticlesData(payload.articles),
+      data: articles,
       revision: typeof payload.revision === 'string' ? payload.revision : null,
     };
   } catch (error) {
@@ -100,9 +108,18 @@ async function saveArticlesToServer(
     } | null;
 
     if (response.status === 409) {
+      const articles = parseArticlesData(payload?.articles);
+
+      if (!articles) {
+        return {
+          error: true as const,
+          message: '服务器返回的文章冲突数据格式无效，请刷新后重试。',
+        };
+      }
+
       return {
         conflict: true as const,
-        data: filterArticlesData(payload?.articles),
+        data: articles,
         revision: typeof payload?.revision === 'string' ? payload.revision : null,
       };
     }

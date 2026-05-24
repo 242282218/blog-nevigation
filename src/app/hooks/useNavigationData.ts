@@ -62,12 +62,17 @@ async function loadNavDataFromServer() {
     const payload = (await response.json()) as { categories?: unknown; revision?: unknown };
     const categories = parseNavigationData(payload.categories);
 
-    return categories
-      ? {
-        data: categories,
-        revision: typeof payload.revision === 'string' ? payload.revision : null,
-      }
-      : null;
+    if (!categories) {
+      return {
+        error: true as const,
+        message: '服务器返回的导航数据格式无效。',
+      };
+    }
+
+    return {
+      data: categories,
+      revision: typeof payload.revision === 'string' ? payload.revision : null,
+    };
   } catch (error) {
     console.error('Failed to load navigation data from server:', error);
     return {
@@ -97,9 +102,18 @@ async function saveNavDataToServer(
     } | null;
 
     if (response.status === 409) {
+      const categories = parseNavigationData(payload?.categories);
+
+      if (!categories) {
+        return {
+          error: true as const,
+          message: '服务器返回的导航冲突数据格式无效，请刷新后重试。',
+        };
+      }
+
       return {
         conflict: true as const,
-        data: parseNavigationData(payload?.categories) ?? [],
+        data: categories,
         revision: typeof payload?.revision === 'string' ? payload.revision : null,
       };
     }

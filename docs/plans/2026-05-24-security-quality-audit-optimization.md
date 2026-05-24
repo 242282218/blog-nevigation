@@ -78,6 +78,9 @@ Use the smallest secure path that preserves existing deployments:
 - Exposed initial server-load failures in article and navigation editor data
   sync so editors show a clear local-copy warning and skip immediate remote
   write-back when the initial GET fails.
+- Tightened editor article and navigation response parsing so invalid server
+  `GET` or `409` conflict payloads surface as sync errors instead of replacing
+  local editor state with empty data.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.
