@@ -48,7 +48,16 @@ function formatDate(timestamp: number): string {
 
 export default function BlogEditorPage() {
   const router = useRouter();
-  const { articles, deleteArticle, exportArticle, exportArticlesData, importArticle, isLoaded } = useLocalArticles();
+  const {
+    articles,
+    deleteArticle,
+    exportArticle,
+    exportArticlesData,
+    importArticle,
+    isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
+  } = useLocalArticles();
   const [showTemplates, setShowTemplates] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'info'; text: string } | null>(null);
@@ -204,6 +213,18 @@ export default function BlogEditorPage() {
       />
 
       <EditorMain width="xl" className="space-y-8">
+        {lastConflictAt ? (
+          <StatusMessage tone="warning">
+            服务器上的文章数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
+          </StatusMessage>
+        ) : null}
+
+        {lastRemoteSaveError ? (
+          <StatusMessage tone="warning">
+            文章已保存在本机，但同步到服务器失败：{lastRemoteSaveError.message}
+          </StatusMessage>
+        ) : null}
+
         {message ? (
           <StatusMessage tone={message.tone}>
             {message.text}

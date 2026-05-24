@@ -39,8 +39,11 @@ npm run dev
 - [服务器部署](docs/deploy/server.md)
 - [数据迁移](docs/deploy/migration.md)
 - [Cloudflare R2 备份](docs/deploy/cloudflare-r2.md)
+- [GitHub 加密备份](docs/deploy/github-backup.md)
 
 ### 首次部署
+
+生产部署目录只需要保留 `compose.prod.yaml`、`.env` 和 `data/`。迁移服务器时优先整体复制这三项，其中 `data/` 是唯一运行时数据边界。
 
 ```bash
 mkdir -p /opt/blog-nevigation && cd /opt/blog-nevigation
@@ -95,6 +98,9 @@ docker compose -f compose.prod.yaml logs --tail=100 app
 
 默认以服务器本地 `BLOG_DATA_ROOT` 为主数据源。启用 R2 后，每次编辑保存会同步
 `latest/backup.json` 到 R2；在编辑中心点击“同步云端”会额外写入时间快照。
+R2 可在 `/editor/settings` 的 Cloudflare R2 面板配置；一旦
+`data/settings/cloudflare-r2.json` 存在，它会完整优先于 `.env` 中的 R2 变量，
+不会按字段回退到 `.env`。
 
 R2 对象结构：
 
@@ -114,8 +120,25 @@ npm run data:import -- ./output/blog-navigation-backup.json ./data
 npm run data:verify -- ./data
 ```
 
+生产目录没有源码和 `package.json` 时，在源码检出目录运行校验并传入生产数据路径：
+
+```bash
+npm run data:verify -- /opt/blog-nevigation/data
+```
+
 备份包包含文章、导航和站点设置；旧备份缺少站点设置时会使用默认设置恢复。
+备份包不会包含 `data/settings/cloudflare-r2.json` 或 R2 密钥；完整迁移服务器时复制
+`data/` 和 `.env`，只做内容迁移时在新服务器重新配置 R2。
+导入和 `data:verify` 会校验导航数据契约：分类 slug 不能重复，工具链接必须是 HTTPS，
+且每个工具至少包含一个标签。
 导入后会生成 `data/manifest.json`，用于记录文章、导航和站点设置的修订号与内容哈希。
+
+可选 GitHub 加密备份：
+
+```bash
+GITHUB_BACKUP_ENCRYPTION_KEY='change-me' npm run data:backup:github -- ./data
+GITHUB_BACKUP_ENCRYPTION_KEY='change-me' npm run data:restore:encrypted -- ./output/github-backups/<backup>.enc.json ./data
+```
 
 ## 常用命令
 

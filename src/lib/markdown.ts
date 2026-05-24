@@ -183,7 +183,13 @@ export function getPosts(): PostMeta[] {
 }
 
 export function getPostBySlugArray(slugArray: string[]) {
-    const decoded = slugArray.map((segment) => decodeURIComponent(segment));
+    let decoded: string[];
+
+    try {
+        decoded = slugArray.map((segment) => decodeURIComponent(segment));
+    } catch {
+        return null;
+    }
 
     if (isRuntimeArticleSourceEnabled()) {
         const runtimePost = getRuntimePostBySlugArray(decoded);

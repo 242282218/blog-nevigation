@@ -132,4 +132,12 @@ describe('markdown runtime article source', () => {
       })
     );
   });
+
+  it('returns null instead of throwing when a post slug cannot be decoded', async () => {
+    delete process.env.BLOG_DATA_ROOT;
+
+    const { getPostBySlugArray } = await importMarkdownModule();
+
+    expect(getPostBySlugArray(['%E0%A4%A'])).toBeNull();
+  });
 });

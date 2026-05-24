@@ -26,8 +26,12 @@ docker compose -f compose.prod.yaml up -d
 Verify after start:
 
 ```bash
-npm run data:verify -- ./data
-curl -I http://127.0.0.1:${APP_PORT:-3000}/
+# Run from a source checkout, not from the three-file production directory.
+npm run data:verify -- /opt/blog-nevigation/data
+
+cd /opt/blog-nevigation
+HEALTHCHECK_PORT=$(docker compose -f compose.prod.yaml port app 3000 | awk -F: 'END {print $NF}')
+curl -I "http://127.0.0.1:${HEALTHCHECK_PORT:-3000}/"
 ```
 
 ## Backup Package Migration
@@ -46,7 +50,33 @@ npm run data:verify -- ./data
 ```
 
 The backup package includes articles, navigation, site settings, and a manifest.
-Older backup packages without settings restore default settings.
+Older backup packages without settings restore default settings. The package
+does not include `data/settings/cloudflare-r2.json` or R2 credentials; configure
+R2 again on the new server unless you migrate the full `data/` directory and
+`.env`.
+
+Imports and `data:verify` enforce the same public navigation contract as the
+application: category slugs must be unique, tool URLs must be HTTPS, and each
+tool must include at least one tag. Invalid backup packages fail before
+replacing the target runtime data.
+
+## Encrypted GitHub Backup Migration
+
+Use this path when the backup is stored in a private GitHub repository or a
+GitHub Actions artifact.
+
+```bash
+export GITHUB_BACKUP_ENCRYPTION_KEY='replace-with-the-original-secret'
+npm run data:restore:encrypted -- ./backups/blog-navigation-backup.enc.json ./data
+npm run data:verify -- ./data
+```
+
+Create encrypted backups with:
+
+```bash
+export GITHUB_BACKUP_ENCRYPTION_KEY='replace-with-a-long-random-secret'
+npm run data:backup:github -- ./data
+```
 
 ## Repair Manifest
 

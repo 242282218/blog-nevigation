@@ -4,10 +4,13 @@ import {
     S3Client,
     S3ServiceException,
 } from '@aws-sdk/client-s3';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { EditorBackupPayload } from '@/lib/editor-data-backup';
 
 const DEFAULT_R2_PREFIX = 'blog-navigation';
 const LATEST_BACKUP_FILE_NAME = 'backup.json';
+const R2_SETTINGS_FILE_NAME = 'cloudflare-r2.json';
 
 export interface R2BackupConfig {
     bucket: string;
@@ -23,7 +26,27 @@ export interface R2BackupStatus {
     configured: boolean;
     bucket: string | null;
     prefix: string;
+    endpoint: string | null;
+    snapshotOnWrite: boolean;
+    hasAccessKeyId: boolean;
+    hasSecretAccessKey: boolean;
+    source: 'file' | 'env' | 'default';
     message: string | null;
+}
+
+export interface EditableR2BackupSettings {
+    enabled: boolean;
+    accountId: string;
+    bucket: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    prefix: string;
+    endpoint: string;
+    snapshotOnWrite: boolean;
+}
+
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey'> {
+    hasSecretAccessKey: boolean;
 }
 
 export interface R2UploadResult {
@@ -42,6 +65,73 @@ function getEnv(name: string): string {
     return process.env[name]?.trim() ?? '';
 }
 
+function getR2SettingsFilePath(): string | null {
+    const root = process.env.BLOG_DATA_ROOT?.trim();
+
+    return root ? path.join(root, 'settings', R2_SETTINGS_FILE_NAME) : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
+    const filePath = getR2SettingsFilePath();
+
+    if (!filePath || !fs.existsSync(filePath)) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
+
+        if (!isRecord(parsed)) {
+            return null;
+        }
+
+        return {
+            enabled: parsed.enabled === true,
+            accountId: asString(parsed.accountId),
+            bucket: asString(parsed.bucket),
+            accessKeyId: asString(parsed.accessKeyId),
+            secretAccessKey: asString(parsed.secretAccessKey),
+            prefix: asString(parsed.prefix) || DEFAULT_R2_PREFIX,
+            endpoint: asString(parsed.endpoint),
+            snapshotOnWrite: parsed.snapshotOnWrite === true,
+        };
+    } catch (error) {
+        console.error('[r2-backup-storage] Failed to read stored R2 settings:', error);
+        return null;
+    }
+}
+
+function writeJsonAtomically(filePath: string, value: unknown): void {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+
+    try {
+        fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+        protectSecretFile(tempPath);
+        fs.renameSync(tempPath, filePath);
+        protectSecretFile(filePath);
+    } catch (error) {
+        fs.rmSync(tempPath, { force: true });
+        throw error;
+    }
+}
+
+function protectSecretFile(filePath: string): void {
+    try {
+        fs.chmodSync(filePath, 0o600);
+    } catch (error) {
+        console.warn('[r2-backup-storage] Failed to tighten R2 settings file permissions:', error);
+    }
+}
+
 function normalizePrefix(value: string): string {
     return value
         .trim()
@@ -57,48 +147,120 @@ function joinR2Key(...parts: string[]): string {
 }
 
 function createR2Endpoint(accountId: string): string {
-    const configuredEndpoint = getEnv('R2_ENDPOINT');
-
-    if (configuredEndpoint) {
-        return configuredEndpoint;
-    }
-
     return `https://${accountId}.r2.cloudflarestorage.com`;
 }
 
+export function getEditableR2BackupSettings(): SafeR2BackupSettings {
+    const stored = readStoredR2BackupSettings();
+
+    if (stored) {
+        return {
+            enabled: stored.enabled,
+            accountId: stored.accountId,
+            bucket: stored.bucket,
+            accessKeyId: stored.accessKeyId,
+            hasSecretAccessKey: Boolean(stored.secretAccessKey),
+            prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
+            endpoint: stored.endpoint,
+            snapshotOnWrite: stored.snapshotOnWrite,
+        };
+    }
+
+    const enabled = getEnv('R2_BACKUP_ENABLED') === 'true';
+    const accountId = getEnv('R2_ACCOUNT_ID');
+    const endpoint = getEnv('R2_ENDPOINT');
+    const secretAccessKey = getEnv('R2_SECRET_ACCESS_KEY');
+
+    return {
+        enabled,
+        accountId,
+        bucket: getEnv('R2_BUCKET'),
+        accessKeyId: getEnv('R2_ACCESS_KEY_ID'),
+        hasSecretAccessKey: Boolean(secretAccessKey),
+        prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
+        endpoint,
+        snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
+    };
+}
+
+export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): SafeR2BackupSettings {
+    const filePath = getR2SettingsFilePath();
+
+    if (!filePath) {
+        throw new Error('BLOG_DATA_ROOT is not configured.');
+    }
+
+    const existing = readStoredR2BackupSettings();
+    const trimmedSecretAccessKey = input.secretAccessKey.trim();
+    const nextSettings: EditableR2BackupSettings = {
+        enabled: input.enabled,
+        accountId: input.accountId.trim(),
+        bucket: input.bucket.trim(),
+        accessKeyId: input.accessKeyId.trim(),
+        secretAccessKey: trimmedSecretAccessKey || existing?.secretAccessKey || (input.enabled ? getEnv('R2_SECRET_ACCESS_KEY') : ''),
+        prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
+        endpoint: input.endpoint.trim(),
+        snapshotOnWrite: input.snapshotOnWrite,
+    };
+
+    if (
+        nextSettings.enabled &&
+        (!nextSettings.accountId || !nextSettings.bucket || !nextSettings.accessKeyId || !nextSettings.secretAccessKey)
+    ) {
+        throw new Error('启用 R2 备份时必须填写 Account ID、Bucket、Access Key ID 和 Secret Access Key。');
+    }
+
+    writeJsonAtomically(filePath, nextSettings);
+
+    return getEditableR2BackupSettings();
+}
+
 export function getR2BackupConfig(): R2BackupConfig | null {
-    if (getEnv('R2_BACKUP_ENABLED') !== 'true') {
+    const stored = readStoredR2BackupSettings();
+    const enabled = stored ? stored.enabled : getEnv('R2_BACKUP_ENABLED') === 'true';
+
+    if (!enabled) {
         return null;
     }
 
-    const accountId = getEnv('R2_ACCOUNT_ID');
-    const bucket = getEnv('R2_BUCKET');
-    const accessKeyId = getEnv('R2_ACCESS_KEY_ID');
-    const secretAccessKey = getEnv('R2_SECRET_ACCESS_KEY');
+    const accountId = stored ? stored.accountId : getEnv('R2_ACCOUNT_ID');
+    const bucket = stored ? stored.bucket : getEnv('R2_BUCKET');
+    const accessKeyId = stored ? stored.accessKeyId : getEnv('R2_ACCESS_KEY_ID');
+    const secretAccessKey = stored ? stored.secretAccessKey : getEnv('R2_SECRET_ACCESS_KEY');
+    const endpoint = (stored ? stored.endpoint : getEnv('R2_ENDPOINT')) || (accountId ? createR2Endpoint(accountId) : '');
 
-    if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
+    if (!accountId || !bucket || !accessKeyId || !secretAccessKey || !endpoint) {
         return null;
     }
 
     return {
         bucket,
-        endpoint: createR2Endpoint(accountId),
+        endpoint,
         accessKeyId,
         secretAccessKey,
-        prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
-        snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
+        prefix: normalizePrefix(stored ? stored.prefix : getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
+        snapshotOnWrite: stored
+            ? Boolean(stored.snapshotOnWrite)
+            : getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
     };
 }
 
 export function getR2BackupStatus(): R2BackupStatus {
-    const enabled = getEnv('R2_BACKUP_ENABLED') === 'true';
+    const stored = readStoredR2BackupSettings();
+    const enabled = stored ? stored.enabled : getEnv('R2_BACKUP_ENABLED') === 'true';
     const config = getR2BackupConfig();
+    const settings = getEditableR2BackupSettings();
 
     return {
         enabled,
         configured: Boolean(config),
-        bucket: config?.bucket ?? (getEnv('R2_BUCKET') || null),
-        prefix: config?.prefix ?? normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
+        bucket: config?.bucket ?? (settings.bucket || null),
+        prefix: config?.prefix ?? settings.prefix,
+        endpoint: config?.endpoint ?? (settings.endpoint || null),
+        snapshotOnWrite: settings.snapshotOnWrite,
+        hasAccessKeyId: Boolean(settings.accessKeyId),
+        hasSecretAccessKey: settings.hasSecretAccessKey,
+        source: stored ? 'file' : (enabled || settings.bucket || settings.accountId ? 'env' : 'default'),
         message: enabled && !config ? 'R2 backup is enabled but required variables are missing.' : null,
     };
 }

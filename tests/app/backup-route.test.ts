@@ -1,0 +1,212 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { NextRequest } from 'next/server';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GET, POST } from '@/app/api/data/backup/route';
+import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import {
+  cleanupTempDirectories,
+  createAuthedEditorRequest,
+  createTempDirectory,
+  restoreEnv,
+} from '../helpers/api-route';
+
+vi.mock('@/lib/editor-remote-backup', () => ({
+  syncCurrentBackupToRemote: vi.fn(),
+}));
+
+const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
+
+const ORIGINAL_ENV = {
+  BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
+  EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
+};
+const tempDirectories: string[] = [];
+
+function resetEnv(): void {
+  restoreEnv(ORIGINAL_ENV);
+}
+
+function createTempDataRoot(): string {
+  const directory = createTempDirectory('blog-navigation-backup-route-');
+  tempDirectories.push(directory);
+  return directory;
+}
+
+function writeJson(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+}
+
+function seedRuntimeData(dataRoot: string): void {
+  writeJson(path.join(dataRoot, 'articles', 'articles.json'), [
+    {
+      id: 'article-1',
+      title: 'Existing Article',
+      date: '2026-05-24',
+      description: 'Existing article',
+      tags: [],
+      content: '# Existing',
+      slug: 'existing-article',
+      createdAt: 1,
+      updatedAt: 2,
+    },
+  ]);
+  writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+  writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+    siteName: 'Existing Site',
+    siteDescription: 'Existing settings',
+    workspaceLabel: 'workspace / existing',
+    heroTitleLineOne: 'Existing',
+    heroTitleLineTwo: 'Data',
+    heroDescription: 'Existing runtime data.',
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockedSyncCurrentBackupToRemote.mockResolvedValue({
+    enabled: false,
+    success: false,
+    message: 'R2 backup is disabled.',
+  });
+});
+
+afterEach(() => {
+  resetEnv();
+  cleanupTempDirectories(tempDirectories);
+});
+
+describe('backup API', () => {
+  it('rejects unauthenticated reads and writes', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    const getResponse = await GET(new NextRequest('http://localhost/api/data/backup'));
+    const postResponse = await POST(
+      new NextRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({ data: { articles: [], navigation: [] } }),
+      })
+    );
+
+    expect(getResponse.status).toBe(401);
+    expect(postResponse.status).toBe(401);
+  });
+
+  it('exports the current backup payload for authenticated reads', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        version: 1,
+        source: 'local',
+        persistent: true,
+        data: expect.objectContaining({
+          articles: expect.arrayContaining([
+            expect.objectContaining({
+              id: 'article-1',
+            }),
+          ]),
+          navigation: [],
+        }),
+      })
+    );
+  });
+
+  it('requires BLOG_DATA_ROOT before restoring a backup', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    delete process.env.BLOG_DATA_ROOT;
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({ data: { articles: [], navigation: [] } }),
+      })
+    );
+
+    expect(response.status).toBe(503);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid backup payloads without remote sync', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({ data: { articles: 'invalid', navigation: [] } }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: '备份文件格式无效，恢复失败。',
+      })
+    );
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('restores valid backup payloads and writes a remote restore snapshot', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({
+          version: 1,
+          data: {
+            articles: [
+              {
+                id: 'article-2',
+                title: 'Restored Article',
+                date: '2026-05-24',
+                description: 'Restored article',
+                tags: [],
+                content: '# Restored',
+                createdAt: 1,
+                updatedAt: 2,
+              },
+            ],
+            navigation: [],
+          },
+        }),
+      })
+    );
+    const payload = await response.json();
+    const restoredArticles = JSON.parse(
+      fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8')
+    );
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        counts: {
+          articles: 1,
+          categories: 0,
+          settings: true,
+        },
+      })
+    );
+    expect(restoredArticles).toEqual([
+      expect.objectContaining({
+        id: 'article-2',
+        slug: expect.any(String),
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+      reason: 'local-restore',
+      writeSnapshot: true,
+    });
+  });
+});

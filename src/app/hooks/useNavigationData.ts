@@ -96,10 +96,17 @@ async function saveNavDataToServer(
 
     if (!response.ok) {
       if (response.status === 503) {
-        return;
+        return {
+          error: true as const,
+          message: '服务器未配置持久化数据目录，导航只保存在当前浏览器。',
+        };
       }
 
       console.error('Failed to persist navigation data to server:', response.status);
+      return {
+        error: true as const,
+        message: `导航同步到服务器失败（HTTP ${response.status}）。`,
+      };
     }
 
     return {
@@ -107,11 +114,15 @@ async function saveNavDataToServer(
     };
   } catch (error) {
     console.error('Failed to persist navigation data to server:', error);
+    return {
+      error: true as const,
+      message: error instanceof Error ? error.message : '导航同步到服务器失败。',
+    };
   }
 }
 
 export function useNavigationData() {
-  const { data, setData, isLoaded } = useSyncedResource<Category[]>({
+  const { data, setData, isLoaded, lastConflictAt, lastRemoteSaveError } = useSyncedResource<Category[]>({
     initialValue: () => parseNavigationData(defaultNavData) ?? [],
     loadLocal: loadNavDataFromStorage,
     saveLocal: saveNavDataToStorage,
@@ -261,6 +272,8 @@ export function useNavigationData() {
   return {
     data,
     isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
     addCategory,
     updateCategory,
     deleteCategory,

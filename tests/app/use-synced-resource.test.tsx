@@ -1,0 +1,300 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSyncedResource } from '@/app/hooks/useSyncedResource';
+
+type SaveRemoteResult =
+  | { revision: string | null }
+  | {
+    error: true;
+    message: string;
+  }
+  | {
+    conflict: true;
+    data: string[];
+    revision: string | null;
+  };
+
+function TestSyncedResource({
+  loadRemote,
+  saveLocal,
+  saveRemote,
+  onReady,
+}: {
+  loadRemote: () => Promise<{ data: string[]; revision: string }>;
+  saveLocal: (value: string[]) => void;
+  saveRemote: (value: string[], context: { revision: string | null }) => Promise<SaveRemoteResult>;
+  onReady: (setData: (value: string[]) => void) => void;
+}) {
+  const { data, setData, lastConflictAt, lastRemoteSaveError } = useSyncedResource<string[]>({
+    initialValue: [],
+    loadLocal: () => null,
+    saveLocal,
+    loadRemote,
+    saveRemote,
+    saveDelayMs: 10,
+  });
+
+  onReady(setData);
+
+  return (
+    <div>
+      {data.join(',')}
+      {lastConflictAt ? ' conflict-detected' : ''}
+      {lastRemoteSaveError ? ` remote-error:${lastRemoteSaveError.message}` : ''}
+    </div>
+  );
+}
+
+async function flushPromises(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe('useSyncedResource', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('does not save remote data back immediately after initialization', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-2',
+    });
+    const saveLocal = vi.fn();
+    const onReady = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={onReady}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(container.textContent).toBe('remote');
+    expect(saveRemote).not.toHaveBeenCalled();
+  });
+
+  it('saves later local changes with the loaded revision', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-2',
+    });
+    const saveLocal = vi.fn();
+    let setResourceData: ((value: string[]) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={(setData) => {
+            setResourceData = setData;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(setResourceData).not.toBeNull();
+    await act(async () => {
+      setResourceData?.(['remote', 'local-change']);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(saveRemote).toHaveBeenCalledOnce();
+    expect(saveRemote).toHaveBeenCalledWith(['remote', 'local-change'], {
+      revision: 'revision-1',
+    });
+  });
+
+  it('does not save again when only save handlers change', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const firstSaveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-2',
+    });
+    const nextSaveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-3',
+    });
+    const saveLocal = vi.fn();
+    const onReady = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={firstSaveRemote}
+          onReady={onReady}
+        />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={nextSaveRemote}
+          onReady={onReady}
+        />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(firstSaveRemote).not.toHaveBeenCalled();
+    expect(nextSaveRemote).not.toHaveBeenCalled();
+  });
+
+  it('does not save conflict replacement back to remote', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi
+      .fn()
+      .mockResolvedValueOnce({
+        conflict: true,
+        data: ['server-winner'],
+        revision: 'revision-2',
+      })
+      .mockResolvedValue({
+        revision: 'revision-3',
+      });
+    const saveLocal = vi.fn();
+    let setResourceData: ((value: string[]) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={(setData) => {
+            setResourceData = setData;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(setResourceData).not.toBeNull();
+    await act(async () => {
+      setResourceData?.(['local-change']);
+    });
+    const beforeConflict = Date.now();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toBe('server-winner conflict-detected');
+    expect(saveRemote).toHaveBeenCalledOnce();
+    expect(Date.now()).toBeGreaterThanOrEqual(beforeConflict);
+  });
+
+  it('exposes remote save errors without replacing local data', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi.fn().mockResolvedValue({
+      error: true,
+      message: 'server unavailable',
+    });
+    const saveLocal = vi.fn();
+    let setResourceData: ((value: string[]) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={(setData) => {
+            setResourceData = setData;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(setResourceData).not.toBeNull();
+    await act(async () => {
+      setResourceData?.(['local-change']);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toBe('local-change remote-error:server unavailable');
+    expect(saveRemote).toHaveBeenCalledOnce();
+  });
+});

@@ -53,6 +53,8 @@ export default function NavigationEditorPage() {
     exportData,
     importData,
     resetToDefault,
+    lastConflictAt,
+    lastRemoteSaveError,
   } = useNavigationData();
 
   const [editingCategory, setEditingCategory] = useState<number | null>(null);
@@ -213,6 +215,18 @@ export default function NavigationEditorPage() {
       />
 
       <EditorMain className="space-y-6">
+        {lastConflictAt ? (
+          <StatusMessage tone="warning">
+            服务器上的导航数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
+          </StatusMessage>
+        ) : null}
+
+        {lastRemoteSaveError ? (
+          <StatusMessage tone="warning">
+            导航已保存在本机，但同步到服务器失败：{lastRemoteSaveError.message}
+          </StatusMessage>
+        ) : null}
+
         {message ? (
           <StatusMessage tone={message.tone}>
             {message.text}

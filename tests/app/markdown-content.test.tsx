@@ -54,4 +54,22 @@ describe('MarkdownContent', () => {
 
     expect(writeTextMock).toHaveBeenCalledWith('const ok = true;');
   });
+
+  it('does not render dangerous markdown HTML or protocols as active DOM', () => {
+    act(() => {
+      root.render(
+        <MarkdownContent
+          content={'<script>alert("xss")</script>\n\n[unsafe](javascript:alert("xss"))\n\n<img src="x" onerror="alert(\'xss\')" />'}
+        />
+      );
+    });
+
+    const unsafeLink = Array.from(container.querySelectorAll('a')).find((link) =>
+      link.textContent?.includes('unsafe')
+    );
+
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(unsafeLink?.getAttribute('href')).toBeNull();
+  });
 });

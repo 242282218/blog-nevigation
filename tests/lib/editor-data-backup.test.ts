@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EDITOR_BACKUP_VERSION,
   createEditorBackupPayload,
@@ -58,6 +58,8 @@ function createTempDataRoot(): string {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+
   if (ORIGINAL_BLOG_DATA_ROOT === undefined) {
     delete process.env.BLOG_DATA_ROOT;
   } else {
@@ -137,5 +139,86 @@ describe('editor backup payload', () => {
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([normalizedArticle]);
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'manifest.json'), 'utf8'))).toEqual(
+      expect.objectContaining({
+        version: 1,
+        resources: expect.objectContaining({
+          articles: expect.objectContaining({
+            hash: expect.any(String),
+            revision: expect.any(String),
+          }),
+          navigation: expect.objectContaining({
+            hash: expect.any(String),
+            revision: expect.any(String),
+          }),
+          settings: expect.objectContaining({
+            hash: expect.any(String),
+            revision: expect.any(String),
+          }),
+        }),
+      })
+    );
+    expect(fs.readdirSync(dataRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
+  });
+
+  it('rolls back existing files when restore replacement fails midway', () => {
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    const existingPayload = createEditorBackupPayload({
+      articles: [article],
+      navigation,
+      settings,
+    });
+
+    expect(restoreEditorBackupPayload(existingPayload)).toEqual({
+      articles: 1,
+      categories: 1,
+      settings: true,
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const existingNavigation = fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8');
+    const existingSettings = fs.readFileSync(path.join(dataRoot, 'settings', 'site.json'), 'utf8');
+    const existingManifest = fs.readFileSync(path.join(dataRoot, 'manifest.json'), 'utf8');
+    const replacementArticle = {
+      ...article,
+      id: 'replacement-article-1',
+      title: 'Replacement Article',
+    };
+    let stagedReplaceCount = 0;
+    const renameSync = fs.renameSync;
+
+    vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+      const oldPathText = String(oldPath);
+
+      if (oldPathText.includes('.restore-staging') && !oldPathText.endsWith('.tmp')) {
+        stagedReplaceCount += 1;
+      }
+
+      if (stagedReplaceCount === 2) {
+        throw new Error('Simulated replacement failure.');
+      }
+
+      return renameSync(oldPath, newPath);
+    });
+
+    expect(() => {
+      restoreEditorBackupPayload(
+        createEditorBackupPayload({
+          articles: [replacementArticle],
+          navigation: [],
+          settings: {
+            ...settings,
+            siteName: 'Replacement Site',
+          },
+        })
+      );
+    }).toThrow('Simulated replacement failure.');
+
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8')).toBe(existingNavigation);
+    expect(fs.readFileSync(path.join(dataRoot, 'settings', 'site.json'), 'utf8')).toBe(existingSettings);
+    expect(fs.readFileSync(path.join(dataRoot, 'manifest.json'), 'utf8')).toBe(existingManifest);
+    expect(fs.readdirSync(dataRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
   });
 });

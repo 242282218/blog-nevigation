@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readNavigationFromDisk } from '@/lib/editor-data-storage';
 import { getPosts } from '@/lib/markdown';
+import {
+    isSearchQueryAllowed,
+    normalizeSearchQuery,
+} from '@/lib/search-query';
 
 function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
 }
 
 export async function GET(request: NextRequest) {
-    const query = request.nextUrl.searchParams.get('q')?.trim().toLowerCase();
+    const query = normalizeSearchQuery(request.nextUrl.searchParams.get('q'));
 
-    if (!query) {
+    if (!isSearchQueryAllowed(query)) {
         return NextResponse.json([]);
     }
 

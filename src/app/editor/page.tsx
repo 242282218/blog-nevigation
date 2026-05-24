@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Compass, ArrowRight, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from './components/LogoutButton';
+import { createRestoreActionMessage } from './backup-action-message';
 import {
   EditorActionCard,
   EditorButton,
@@ -20,6 +21,17 @@ type BackupPayload = {
   navigation?: unknown;
 };
 
+type BackupActionResponse = {
+  remoteBackup?: {
+    success?: boolean;
+    message?: string;
+  };
+};
+
+type RemoteBackupStatus = {
+  configured: boolean;
+};
+
 function createBackupFileName(exportedAt?: string): string {
   const timestamp = exportedAt
     ? exportedAt.replace(/[:]/g, '-').replace(/\..+$/, '')
@@ -31,7 +43,43 @@ function createBackupFileName(exportedAt?: string): string {
 export default function EditorHomePage() {
   const restoreInputRef = useRef<HTMLInputElement>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'loading'; text: string } | null>(null);
+  const [isRemoteStatusLoading, setIsRemoteStatusLoading] = useState(true);
+  const [isRemoteConfigured, setIsRemoteConfigured] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'success' | 'warning' | 'danger' | 'loading'; text: string } | null>(null);
+  const canRunRemoteAction = isRemoteConfigured && !isRemoteStatusLoading && !isBusy;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRemoteBackupStatus() {
+      try {
+        const response = await fetch('/api/data/backup/remote', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const payload = (await response.json().catch(() => null)) as RemoteBackupStatus | null;
+
+        if (isMounted) {
+          setIsRemoteConfigured(Boolean(response.ok && payload?.configured));
+        }
+      } catch (error) {
+        console.error('Failed to load remote backup status:', error);
+        if (isMounted) {
+          setIsRemoteConfigured(false);
+        }
+      } finally {
+        if (isMounted) {
+          setIsRemoteStatusLoading(false);
+        }
+      }
+    }
+
+    loadRemoteBackupStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleBackup = useCallback(async () => {
     setIsBusy(true);
@@ -123,7 +171,9 @@ export default function EditorHomePage() {
         throw new Error(`remote_restore_failed_${response.status}`);
       }
 
-      setMessage({ tone: 'success', text: '云端恢复成功，刷新页面后可见最新数据。' });
+      const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+
+      setMessage(createRestoreActionMessage(payload, '云端恢复成功，刷新页面后可见最新数据。'));
     } catch (error) {
       console.error('Failed to restore remote backup:', error);
       setMessage({ tone: 'danger', text: '云端恢复失败，请检查 R2 配置和备份文件。' });
@@ -149,7 +199,7 @@ export default function EditorHomePage() {
 
     try {
       const content = await file.text();
-      const payload = JSON.parse(content) as BackupPayload;
+      const backupPayload = JSON.parse(content) as BackupPayload;
 
       const response = await fetch('/api/data/backup', {
         method: 'POST',
@@ -157,14 +207,16 @@ export default function EditorHomePage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(backupPayload),
       });
 
       if (!response.ok) {
         throw new Error(`restore_failed_${response.status}`);
       }
 
-      setMessage({ tone: 'success', text: '恢复成功，刷新页面后可见最新数据。' });
+      const actionPayload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+
+      setMessage(createRestoreActionMessage(actionPayload, '恢复成功，刷新页面后可见最新数据。'));
     } catch (error) {
       console.error('Failed to restore backup:', error);
       setMessage({ tone: 'danger', text: '恢复失败，请确认备份文件格式正确。' });
@@ -200,7 +252,7 @@ export default function EditorHomePage() {
             <EditorButton
               type="button"
               onClick={handleRemoteSync}
-              disabled={isBusy}
+              disabled={!canRunRemoteAction}
             >
               <CloudUpload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '同步云端'}</span>
@@ -209,7 +261,7 @@ export default function EditorHomePage() {
             <EditorButton
               type="button"
               onClick={handleRemoteRestore}
-              disabled={isBusy}
+              disabled={!canRunRemoteAction}
             >
               <CloudDownload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '云端恢复'}</span>

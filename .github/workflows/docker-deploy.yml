@@ -129,8 +129,14 @@ jobs:
             set -euo pipefail
 
             DEPLOY_DIR="${{ secrets.DEPLOY_PATH }}"
-            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}"
+            IMAGE_DIGEST="${{ needs.build-and-push.outputs.image-digest }}"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
             TIMESTAMP=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+            if [ -z "${IMAGE_DIGEST}" ]; then
+              echo "Build did not produce an image digest; refusing to deploy."
+              exit 1
+            fi
 
             echo "========================================="
             echo "Deployment started at ${TIMESTAMP}"
@@ -140,7 +146,41 @@ jobs:
 
             cd "${DEPLOY_DIR}"
 
-            PREV_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$(docker compose -f compose.prod.yaml ps -q app 2>/dev/null)" 2>/dev/null || echo "none")
+            get_healthcheck_url() {
+              local port
+              port=$(docker compose -f compose.prod.yaml port app 3000 | awk -F: 'END {print $NF}')
+              echo "http://127.0.0.1:${port:-3000}/"
+            }
+
+            wait_for_healthcheck() {
+              local url="$1"
+              local label="$2"
+
+              echo "Waiting for ${label} health check at ${url}..."
+              for i in $(seq 1 30); do
+                if curl --fail --silent --max-time 5 "${url}" > /dev/null 2>&1; then
+                  echo "${label} health check passed after $((i * 2)) seconds"
+                  return 0
+                fi
+                sleep 2
+              done
+
+              echo "${label} health check failed."
+              return 1
+            }
+
+            CURRENT_CONTAINER=$(docker compose -f compose.prod.yaml ps -q app 2>/dev/null || true)
+            if [ -n "${CURRENT_CONTAINER}" ]; then
+              PREV_IMAGE=$(docker inspect --format='{{.Config.Image}}' "${CURRENT_CONTAINER}" 2>/dev/null || echo "none")
+              if [[ "${PREV_IMAGE}" == *@sha256:* ]]; then
+                PREV_DIGEST="${PREV_IMAGE}"
+              else
+                PREV_IMAGE_ID=$(docker inspect --format='{{.Image}}' "${CURRENT_CONTAINER}" 2>/dev/null || echo "")
+                PREV_DIGEST=$(docker image inspect --format='{{index .RepoDigests 0}}' "${PREV_IMAGE_ID}" 2>/dev/null || echo "none")
+              fi
+            else
+              PREV_DIGEST="none"
+            fi
             echo "Previous image digest: ${PREV_DIGEST}"
 
             echo "Pulling latest image..."
@@ -148,28 +188,22 @@ jobs:
 
             echo "Restarting service..."
             DEPLOY_IMAGE="${IMAGE}" docker compose -f compose.prod.yaml up -d --force-recreate --remove-orphans
+            HEALTHCHECK_URL=$(get_healthcheck_url)
 
-            echo "Waiting for health check..."
-            HEALTHY=false
-            for i in $(seq 1 30); do
-              if curl --fail --silent --max-time 5 http://127.0.0.1:3000/ > /dev/null 2>&1; then
-                HEALTHY=true
-                echo "Health check passed after $((i * 2)) seconds"
-                break
-              fi
-              sleep 2
-            done
-
-            if [ "${HEALTHY}" = "false" ]; then
+            if ! wait_for_healthcheck "${HEALTHCHECK_URL}" "deployment"; then
               echo "========================================="
               echo "Health check failed, starting rollback."
               echo "========================================="
 
               docker compose -f compose.prod.yaml logs --tail=50 app || true
 
-              if [ "${PREV_DIGEST}" != "none" ]; then
+              if [[ "${PREV_DIGEST}" == *@sha256:* ]]; then
                 echo "Rolling back to previous image: ${PREV_DIGEST}"
                 DEPLOY_IMAGE="${PREV_DIGEST}" docker compose -f compose.prod.yaml up -d --force-recreate --remove-orphans
+                ROLLBACK_HEALTHCHECK_URL=$(get_healthcheck_url)
+                wait_for_healthcheck "${ROLLBACK_HEALTHCHECK_URL}" "rollback"
+              else
+                echo "No valid previous image digest is available; rollback skipped."
               fi
 
               exit 1

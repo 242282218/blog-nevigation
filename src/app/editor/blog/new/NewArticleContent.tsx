@@ -208,6 +208,8 @@ export function NewArticleContent() {
     getArticleById,
     exportArticle,
     isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
   } = useLocalArticles();
 
   const [content, setContent] = useState('');
@@ -480,6 +482,18 @@ export function NewArticleContent() {
       />
 
       <EditorMain width="xl" className="space-y-4">
+        {lastConflictAt ? (
+          <StatusMessage tone="warning">
+            服务器上的文章数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
+          </StatusMessage>
+        ) : null}
+
+        {lastRemoteSaveError ? (
+          <StatusMessage tone="warning">
+            文章已保存在本机，但同步到服务器失败：{lastRemoteSaveError.message}
+          </StatusMessage>
+        ) : null}
+
         {statusMessage ? (
           <StatusMessage tone={statusMessage.tone}>
             {statusMessage.text}

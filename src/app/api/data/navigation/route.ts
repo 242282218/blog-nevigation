@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest) {
     const currentManifest = getEditorDataResourceManifest('navigation', currentCategories);
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
 
-    if (expectedRevision && currentManifest?.revision !== expectedRevision) {
+    if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
         return NextResponse.json(
             {
                 message: '导航数据已被其他会话更新，请刷新后重试。',

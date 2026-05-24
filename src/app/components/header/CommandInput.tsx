@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Compass, FileText, Lock, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+    isSearchQueryAllowed,
+    normalizeSearchQuery,
+} from '@/lib/search-query';
 
 const ADMIN_SHORTCUT = ':admin';
 
@@ -101,6 +105,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
     const [showAdminMenu, setShowAdminMenu] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const hasSearchableQuery = isSearchQueryAllowed(normalizeSearchQuery(query));
 
     const closeSearch = useCallback(() => {
         setIsOpen(false);
@@ -149,14 +154,16 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
     }, [charIndex, compact, isDeleting, placeholderIndex, isOpen]);
 
     useEffect(() => {
-        if (!query.trim()) {
+        const normalizedQuery = normalizeSearchQuery(query);
+
+        if (!normalizedQuery) {
             setResults([]);
             setErrorMessage(null);
             setShowAdminMenu(false);
             return;
         }
 
-        if (query === ADMIN_SHORTCUT) {
+        if (normalizedQuery === ADMIN_SHORTCUT) {
             setShowAdminMenu(true);
             setResults([]);
             setErrorMessage(null);
@@ -166,13 +173,20 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
 
         setShowAdminMenu(false);
 
+        if (!isSearchQueryAllowed(normalizedQuery)) {
+            setResults([]);
+            setErrorMessage(null);
+            setIsLoading(false);
+            return;
+        }
+
         const controller = new AbortController();
 
         const fetchResults = async () => {
             setIsLoading(true);
             setErrorMessage(null);
             try {
-                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(normalizedQuery)}`, {
                     signal: controller.signal,
                 });
 
@@ -295,7 +309,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                         </div>
                     )}
 
-                    {!isLoading && !errorMessage && query && !showAdminMenu && results.length === 0 && (
+                    {!isLoading && !errorMessage && hasSearchableQuery && !showAdminMenu && results.length === 0 && (
                         <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
                             <span className="text-accent">!</span> 未找到匹配的文章或链接
                         </div>

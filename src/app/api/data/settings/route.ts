@@ -61,7 +61,7 @@ export async function PUT(request: NextRequest) {
     const currentManifest = getEditorDataResourceManifest('settings', currentSettings);
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
 
-    if (expectedRevision && currentManifest?.revision !== expectedRevision) {
+    if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
         return NextResponse.json(
             {
                 message: '站点设置已被其他会话更新，请刷新后重试。',

@@ -99,10 +99,17 @@ async function saveArticlesToServer(
 
     if (!response.ok) {
       if (response.status === 503) {
-        return;
+        return {
+          error: true as const,
+          message: '服务器未配置持久化数据目录，文章只保存在当前浏览器。',
+        };
       }
 
       console.error('Failed to persist articles to server:', response.status);
+      return {
+        error: true as const,
+        message: `文章同步到服务器失败（HTTP ${response.status}）。`,
+      };
     }
 
     return {
@@ -110,6 +117,10 @@ async function saveArticlesToServer(
     };
   } catch (error) {
     console.error('Failed to persist articles to server:', error);
+    return {
+      error: true as const,
+      message: error instanceof Error ? error.message : '文章同步到服务器失败。',
+    };
   }
 }
 
@@ -118,6 +129,8 @@ export function useLocalArticles() {
     data: articles,
     setData: setArticles,
     isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
   } = useSyncedResource<Article[]>({
     initialValue: [],
     loadLocal: loadArticlesFromStorage,
@@ -243,6 +256,8 @@ export function useLocalArticles() {
   return {
     articles,
     isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
     totalCount: articles.length,
     createArticle,
     updateArticle,

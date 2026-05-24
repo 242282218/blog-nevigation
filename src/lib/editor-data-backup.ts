@@ -8,10 +8,8 @@ import {
     readArticlesFromDisk,
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
+    restoreEditorDataRootAtomically,
     type EditorDataManifest,
-    writeArticlesToDisk,
-    writeNavigationToDisk,
-    writeSiteSettingsToDisk,
 } from '@/lib/editor-data-storage';
 import { parseNavigationData } from '@/lib/navigation-data';
 import {
@@ -96,9 +94,7 @@ export function restoreEditorBackupPayload(value: unknown): RestoreBackupResult 
         return null;
     }
 
-    writeArticlesToDisk(data.articles);
-    writeNavigationToDisk(data.navigation);
-    writeSiteSettingsToDisk(data.settings);
+    restoreEditorDataRootAtomically(data);
 
     return {
         articles: data.articles.length,

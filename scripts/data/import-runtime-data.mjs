@@ -2,13 +2,12 @@
 import path from 'node:path';
 import {
   DEFAULT_SITE_SETTINGS,
-  createManifest,
   isRecord,
   normalizeArticles,
+  normalizeNavigation,
   readJsonFile,
+  restoreRuntimeDataAtomically,
   resolveDataRoot,
-  writeManifest,
-  writeRuntimeData,
 } from './runtime-data.mjs';
 
 function parseBackupData(value) {
@@ -24,7 +23,7 @@ function parseBackupData(value) {
 
   return {
     articles: normalizeArticles(source.articles),
-    navigation: source.navigation,
+    navigation: normalizeNavigation(source.navigation),
     settings: isRecord(source.settings) ? source.settings : DEFAULT_SITE_SETTINGS,
   };
 }
@@ -40,10 +39,8 @@ const backupFile = path.resolve(backupFileArg);
 const dataRoot = resolveDataRoot(dataRootArg);
 const payload = readJsonFile(backupFile);
 const data = parseBackupData(payload);
-const manifest = createManifest(data);
 
-writeRuntimeData(dataRoot, data);
-writeManifest(dataRoot, manifest);
+restoreRuntimeDataAtomically(dataRoot, data);
 
 console.log(JSON.stringify({
   dataRoot,

@@ -15,7 +15,9 @@
     "test:architecture": "vitest run tests/architecture",
     "data:export": "node scripts/data/export-runtime-data.mjs",
     "data:import": "node scripts/data/import-runtime-data.mjs",
-    "data:verify": "node scripts/data/verify-runtime-data.mjs"
+    "data:verify": "node scripts/data/verify-runtime-data.mjs",
+    "data:backup:github": "node scripts/data/backup-to-github.mjs",
+    "data:restore:encrypted": "node scripts/data/restore-encrypted-backup.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1052.0",

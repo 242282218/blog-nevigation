@@ -18,6 +18,10 @@ type SaveRemoteResult<T> =
     conflict?: false;
   }
   | {
+    error: true;
+    message: string;
+  }
+  | {
     conflict: true;
     data: T;
     revision: string | null;
@@ -36,6 +40,11 @@ interface SyncedResourceState<T> {
   data: T;
   setData: Dispatch<SetStateAction<T>>;
   isLoaded: boolean;
+  lastConflictAt: number | null;
+  lastRemoteSaveError: {
+    at: number;
+    message: string;
+  } | null;
 }
 
 function parseRemoteValue<T>(value: T | RemoteResource<T>): RemoteResource<T> {
@@ -64,13 +73,35 @@ export function useSyncedResource<T>({
 }: UseSyncedResourceOptions<T>): SyncedResourceState<T> {
   const [data, setData] = useState<T>(initialValue);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [lastConflictAt, setLastConflictAt] = useState<number | null>(null);
+  const [lastRemoteSaveError, setLastRemoteSaveError] = useState<{
+    at: number;
+    message: string;
+  } | null>(null);
   const revisionRef = useRef<string | null>(null);
+  const skippedRemoteSaveValueRef = useRef<{ value: T } | null>(null);
+  const handlersRef = useRef({
+    loadLocal,
+    saveLocal,
+    loadRemote,
+    saveRemote,
+  });
+
+  useEffect(() => {
+    handlersRef.current = {
+      loadLocal,
+      saveLocal,
+      loadRemote,
+      saveRemote,
+    };
+  }, [loadLocal, loadRemote, saveLocal, saveRemote]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function initialize(): Promise<void> {
-      const remoteValue = await loadRemote();
+      const handlers = handlersRef.current;
+      const remoteValue = await handlers.loadRemote();
 
       if (cancelled) {
         return;
@@ -79,10 +110,11 @@ export function useSyncedResource<T>({
       if (remoteValue !== null) {
         const remoteResource = parseRemoteValue(remoteValue);
         revisionRef.current = remoteResource.revision;
+        skippedRemoteSaveValueRef.current = { value: remoteResource.data };
         setData(remoteResource.data);
-        saveLocal(remoteResource.data);
+        handlers.saveLocal(remoteResource.data);
       } else {
-        const localValue = loadLocal();
+        const localValue = handlers.loadLocal();
 
         if (localValue !== null) {
           setData(localValue);
@@ -97,42 +129,70 @@ export function useSyncedResource<T>({
     return () => {
       cancelled = true;
     };
-  }, [loadLocal, loadRemote, saveLocal]);
+  }, []);
 
   useEffect(() => {
     if (!isLoaded) {
       return undefined;
     }
 
-    saveLocal(data);
+    handlersRef.current.saveLocal(data);
+
+    if (
+      skippedRemoteSaveValueRef.current &&
+      Object.is(data, skippedRemoteSaveValueRef.current.value)
+    ) {
+      skippedRemoteSaveValueRef.current = null;
+      return undefined;
+    }
 
     const timer = window.setTimeout(() => {
-      void saveRemote(data, { revision: revisionRef.current }).then((result) => {
+      const handlers = handlersRef.current;
+
+      void handlers.saveRemote(data, { revision: revisionRef.current }).then((result) => {
         if (!result) {
           return;
         }
 
-        if (result.conflict) {
+        if ('error' in result && result.error) {
+          setLastRemoteSaveError({
+            at: Date.now(),
+            message: result.message,
+          });
+          return;
+        }
+
+        if ('conflict' in result && result.conflict) {
           revisionRef.current = result.revision;
+          skippedRemoteSaveValueRef.current = { value: result.data };
           setData(result.data);
-          saveLocal(result.data);
+          setLastConflictAt(Date.now());
+          handlersRef.current.saveLocal(result.data);
           return;
         }
 
         if ('revision' in result) {
           revisionRef.current = result.revision ?? null;
+          setLastRemoteSaveError(null);
         }
+      }).catch((error: unknown) => {
+        setLastRemoteSaveError({
+          at: Date.now(),
+          message: error instanceof Error ? error.message : '远端保存失败。',
+        });
       });
     }, saveDelayMs);
 
     return () => {
       window.clearTimeout(timer);
     };
-  }, [data, isLoaded, saveDelayMs, saveLocal, saveRemote]);
+  }, [data, isLoaded, saveDelayMs]);
 
   return {
     data,
     setData,
     isLoaded,
+    lastConflictAt,
+    lastRemoteSaveError,
   };
 }

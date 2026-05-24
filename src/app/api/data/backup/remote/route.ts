@@ -18,8 +18,8 @@ type RemoteBackupRequestBody = {
     action?: unknown;
 };
 
-function parseAction(value: unknown): RemoteBackupAction {
-    return value === 'restore' ? 'restore' : 'sync';
+function parseAction(value: unknown): RemoteBackupAction | null {
+    return value === 'sync' || value === 'restore' ? value : null;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -49,6 +49,15 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json().catch(() => null)) as RemoteBackupRequestBody | null;
     const action = parseAction(body?.action);
+
+    if (!action) {
+        return NextResponse.json(
+            {
+                message: '远端备份操作无效。',
+            },
+            { status: 400 }
+        );
+    }
 
     if (action === 'sync') {
         const remoteBackup = await syncCurrentBackupToRemote({

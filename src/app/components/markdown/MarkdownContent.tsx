@@ -118,6 +118,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
                 remarkPlugins={[remarkGfm]}
                 rehypePlugins={[[rehypeSanitize, sanitizeSchema], rehypeHighlight]}
                 components={markdownComponents}
+                skipHtml
             >
                 {content}
             </ReactMarkdown>

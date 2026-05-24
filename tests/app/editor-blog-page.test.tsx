@@ -8,6 +8,8 @@ const exportArticleMock = vi.fn();
 const exportArticlesDataMock = vi.fn();
 const deleteArticleMock = vi.fn();
 const importArticleMock = vi.fn();
+let lastConflictAtMock: number | null = null;
+let lastRemoteSaveErrorMock: { at: number; message: string } | null = null;
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -34,6 +36,8 @@ vi.mock('@/app/hooks/useLocalArticles', () => ({
     exportArticlesData: exportArticlesDataMock,
     importArticle: importArticleMock,
     isLoaded: true,
+    lastConflictAt: lastConflictAtMock,
+    lastRemoteSaveError: lastRemoteSaveErrorMock,
   }),
 }));
 
@@ -68,6 +72,8 @@ describe('BlogEditorPage', () => {
     );
     deleteArticleMock.mockReset();
     importArticleMock.mockReset();
+    lastConflictAtMock = null;
+    lastRemoteSaveErrorMock = null;
     createObjectURLMock.mockClear();
     revokeObjectURLMock.mockClear();
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -123,5 +129,30 @@ describe('BlogEditorPage', () => {
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
     clickSpy.mockRestore();
+  });
+
+  it('shows a warning when remote article data wins a save conflict', () => {
+    lastConflictAtMock = Date.now();
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    expect(container.textContent).toContain('服务器上的文章数据更新较新');
+    expect(container.textContent).toContain('已载入服务器版本');
+  });
+
+  it('shows a warning when article data fails to sync to the server', () => {
+    lastRemoteSaveErrorMock = {
+      at: Date.now(),
+      message: '服务器未配置持久化数据目录，文章只保存在当前浏览器。',
+    };
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    expect(container.textContent).toContain('文章已保存在本机，但同步到服务器失败');
+    expect(container.textContent).toContain('服务器未配置持久化数据目录');
   });
 });

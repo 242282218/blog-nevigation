@@ -48,7 +48,8 @@ docker compose -f compose.prod.yaml up -d
 ```bash
 docker compose -f compose.prod.yaml ps
 docker compose -f compose.prod.yaml logs --tail=100 app
-curl -I http://127.0.0.1:${APP_PORT:-3000}/
+HEALTHCHECK_PORT=$(docker compose -f compose.prod.yaml port app 3000 | awk -F: 'END {print $NF}')
+curl -I "http://127.0.0.1:${HEALTHCHECK_PORT:-3000}/"
 ```
 
 ## Runtime Data
@@ -64,6 +65,12 @@ data/
 `data/` is the migration boundary. It contains article data, navigation data,
 site settings, and `manifest.json`.
 
+Run data verification from a source checkout, passing the production data path:
+
+```bash
+npm run data:verify -- /opt/blog-nevigation/data
+```
+
 ## GitHub Actions Deployment
 
 The workflow can deploy through SSH when these secrets are configured:
@@ -76,3 +83,10 @@ DEPLOY_PATH
 ```
 
 Manual deployment uses the `workflow_dispatch` trigger with `deploy=true`.
+
+The deployment job refuses to start if the build did not publish an immutable
+image digest. After Docker Compose restarts the app, the workflow checks the
+actual mapped port from `docker compose port app 3000`. If the new container
+does not pass the health check, the workflow rolls back only when the previous
+container has a valid `@sha256:` image digest, then runs the same health check
+against the rollback container.

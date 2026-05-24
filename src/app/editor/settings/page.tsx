@@ -7,6 +7,7 @@ import {
     createDefaultSiteSettings,
     type SiteSettings,
 } from '@/lib/site-settings';
+import { CloudflareR2SettingsPanel } from './CloudflareR2SettingsPanel';
 import { LogoutButton } from '../components/LogoutButton';
 import {
     EditorButton,
@@ -173,6 +174,11 @@ export default function EditorSettingsPage() {
                 return;
             }
 
+            if (!persistent) {
+                setMessage({ tone: 'danger', text: '未配置 BLOG_DATA_ROOT，站点设置无法保存到服务器。' });
+                return;
+            }
+
             setIsSaving(true);
             setMessage({ tone: 'loading', text: '正在保存站点设置...' });
 
@@ -211,7 +217,7 @@ export default function EditorSettingsPage() {
                 setIsSaving(false);
             }
         },
-        [revision, settings]
+        [persistent, revision, settings]
     );
 
     return (
@@ -228,7 +234,7 @@ export default function EditorSettingsPage() {
                             type="submit"
                             form="site-settings-form"
                             variant="primary"
-                            disabled={isLoading || isSaving}
+                            disabled={!persistent || isLoading || isSaving}
                         >
                             <Save className="h-4 w-4" />
                             {isSaving ? '保存中...' : '保存设置'}
@@ -345,6 +351,8 @@ export default function EditorSettingsPage() {
                                 </p>
                             </EditorPanel>
                         </aside>
+
+                        <CloudflareR2SettingsPanel />
                     </div>
                 )}
             </EditorMain>

@@ -72,6 +72,63 @@ function writeJsonFile(filePath: string | null, value: unknown): void {
     }
 }
 
+function createRestoreDirectory(root: string, name: string): string {
+    const directory = path.join(root, `${name}-${process.pid}-${Date.now()}`);
+    fs.mkdirSync(directory, { recursive: true });
+    return directory;
+}
+
+function getEditorDataFiles(root: string): string[] {
+    return [
+        path.join(root, 'articles', ARTICLES_FILE_NAME),
+        path.join(root, 'navigation', NAVIGATION_FILE_NAME),
+        path.join(root, 'settings', SETTINGS_FILE_NAME),
+        path.join(root, MANIFEST_FILE_NAME),
+    ];
+}
+
+function copyExistingFiles(files: string[], fromRoot: string, toRoot: string): void {
+    for (const filePath of files) {
+        if (!fs.existsSync(filePath)) {
+            continue;
+        }
+
+        const relativePath = path.relative(fromRoot, filePath);
+        const backupPath = path.join(toRoot, relativePath);
+        ensureParentDirectory(backupPath);
+        fs.copyFileSync(filePath, backupPath);
+    }
+}
+
+function restoreFilesFromBackup(files: string[], dataRoot: string, backupRoot: string): void {
+    for (const filePath of files) {
+        const relativePath = path.relative(dataRoot, filePath);
+        const backupPath = path.join(backupRoot, relativePath);
+
+        if (!fs.existsSync(backupPath)) {
+            fs.rmSync(filePath, { force: true });
+            continue;
+        }
+
+        ensureParentDirectory(filePath);
+        fs.copyFileSync(backupPath, filePath);
+    }
+}
+
+function replaceFilesFromStaging(files: string[], dataRoot: string, stagingRoot: string): void {
+    for (const filePath of files) {
+        const relativePath = path.relative(dataRoot, filePath);
+        const stagedPath = path.join(stagingRoot, relativePath);
+
+        if (!fs.existsSync(stagedPath)) {
+            throw new Error(`Staged restore file is missing: ${relativePath}`);
+        }
+
+        ensureParentDirectory(filePath);
+        fs.renameSync(stagedPath, filePath);
+    }
+}
+
 function hashJson(value: unknown): string {
     return createHash('sha256')
         .update(JSON.stringify(value))
@@ -86,6 +143,26 @@ function createResourceManifest(value: unknown): EditorDataResourceManifest {
         revision: `${Date.now().toString(36)}-${process.hrtime.bigint().toString(36)}-${hash.slice(0, 12)}`,
         hash,
         updatedAt,
+    };
+}
+
+function createManifestForData(data: {
+    articles: Article[];
+    navigation: Category[];
+    settings: SiteSettings;
+}): EditorDataManifest {
+    const articles = createResourceManifest(data.articles);
+    const navigation = createResourceManifest(data.navigation);
+    const settings = createResourceManifest(data.settings);
+
+    return {
+        version: MANIFEST_VERSION,
+        updatedAt: settings.updatedAt,
+        resources: {
+            articles,
+            navigation,
+            settings,
+        },
     };
 }
 
@@ -139,6 +216,42 @@ function createEmptyManifest(): EditorDataManifest {
         updatedAt: new Date().toISOString(),
         resources: {},
     };
+}
+
+function getManifestProblems(
+    data: {
+        articles: Article[];
+        navigation: Category[];
+        settings: SiteSettings;
+    },
+    manifest: EditorDataManifest | null
+): string[] {
+    const problems: string[] = [];
+
+    if (!manifest || manifest.version !== MANIFEST_VERSION) {
+        return ['manifest.json is missing or invalid.'];
+    }
+
+    const resources = {
+        articles: data.articles,
+        navigation: data.navigation,
+        settings: data.settings,
+    };
+
+    for (const resource of ['articles', 'navigation', 'settings'] as const) {
+        const resourceManifest = manifest.resources[resource];
+
+        if (!resourceManifest) {
+            problems.push(`${resource} manifest is missing.`);
+            continue;
+        }
+
+        if (resourceManifest.hash !== hashJson(resources[resource])) {
+            problems.push(`${resource} hash does not match manifest.`);
+        }
+    }
+
+    return problems;
 }
 
 export function getEditorDataRoot(): string | null {
@@ -274,4 +387,66 @@ export function readSiteSettingsFromDisk(): SiteSettings {
 export function writeSiteSettingsToDisk(settings: SiteSettings): EditorDataResourceManifest {
     writeJsonFile(getSiteSettingsDataFilePath(), settings);
     return touchEditorDataResourceManifest('settings', settings);
+}
+
+export function restoreEditorDataRootAtomically(data: {
+    articles: Article[];
+    navigation: Category[];
+    settings: SiteSettings;
+}): EditorDataManifest {
+    const root = getEditorDataRoot();
+
+    if (!root) {
+        throw new EditorDataRootNotConfiguredError();
+    }
+
+    const stagingRoot = createRestoreDirectory(root, '.restore-staging');
+    const backupRoot = createRestoreDirectory(root, '.restore-backup');
+    const files = getEditorDataFiles(root);
+    const manifest = createManifestForData(data);
+    let backupCaptured = false;
+
+    try {
+        writeJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), data.articles);
+        writeJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), data.navigation);
+        writeJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), data.settings);
+        writeJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), manifest);
+
+        const stagedArticles = filterArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME)));
+        const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME)));
+        const stagedSettings = parseSiteSettings(readJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME)));
+        const stagedManifest = parseManifest(readJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME)));
+
+        if (stagedArticles.length !== data.articles.length || !stagedNavigation || !stagedSettings) {
+            throw new Error('Staged restore verification failed.');
+        }
+
+        const problems = getManifestProblems(
+            {
+                articles: stagedArticles,
+                navigation: stagedNavigation,
+                settings: stagedSettings,
+            },
+            stagedManifest
+        );
+
+        if (problems.length > 0) {
+            throw new Error(`Staged restore verification failed: ${problems.join('; ')}`);
+        }
+
+        copyExistingFiles(files, root, backupRoot);
+        backupCaptured = true;
+        replaceFilesFromStaging(files, root, stagingRoot);
+
+        return manifest;
+    } catch (error) {
+        if (backupCaptured) {
+            restoreFilesFromBackup(files, root, backupRoot);
+        }
+
+        throw error;
+    } finally {
+        fs.rmSync(stagingRoot, { recursive: true, force: true });
+        fs.rmSync(backupRoot, { recursive: true, force: true });
+    }
 }
