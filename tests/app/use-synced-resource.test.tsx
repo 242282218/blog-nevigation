@@ -15,20 +15,31 @@ type SaveRemoteResult =
     revision: string | null;
   };
 
+type RemoteLoadResult =
+  | { data: string[]; revision: string | null }
+  | {
+    error: true;
+    message: string;
+  }
+  | string[]
+  | null;
+
 function TestSyncedResource({
+  loadLocal = () => null,
   loadRemote,
   saveLocal,
   saveRemote,
   onReady,
 }: {
-  loadRemote: () => Promise<{ data: string[]; revision: string }>;
+  loadLocal?: () => string[] | null;
+  loadRemote: () => Promise<RemoteLoadResult>;
   saveLocal: (value: string[]) => void;
   saveRemote: (value: string[], context: { revision: string | null }) => Promise<SaveRemoteResult>;
   onReady: (setData: (value: string[]) => void) => void;
 }) {
-  const { data, setData, lastConflictAt, lastRemoteSaveError } = useSyncedResource<string[]>({
+  const { data, setData, lastConflictAt, lastRemoteLoadError, lastRemoteSaveError } = useSyncedResource<string[]>({
     initialValue: [],
-    loadLocal: () => null,
+    loadLocal,
     saveLocal,
     loadRemote,
     saveRemote,
@@ -41,6 +52,7 @@ function TestSyncedResource({
     <div>
       {data.join(',')}
       {lastConflictAt ? ' conflict-detected' : ''}
+      {lastRemoteLoadError ? ` remote-load-error:${lastRemoteLoadError.message}` : ''}
       {lastRemoteSaveError ? ` remote-error:${lastRemoteSaveError.message}` : ''}
     </div>
   );
@@ -102,6 +114,40 @@ describe('useSyncedResource', () => {
     });
 
     expect(container.textContent).toBe('remote');
+    expect(saveRemote).not.toHaveBeenCalled();
+  });
+
+  it('loads local data after a remote load error without saving it back immediately', async () => {
+    const loadLocal = vi.fn().mockReturnValue(['local-copy']);
+    const loadRemote = vi.fn().mockResolvedValue({
+      error: true,
+      message: 'server unavailable',
+    });
+    const saveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-2',
+    });
+    const saveLocal = vi.fn();
+    const onReady = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadLocal={loadLocal}
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={onReady}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+
+    expect(container.textContent).toBe('local-copy remote-load-error:server unavailable');
+    expect(loadLocal).toHaveBeenCalledOnce();
     expect(saveRemote).not.toHaveBeenCalled();
   });
 

@@ -75,6 +75,9 @@ Use the smallest secure path that preserves existing deployments:
 - Hardened runtime editor auth storage so corrupt or incomplete
   `editor-auth.json` files fail explicitly, lock editor data APIs, and show a
   clear login-page error instead of reopening first-use setup.
+- Exposed initial server-load failures in article and navigation editor data
+  sync so editors show a clear local-copy warning and skip immediate remote
+  write-back when the initial GET fails.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

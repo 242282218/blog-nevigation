@@ -9,6 +9,7 @@ const exportArticlesDataMock = vi.fn();
 const deleteArticleMock = vi.fn();
 const importArticleMock = vi.fn();
 let lastConflictAtMock: number | null = null;
+let lastRemoteLoadErrorMock: { at: number; message: string } | null = null;
 let lastRemoteSaveErrorMock: { at: number; message: string } | null = null;
 
 vi.mock('next/navigation', () => ({
@@ -37,6 +38,7 @@ vi.mock('@/app/hooks/useLocalArticles', () => ({
     importArticle: importArticleMock,
     isLoaded: true,
     lastConflictAt: lastConflictAtMock,
+    lastRemoteLoadError: lastRemoteLoadErrorMock,
     lastRemoteSaveError: lastRemoteSaveErrorMock,
   }),
 }));
@@ -73,6 +75,7 @@ describe('BlogEditorPage', () => {
     deleteArticleMock.mockReset();
     importArticleMock.mockReset();
     lastConflictAtMock = null;
+    lastRemoteLoadErrorMock = null;
     lastRemoteSaveErrorMock = null;
     createObjectURLMock.mockClear();
     revokeObjectURLMock.mockClear();
@@ -154,5 +157,19 @@ describe('BlogEditorPage', () => {
 
     expect(container.textContent).toContain('文章已保存在本机，但同步到服务器失败');
     expect(container.textContent).toContain('服务器未配置持久化数据目录');
+  });
+
+  it('shows a warning when article data fails to load from the server', () => {
+    lastRemoteLoadErrorMock = {
+      at: Date.now(),
+      message: '编辑口令已过期。',
+    };
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    expect(container.textContent).toContain('文章从服务器加载失败，当前显示本机副本');
+    expect(container.textContent).toContain('编辑口令已过期');
   });
 });

@@ -56,6 +56,7 @@ export default function BlogEditorPage() {
     importArticle,
     isLoaded,
     lastConflictAt,
+    lastRemoteLoadError,
     lastRemoteSaveError,
   } = useLocalArticles();
   const [showTemplates, setShowTemplates] = useState(false);
@@ -216,6 +217,12 @@ export default function BlogEditorPage() {
         {lastConflictAt ? (
           <StatusMessage tone="warning">
             服务器上的文章数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
+          </StatusMessage>
+        ) : null}
+
+        {lastRemoteLoadError ? (
+          <StatusMessage tone="warning">
+            文章从服务器加载失败，当前显示本机副本：{lastRemoteLoadError.message}
           </StatusMessage>
         ) : null}
 

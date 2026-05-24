@@ -58,6 +58,7 @@ export default function NavigationEditorPage() {
     importData,
     resetToDefault,
     lastConflictAt,
+    lastRemoteLoadError,
     lastRemoteSaveError,
   } = useNavigationData();
 
@@ -261,6 +262,12 @@ export default function NavigationEditorPage() {
         {lastConflictAt ? (
           <StatusMessage tone="warning">
             服务器上的导航数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
+          </StatusMessage>
+        ) : null}
+
+        {lastRemoteLoadError ? (
+          <StatusMessage tone="warning">
+            导航从服务器加载失败，当前显示本机副本：{lastRemoteLoadError.message}
           </StatusMessage>
         ) : null}
 

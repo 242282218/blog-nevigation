@@ -49,7 +49,14 @@ async function loadNavDataFromServer() {
     });
 
     if (!response.ok) {
-      return null;
+      const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+
+      return {
+        error: true as const,
+        message: typeof payload?.message === 'string'
+          ? payload.message
+          : `导航数据从服务器加载失败（HTTP ${response.status}）。`,
+      };
     }
 
     const payload = (await response.json()) as { categories?: unknown; revision?: unknown };
@@ -63,7 +70,10 @@ async function loadNavDataFromServer() {
       : null;
   } catch (error) {
     console.error('Failed to load navigation data from server:', error);
-    return null;
+    return {
+      error: true as const,
+      message: error instanceof Error ? error.message : '导航数据从服务器加载失败。',
+    };
   }
 }
 
@@ -122,7 +132,7 @@ async function saveNavDataToServer(
 }
 
 export function useNavigationData() {
-  const { data, setData, isLoaded, lastConflictAt, lastRemoteSaveError } = useSyncedResource<Category[]>({
+  const { data, setData, isLoaded, lastConflictAt, lastRemoteLoadError, lastRemoteSaveError } = useSyncedResource<Category[]>({
     initialValue: () => parseNavigationData(defaultNavData) ?? [],
     loadLocal: loadNavDataFromStorage,
     saveLocal: saveNavDataToStorage,
@@ -273,6 +283,7 @@ export function useNavigationData() {
     data,
     isLoaded,
     lastConflictAt,
+    lastRemoteLoadError,
     lastRemoteSaveError,
     addCategory,
     updateCategory,

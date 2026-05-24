@@ -55,7 +55,14 @@ async function loadArticlesFromServer() {
     });
 
     if (!response.ok) {
-      return null;
+      const payload = (await response.json().catch(() => null)) as { message?: unknown } | null;
+
+      return {
+        error: true as const,
+        message: typeof payload?.message === 'string'
+          ? payload.message
+          : `文章数据从服务器加载失败（HTTP ${response.status}）。`,
+      };
     }
 
     const payload = (await response.json()) as { articles?: unknown; revision?: unknown };
@@ -66,7 +73,10 @@ async function loadArticlesFromServer() {
     };
   } catch (error) {
     console.error('Failed to load articles from server:', error);
-    return null;
+    return {
+      error: true as const,
+      message: error instanceof Error ? error.message : '文章数据从服务器加载失败。',
+    };
   }
 }
 
@@ -130,6 +140,7 @@ export function useLocalArticles() {
     setData: setArticles,
     isLoaded,
     lastConflictAt,
+    lastRemoteLoadError,
     lastRemoteSaveError,
   } = useSyncedResource<Article[]>({
     initialValue: [],
@@ -257,6 +268,7 @@ export function useLocalArticles() {
     articles,
     isLoaded,
     lastConflictAt,
+    lastRemoteLoadError,
     lastRemoteSaveError,
     totalCount: articles.length,
     createArticle,

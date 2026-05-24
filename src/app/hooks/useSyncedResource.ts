@@ -7,6 +7,11 @@ interface RemoteResource<T> {
   revision: string | null;
 }
 
+interface RemoteLoadError {
+  error: true;
+  message: string;
+}
+
 interface SaveRemoteContext {
   revision: string | null;
 }
@@ -31,7 +36,7 @@ interface UseSyncedResourceOptions<T> {
   initialValue: T | (() => T);
   loadLocal: () => T | null;
   saveLocal: (value: T) => void;
-  loadRemote: () => Promise<T | RemoteResource<T> | null>;
+  loadRemote: () => Promise<T | RemoteResource<T> | RemoteLoadError | null>;
   saveRemote: (value: T, context: SaveRemoteContext) => Promise<SaveRemoteResult<T>>;
   saveDelayMs?: number;
 }
@@ -42,6 +47,10 @@ interface SyncedResourceState<T> {
   isLoaded: boolean;
   lastConflictAt: number | null;
   lastRemoteSaveError: {
+    at: number;
+    message: string;
+  } | null;
+  lastRemoteLoadError: {
     at: number;
     message: string;
   } | null;
@@ -63,6 +72,16 @@ function parseRemoteValue<T>(value: T | RemoteResource<T>): RemoteResource<T> {
   };
 }
 
+function isRemoteLoadError(value: unknown): value is RemoteLoadError {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'error' in value &&
+    (value as RemoteLoadError).error === true &&
+    typeof (value as RemoteLoadError).message === 'string'
+  );
+}
+
 export function useSyncedResource<T>({
   initialValue,
   loadLocal,
@@ -72,9 +91,14 @@ export function useSyncedResource<T>({
   saveDelayMs = 300,
 }: UseSyncedResourceOptions<T>): SyncedResourceState<T> {
   const [data, setData] = useState<T>(initialValue);
+  const initialDataRef = useRef(data);
   const [isLoaded, setIsLoaded] = useState(false);
   const [lastConflictAt, setLastConflictAt] = useState<number | null>(null);
   const [lastRemoteSaveError, setLastRemoteSaveError] = useState<{
+    at: number;
+    message: string;
+  } | null>(null);
+  const [lastRemoteLoadError, setLastRemoteLoadError] = useState<{
     at: number;
     message: string;
   } | null>(null);
@@ -101,22 +125,39 @@ export function useSyncedResource<T>({
 
     async function initialize(): Promise<void> {
       const handlers = handlersRef.current;
-      const remoteValue = await handlers.loadRemote();
+      const remoteValue = await handlers.loadRemote().catch((error: unknown): RemoteLoadError => ({
+        error: true,
+        message: error instanceof Error ? error.message : '远端数据加载失败。',
+      }));
 
       if (cancelled) {
         return;
       }
 
-      if (remoteValue !== null) {
+      if (isRemoteLoadError(remoteValue)) {
+        setLastRemoteLoadError({
+          at: Date.now(),
+          message: remoteValue.message,
+        });
+
+        const localValue = handlers.loadLocal();
+        skippedRemoteSaveValueRef.current = { value: localValue ?? initialDataRef.current };
+
+        if (localValue !== null) {
+          setData(localValue);
+        }
+      } else if (remoteValue !== null) {
         const remoteResource = parseRemoteValue(remoteValue);
         revisionRef.current = remoteResource.revision;
         skippedRemoteSaveValueRef.current = { value: remoteResource.data };
+        setLastRemoteLoadError(null);
         setData(remoteResource.data);
         handlers.saveLocal(remoteResource.data);
       } else {
         const localValue = handlers.loadLocal();
 
         if (localValue !== null) {
+          skippedRemoteSaveValueRef.current = { value: localValue };
           setData(localValue);
         }
       }
@@ -194,5 +235,6 @@ export function useSyncedResource<T>({
     isLoaded,
     lastConflictAt,
     lastRemoteSaveError,
+    lastRemoteLoadError,
   };
 }

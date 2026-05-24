@@ -13,6 +13,7 @@ const exportDataMock = vi.fn();
 const importDataMock = vi.fn();
 const resetToDefaultMock = vi.fn();
 let lastConflictAtMock: number | null = null;
+let lastRemoteLoadErrorMock: { at: number; message: string } | null = null;
 let lastRemoteSaveErrorMock: { at: number; message: string } | null = null;
 
 vi.mock('@/app/hooks/useNavigationData', () => ({
@@ -44,6 +45,7 @@ vi.mock('@/app/hooks/useNavigationData', () => ({
     importData: importDataMock,
     resetToDefault: resetToDefaultMock,
     lastConflictAt: lastConflictAtMock,
+    lastRemoteLoadError: lastRemoteLoadErrorMock,
     lastRemoteSaveError: lastRemoteSaveErrorMock,
   }),
 }));
@@ -67,6 +69,7 @@ describe('NavigationEditorPage', () => {
     importDataMock.mockReset().mockReturnValue(true);
     resetToDefaultMock.mockReset();
     lastConflictAtMock = null;
+    lastRemoteLoadErrorMock = null;
     lastRemoteSaveErrorMock = null;
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
 
@@ -106,6 +109,20 @@ describe('NavigationEditorPage', () => {
 
     expect(container.textContent).toContain('导航已保存在本机，但同步到服务器失败');
     expect(container.textContent).toContain('服务器未配置持久化数据目录');
+  });
+
+  it('shows a warning when navigation data fails to load from the server', () => {
+    lastRemoteLoadErrorMock = {
+      at: Date.now(),
+      message: '导航数据文件损坏。',
+    };
+
+    act(() => {
+      root.render(<NavigationEditorPage />);
+    });
+
+    expect(container.textContent).toContain('导航从服务器加载失败，当前显示本机副本');
+    expect(container.textContent).toContain('导航数据文件损坏');
   });
 
   it('requires a second click before deleting a tool link', () => {
