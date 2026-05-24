@@ -55,7 +55,8 @@ Use the smallest secure path that preserves existing deployments:
 - Added npm smoke entry points for public and editor Playwright verification
   scripts so UI checks can be run consistently on local or test hosts.
 - Added a bounded `UI Smoke` GitHub Actions workflow that builds the app, runs
-  the public Playwright smoke script against `next start`, and uploads
+  the public and authenticated editor Playwright smoke scripts against
+  `next start`, and uploads
   screenshots and server logs as failure artifacts.
 - Hardened runtime data reads so corrupt or structurally invalid JSON fails
   explicitly instead of being treated as empty articles, default settings, or

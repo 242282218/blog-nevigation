@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  public-smoke:
+  ui-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -45,13 +45,13 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Run public UI smoke
+      - name: Run UI smoke
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p output
-          PORT=3210 HOSTNAME=127.0.0.1 node node_modules/next/dist/bin/next start > output/ui-smoke-server.log 2>&1 &
+          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false node node_modules/next/dist/bin/next start > output/ui-smoke-server.log 2>&1 &
           server_pid=$!
 
           cleanup() {
@@ -80,7 +80,7 @@ jobs:
             sleep 2
           done
 
-          BASE_URL=http://127.0.0.1:3210 npm run smoke:public
+          BASE_URL=http://127.0.0.1:3210 EDITOR_LOGIN_SECRET=ci-smoke-secret npm run smoke:ui
 
       - name: Upload smoke artifacts
         if: always()
@@ -89,6 +89,8 @@ jobs:
           name: ui-smoke-artifacts
           path: |
             output/playwright
+            output/*.html
+            output/*.png
             output/ui-smoke-server.log
           if-no-files-found: ignore
           retention-days: 7
