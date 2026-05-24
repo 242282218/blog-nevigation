@@ -6,6 +6,7 @@ import {
   getEditableR2BackupSettings,
   getR2BackupConfig,
   getR2BackupStatus,
+  R2BackupSettingsInvalidError,
   saveEditableR2BackupSettings,
 } from '@/lib/r2-backup-storage';
 
@@ -26,6 +27,19 @@ function createTempDataRoot(): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-r2-settings-'));
   tempDirectories.push(directory);
   return directory;
+}
+
+function getSettingsFile(dataRoot: string): string {
+  return path.join(dataRoot, 'settings', 'cloudflare-r2.json');
+}
+
+function writeText(filePath: string, value: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, value, 'utf8');
+}
+
+function writeJson(filePath: string, value: unknown): void {
+  writeText(filePath, JSON.stringify(value, null, 2));
 }
 
 function resetR2Env(): void {
@@ -229,6 +243,94 @@ describe('R2 backup configuration', () => {
         hasSecretAccessKey: false,
       })
     );
+    expect(getR2BackupConfig()).toBeNull();
+  });
+
+  it('rejects corrupt stored settings instead of falling back to env settings', () => {
+    clearR2Env();
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = 'env-account-id';
+    process.env.R2_BUCKET = 'env-bucket';
+    process.env.R2_ACCESS_KEY_ID = 'env-access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'env-secret-key';
+    writeText(getSettingsFile(dataRoot), '{');
+
+    expect(() => getEditableR2BackupSettings()).toThrow(R2BackupSettingsInvalidError);
+    expect(() => getR2BackupConfig()).toThrow(R2BackupSettingsInvalidError);
+    expect(() => getR2BackupStatus()).toThrow(R2BackupSettingsInvalidError);
+  });
+
+  it('rejects incomplete stored settings instead of treating them as disabled settings', () => {
+    clearR2Env();
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(getSettingsFile(dataRoot), {
+      enabled: false,
+    });
+
+    expect(() => getEditableR2BackupSettings()).toThrow(R2BackupSettingsInvalidError);
+    expect(() => getR2BackupConfig()).toThrow(R2BackupSettingsInvalidError);
+  });
+
+  it('allows a complete save to replace corrupt stored settings', () => {
+    clearR2Env();
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeText(getSettingsFile(dataRoot), '{');
+
+    const safeSettings = saveEditableR2BackupSettings({
+      enabled: true,
+      accountId: 'account-id',
+      bucket: 'blog-data',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'replacement-secret',
+      prefix: 'blog-navigation',
+      endpoint: '',
+      snapshotOnWrite: true,
+    });
+
+    expect(safeSettings).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        hasSecretAccessKey: true,
+      })
+    );
+    expect(getR2BackupConfig()).toEqual(
+      expect.objectContaining({
+        bucket: 'blog-data',
+        secretAccessKey: 'replacement-secret',
+      })
+    );
+  });
+
+  it('allows a disabled save to replace corrupt stored settings without copying env secrets', () => {
+    clearR2Env();
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    process.env.R2_SECRET_ACCESS_KEY = 'env-secret-key';
+    writeText(getSettingsFile(dataRoot), '{');
+
+    const safeSettings = saveEditableR2BackupSettings({
+      enabled: false,
+      accountId: '',
+      bucket: '',
+      accessKeyId: '',
+      secretAccessKey: '',
+      prefix: 'blog-navigation',
+      endpoint: '',
+      snapshotOnWrite: false,
+    });
+    const storedSettings = JSON.parse(fs.readFileSync(getSettingsFile(dataRoot), 'utf8'));
+
+    expect(safeSettings).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        hasSecretAccessKey: false,
+      })
+    );
+    expect(storedSettings.secretAccessKey).toBe('');
     expect(getR2BackupConfig()).toBeNull();
   });
 });

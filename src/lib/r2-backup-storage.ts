@@ -61,6 +61,13 @@ export class R2BackupNotConfiguredError extends Error {
     }
 }
 
+export class R2BackupSettingsInvalidError extends Error {
+    constructor(public readonly filePath: string) {
+        super('Stored Cloudflare R2 settings are invalid.');
+        this.name = 'R2BackupSettingsInvalidError';
+    }
+}
+
 function getEnv(name: string): string {
     return process.env[name]?.trim() ?? '';
 }
@@ -75,8 +82,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function asString(value: unknown): string {
-    return typeof value === 'string' ? value.trim() : '';
+function parseStoredR2BackupSettings(value: unknown, filePath: string): EditableR2BackupSettings {
+    if (!isRecord(value)) {
+        throw new R2BackupSettingsInvalidError(filePath);
+    }
+
+    if (
+        typeof value.enabled !== 'boolean' ||
+        typeof value.accountId !== 'string' ||
+        typeof value.bucket !== 'string' ||
+        typeof value.accessKeyId !== 'string' ||
+        typeof value.secretAccessKey !== 'string' ||
+        typeof value.prefix !== 'string' ||
+        typeof value.endpoint !== 'string' ||
+        typeof value.snapshotOnWrite !== 'boolean'
+    ) {
+        throw new R2BackupSettingsInvalidError(filePath);
+    }
+
+    return {
+        enabled: value.enabled,
+        accountId: value.accountId.trim(),
+        bucket: value.bucket.trim(),
+        accessKeyId: value.accessKeyId.trim(),
+        secretAccessKey: value.secretAccessKey.trim(),
+        prefix: value.prefix.trim() || DEFAULT_R2_PREFIX,
+        endpoint: value.endpoint.trim(),
+        snapshotOnWrite: value.snapshotOnWrite,
+    };
 }
 
 function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
@@ -89,23 +122,14 @@ function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
     try {
         const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
 
-        if (!isRecord(parsed)) {
-            return null;
+        return parseStoredR2BackupSettings(parsed, filePath);
+    } catch (error) {
+        if (error instanceof R2BackupSettingsInvalidError) {
+            throw error;
         }
 
-        return {
-            enabled: parsed.enabled === true,
-            accountId: asString(parsed.accountId),
-            bucket: asString(parsed.bucket),
-            accessKeyId: asString(parsed.accessKeyId),
-            secretAccessKey: asString(parsed.secretAccessKey),
-            prefix: asString(parsed.prefix) || DEFAULT_R2_PREFIX,
-            endpoint: asString(parsed.endpoint),
-            snapshotOnWrite: parsed.snapshotOnWrite === true,
-        };
-    } catch (error) {
         console.error('[r2-backup-storage] Failed to read stored R2 settings:', error);
-        return null;
+        throw new R2BackupSettingsInvalidError(filePath);
     }
 }
 
@@ -190,7 +214,21 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         throw new Error('BLOG_DATA_ROOT is not configured.');
     }
 
-    const existing = readStoredR2BackupSettings();
+    let existing: EditableR2BackupSettings | null = null;
+
+    try {
+        existing = readStoredR2BackupSettings();
+    } catch (error) {
+        const canReplaceInvalidSettings = (
+            error instanceof R2BackupSettingsInvalidError &&
+            (!input.enabled || input.secretAccessKey.trim().length > 0)
+        );
+
+        if (!canReplaceInvalidSettings) {
+            throw error;
+        }
+    }
+
     const trimmedSecretAccessKey = input.secretAccessKey.trim();
     const nextSettings: EditableR2BackupSettings = {
         enabled: input.enabled,

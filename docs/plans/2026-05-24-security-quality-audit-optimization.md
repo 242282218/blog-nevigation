@@ -65,6 +65,9 @@ Use the smallest secure path that preserves existing deployments:
 - Tightened runtime settings validation in data scripts and backup restore
   parsing so legacy backups may omit settings, but present invalid settings are
   rejected instead of silently falling back to defaults.
+- Hardened stored Cloudflare R2 settings so corrupt or incomplete
+  `cloudflare-r2.json` files fail explicitly instead of silently disabling
+  backups or falling back to `.env` credentials.
 - Added `typecheck` and `check` package scripts and aligned CI with them.
 - Declared ESLint plugins as direct dev dependencies and restored
   `react-hooks/rules-of-hooks`.

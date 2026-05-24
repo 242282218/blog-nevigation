@@ -7,6 +7,7 @@ import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
 import {
     getEditableR2BackupSettings,
     getR2BackupStatus,
+    R2BackupSettingsInvalidError,
     saveEditableR2BackupSettings,
     type EditableR2BackupSettings,
 } from '@/lib/r2-backup-storage';
@@ -36,6 +37,19 @@ function parseSettings(value: CloudflareR2RequestBody['settings']): EditableR2Ba
     };
 }
 
+function createInvalidR2SettingsResponse(error: unknown): NextResponse | null {
+    if (!(error instanceof R2BackupSettingsInvalidError)) {
+        return null;
+    }
+
+    return NextResponse.json(
+        {
+            message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+        },
+        { status: 500 }
+    );
+}
+
 export async function GET(request: NextRequest) {
     const authError = await ensureEditorSession(request);
 
@@ -43,11 +57,21 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
-    return NextResponse.json({
-        persistent: isEditorDataRootConfigured(),
-        settings: getEditableR2BackupSettings(),
-        status: getR2BackupStatus(),
-    });
+    try {
+        return NextResponse.json({
+            persistent: isEditorDataRootConfigured(),
+            settings: getEditableR2BackupSettings(),
+            status: getR2BackupStatus(),
+        });
+    } catch (error) {
+        const invalidResponse = createInvalidR2SettingsResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function PUT(request: NextRequest) {
@@ -82,6 +106,12 @@ export async function PUT(request: NextRequest) {
             status: getR2BackupStatus(),
         });
     } catch (error) {
+        const invalidResponse = createInvalidR2SettingsResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
         return NextResponse.json(
             {
                 message: error instanceof Error ? error.message : 'Cloudflare R2 配置保存失败。',

@@ -11,6 +11,7 @@ import {
     downloadLatestBackupPayloadFromR2,
     getR2BackupStatus,
     R2BackupNotConfiguredError,
+    R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
 import {
     createRestoreConflictResponse,
@@ -33,6 +34,19 @@ function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : '远端备份操作失败。';
 }
 
+function createInvalidR2SettingsResponse(error: unknown): NextResponse | null {
+    if (!(error instanceof R2BackupSettingsInvalidError)) {
+        return null;
+    }
+
+    return NextResponse.json(
+        {
+            message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+        },
+        { status: 500 }
+    );
+}
+
 export async function GET(request: NextRequest) {
     const authError = await ensureEditorSession(request);
 
@@ -40,7 +54,17 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
-    return NextResponse.json(getR2BackupStatus());
+    try {
+        return NextResponse.json(getR2BackupStatus());
+    } catch (error) {
+        const invalidResponse = createInvalidR2SettingsResponse(error);
+
+        if (invalidResponse) {
+            return invalidResponse;
+        }
+
+        throw error;
+    }
 }
 
 export async function POST(request: NextRequest) {
@@ -71,7 +95,11 @@ export async function POST(request: NextRequest) {
             reason: 'manual-sync',
             writeSnapshot: true,
         });
-        const status = remoteBackup.success ? 200 : remoteBackup.enabled ? 502 : 409;
+        const status = remoteBackup.success
+            ? 200
+            : remoteBackup.enabled
+                ? ('invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration ? 500 : 502)
+                : 409;
 
         return NextResponse.json(
             {
@@ -128,7 +156,17 @@ export async function POST(request: NextRequest) {
             return conflictResponse;
         }
 
-        const status = error instanceof R2BackupNotConfiguredError ? 503 : 502;
+        const invalidR2SettingsResponse = createInvalidR2SettingsResponse(error);
+
+        if (invalidR2SettingsResponse) {
+            return invalidR2SettingsResponse;
+        }
+
+        const status = error instanceof R2BackupSettingsInvalidError
+            ? 500
+            : error instanceof R2BackupNotConfiguredError
+                ? 503
+                : 502;
 
         return NextResponse.json(
             {

@@ -6,6 +6,7 @@ import { GET, POST } from '@/app/api/data/backup/remote/route';
 import {
   downloadLatestBackupPayloadFromR2,
   getR2BackupStatus,
+  R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import {
@@ -23,8 +24,16 @@ vi.mock('@/lib/r2-backup-storage', () => {
     }
   }
 
+  class R2BackupSettingsInvalidError extends Error {
+    constructor(public readonly filePath = 'cloudflare-r2.json') {
+      super('Stored Cloudflare R2 settings are invalid.');
+      this.name = 'R2BackupSettingsInvalidError';
+    }
+  }
+
   return {
     R2BackupNotConfiguredError,
+    R2BackupSettingsInvalidError,
     downloadLatestBackupPayloadFromR2: vi.fn(),
     getR2BackupStatus: vi.fn(),
   };
@@ -120,6 +129,22 @@ describe('remote backup API', () => {
     );
   });
 
+  it('reports corrupt R2 settings for authenticated reads', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    mockedGetR2BackupStatus.mockImplementation(() => {
+      throw new R2BackupSettingsInvalidError('cloudflare-r2.json');
+    });
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup/remote'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+      })
+    );
+  });
+
   it('requires BLOG_DATA_ROOT before mutating remote backups', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     delete process.env.BLOG_DATA_ROOT;
@@ -205,6 +230,35 @@ describe('remote backup API', () => {
     );
   });
 
+  it('reports corrupt R2 settings during manual sync', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: false,
+      invalidConfiguration: true,
+      message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+    });
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'sync' }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: false,
+        remoteBackup: expect.objectContaining({
+          invalidConfiguration: true,
+        }),
+      })
+    );
+  });
+
   it('rejects invalid R2 restore payloads without replacing local data', async () => {
     const dataRoot = createTempDataRoot();
     const existingArticle = {
@@ -250,6 +304,42 @@ describe('remote backup API', () => {
 
     expect(response.status).toBe(400);
     expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('reports corrupt R2 settings before restoring remote data', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockRejectedValue(
+      new R2BackupSettingsInvalidError('cloudflare-r2.json')
+    );
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'restore', currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+      })
+    );
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 

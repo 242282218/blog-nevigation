@@ -23,8 +23,11 @@ R2 can be configured in two ways:
 
 When `BLOG_DATA_ROOT/settings/cloudflare-r2.json` exists, it is the complete R2
 configuration source and `.env` R2 variables are not used as field fallbacks.
-Delete or edit that settings file through `/editor/settings` when you want to
-switch back to `.env`-driven R2 configuration.
+The file must stay valid JSON with the full R2 settings shape; if it is corrupt
+or incomplete, R2 status and restore operations fail fast instead of silently
+falling back to `.env`. Delete or edit that settings file through
+`/editor/settings` when you want to switch back to `.env`-driven R2
+configuration.
 
 ```env
 R2_BACKUP_ENABLED=true

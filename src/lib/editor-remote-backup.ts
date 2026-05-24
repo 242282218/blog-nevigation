@@ -2,6 +2,7 @@ import { createCurrentEditorBackupPayload } from '@/lib/editor-data-backup';
 import {
     getR2BackupConfig,
     getR2BackupStatus,
+    R2BackupSettingsInvalidError,
     uploadBackupPayloadToR2,
 } from '@/lib/r2-backup-storage';
 
@@ -21,6 +22,7 @@ export type RemoteBackupResult =
         enabled: true;
         success: false;
         message: string;
+        invalidConfiguration?: boolean;
     };
 
 function getErrorMessage(error: unknown): string {
@@ -31,8 +33,24 @@ export async function syncCurrentBackupToRemote(options: {
     reason: string;
     writeSnapshot?: boolean;
 }): Promise<RemoteBackupResult> {
-    const config = getR2BackupConfig();
-    const status = getR2BackupStatus();
+    let config;
+    let status;
+
+    try {
+        config = getR2BackupConfig();
+        status = getR2BackupStatus();
+    } catch (error) {
+        if (error instanceof R2BackupSettingsInvalidError) {
+            return {
+                enabled: true,
+                success: false,
+                invalidConfiguration: true,
+                message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+            };
+        }
+
+        throw error;
+    }
 
     if (!status.enabled) {
         return {

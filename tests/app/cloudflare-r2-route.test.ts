@@ -49,6 +49,15 @@ function createTempDataRoot(): string {
   return directory;
 }
 
+function getSettingsFile(dataRoot: string): string {
+  return path.join(dataRoot, 'settings', 'cloudflare-r2.json');
+}
+
+function writeText(filePath: string, value: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, value, 'utf8');
+}
+
 afterEach(() => {
   resetEnv();
   cleanupTempDirectories(tempDirectories);
@@ -164,6 +173,103 @@ describe('Cloudflare R2 settings API', () => {
       })
     );
     expect(fs.existsSync(settingsFile)).toBe(false);
+  });
+
+  it('reports corrupt stored settings instead of falling back to env settings', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = 'env-account-id';
+    process.env.R2_BUCKET = 'env-bucket';
+    process.env.R2_ACCESS_KEY_ID = 'env-access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'env-secret-key';
+    writeText(getSettingsFile(process.env.BLOG_DATA_ROOT), '{');
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2'));
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+      })
+    );
+  });
+
+  it('does not replace corrupt stored settings when an enabled update omits the secret', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const settingsFile = getSettingsFile(process.env.BLOG_DATA_ROOT);
+    writeText(settingsFile, '{');
+
+    const response = await PUT(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            enabled: true,
+            accountId: 'account-id',
+            bucket: 'blog-data',
+            accessKeyId: 'access-key',
+            secretAccessKey: '',
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+      })
+    );
+    expect(fs.readFileSync(settingsFile, 'utf8')).toBe('{');
+  });
+
+  it('replaces corrupt stored settings when a complete enabled update includes the secret', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const settingsFile = getSettingsFile(process.env.BLOG_DATA_ROOT);
+    writeText(settingsFile, '{');
+
+    const response = await PUT(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            enabled: true,
+            accountId: 'account-id',
+            bucket: 'blog-data',
+            accessKeyId: 'access-key',
+            secretAccessKey: 'replacement-secret',
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: true,
+          },
+        }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(payload)).not.toContain('replacement-secret');
+    expect(payload.settings).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        hasSecretAccessKey: true,
+      })
+    );
+    expect(JSON.parse(fs.readFileSync(settingsFile, 'utf8'))).toEqual(
+      expect.objectContaining({
+        secretAccessKey: 'replacement-secret',
+        snapshotOnWrite: true,
+      })
+    );
   });
 
   it('saves settings without returning the secret and keeps it when omitted later', async () => {
