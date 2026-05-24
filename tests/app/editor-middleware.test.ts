@@ -31,6 +31,7 @@ async function createEditorRequest(path: string, secret?: string): Promise<NextR
 
 afterEach(() => {
   resetEnv();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -119,5 +120,45 @@ describe('editor middleware', () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
+  });
+
+  it('aborts stalled runtime auth checks and redirects to login', async () => {
+    vi.useFakeTimers();
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_AUTH_INTERNAL_ORIGIN = 'http://127.0.0.1:3000';
+    delete process.env.EDITOR_ACCESS_TOKEN;
+    const fetchMock = vi.fn((url: URL | RequestInfo, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      })
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const responsePromise = middleware(
+      new NextRequest('https://public.example/editor/settings', {
+        headers: {
+          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
+        },
+      })
+    );
+
+    await vi.advanceTimersByTimeAsync(1500);
+    const response = await responsePromise;
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL('/api/editor-auth', 'http://127.0.0.1:3000'),
+      expect.objectContaining({
+        headers: {
+          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
+        },
+        signal: expect.any(AbortSignal),
+      })
+    );
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal?.aborted).toBe(true);
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://public.example/editor/login?next=%2Feditor%2Fsettings');
   });
 });

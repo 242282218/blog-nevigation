@@ -5,6 +5,8 @@ import {
     isValidEditorSession,
 } from '@/lib/editor-auth';
 
+const EDITOR_AUTH_STATUS_TIMEOUT_MS = 1500;
+
 function getEditorAuthInternalOrigin(request: NextRequest): string | null {
     const configuredOrigin = process.env.EDITOR_AUTH_INTERNAL_ORIGIN?.trim();
 
@@ -17,6 +19,33 @@ function getEditorAuthInternalOrigin(request: NextRequest): string | null {
     }
 
     return null;
+}
+
+async function fetchEditorAuthStatus(
+    authStatusUrl: URL,
+    cookieHeader: string
+): Promise<unknown | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), EDITOR_AUTH_STATUS_TIMEOUT_MS);
+
+    try {
+        const response = await fetch(authStatusUrl, {
+            headers: {
+                Cookie: cookieHeader,
+            },
+            signal: controller.signal,
+        });
+
+        if (!response.ok) {
+            return null;
+        }
+
+        return await response.json().catch(() => null);
+    } catch {
+        return null;
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 export async function middleware(request: NextRequest) {
@@ -36,16 +65,13 @@ export async function middleware(request: NextRequest) {
 
     if (authInternalOrigin) {
         const authStatusUrl = new URL('/api/editor-auth', authInternalOrigin);
-        const authStatusResponse = await fetch(authStatusUrl, {
-            headers: {
-                Cookie: request.headers.get('cookie') ?? '',
-            },
-        }).catch(() => null);
+        const authStatus = await fetchEditorAuthStatus(
+            authStatusUrl,
+            request.headers.get('cookie') ?? ''
+        );
 
-        if (authStatusResponse?.ok) {
-            const authStatus = await authStatusResponse.json().catch(() => null);
-
-            if (authStatus?.authenticated === true) {
+        if (typeof authStatus === 'object' && authStatus && 'authenticated' in authStatus) {
+            if (authStatus.authenticated === true) {
                 return NextResponse.next();
             }
         }

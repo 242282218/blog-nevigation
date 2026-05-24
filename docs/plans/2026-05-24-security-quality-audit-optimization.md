@@ -45,6 +45,9 @@ Use the smallest secure path that preserves existing deployments:
 - Updated the login page to show one of three clear states: normal login,
   setup form, or locked setup.
 - Hardened middleware runtime auth checks with `EDITOR_AUTH_INTERNAL_ORIGIN`.
+- Added a bounded timeout to middleware runtime auth checks so a stalled
+  internal `/api/editor-auth` request redirects to login instead of hanging
+  every `/editor/*` request.
 - Added auth tests for setup gating, setup token rejection, no plaintext secret
   persistence, session rotation, logout revocation, and middleware Host trust.
 - Updated editor Playwright verification scripts to authenticate through
