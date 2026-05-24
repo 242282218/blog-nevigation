@@ -68,6 +68,7 @@ The next review pass focused on dependency risk without using
   is end-of-life as of 2026-04-30.
 - Upgraded GitHub Actions JavaScript actions to Node 24-native major versions
   ahead of GitHub's forced runner migration.
+- Standardized local installs on `.nvmrc` Node 24 and `npm@11.6.2`.
 - Added `npm run audit:high` and wired it into CI so high and critical
   dependency advisories fail the build.
 
@@ -91,8 +92,6 @@ must be verified by GitHub Actions after pushing this change.
 
 ## Follow-up Backlog
 
-- Decide whether to standardize on npm or migrate fully to pnpm, then enforce it
-  with `packageManager` and CI.
 - Consider adding a bounded Playwright smoke job in CI with screenshot artifacts.
 - Revisit the remaining moderate Next/PostCSS audit item when Next publishes a
   version that no longer vendors the vulnerable PostCSS range.

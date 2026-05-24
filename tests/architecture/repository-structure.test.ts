@@ -20,6 +20,7 @@ describe('repository structure migration', () => {
             resolveRepoPath('public', 'logo.svg'),
             resolveRepoPath('public', 'favicon.ico'),
             resolveRepoPath('compose.yaml'),
+            resolveRepoPath('.nvmrc'),
         ];
 
         requiredPaths.forEach((targetPath) => {
@@ -43,6 +44,10 @@ describe('repository structure migration', () => {
         const dockerIgnore = fs.readFileSync(resolveRepoPath('.dockerignore'), 'utf8');
         const dockerfile = fs.readFileSync(resolveRepoPath('Dockerfile'), 'utf8');
         const dockerEntrypoint = fs.readFileSync(resolveRepoPath('docker-entrypoint.sh'), 'utf8');
+        const nodeVersion = fs.readFileSync(resolveRepoPath('.nvmrc'), 'utf8').trim();
+        const packageJson = JSON.parse(fs.readFileSync(resolveRepoPath('package.json'), 'utf8')) as {
+            packageManager?: string;
+        };
         const nextConfig = fs.readFileSync(resolveRepoPath('next.config.mjs'), 'utf8');
         const deployCompose = fs.readFileSync(resolveRepoPath('deploy', 'compose.prod.yaml'), 'utf8');
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
@@ -55,6 +60,8 @@ describe('repository structure migration', () => {
         expect(dockerIgnore).toMatch(/^output$/m);
         expect(dockerIgnore).toMatch(/^\.env$/m);
         expect(dockerIgnore).toMatch(/^\.env\.\*$/m);
+        expect(nodeVersion).toBe('24');
+        expect(packageJson.packageManager).toBe('npm@11.6.2');
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
         expect(dockerfile).toContain('FROM node:24-alpine AS runner');

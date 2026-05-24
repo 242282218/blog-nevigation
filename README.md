@@ -7,7 +7,8 @@
 ```bash
 git clone https://github.com/242282218/blog-nevigation.git
 cd blog-nevigation
-npm install
+nvm use
+npm ci --legacy-peer-deps
 ```
 
 创建 `.env.local`：
@@ -147,7 +148,7 @@ GITHUB_BACKUP_ENCRYPTION_KEY='change-me' npm run data:restore:encrypted -- ./out
 ## 常用命令
 
 ```bash
+npm run check
 npm run build
 npm run start
-npm run test:run
 ```

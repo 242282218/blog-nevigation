@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "description": "Developer blog and navigation site built with Next.js",
   "type": "module",
+  "packageManager": "npm@11.6.2",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
