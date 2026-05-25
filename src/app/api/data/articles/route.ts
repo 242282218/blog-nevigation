@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parseArticlesData } from '@/lib/article-data';
 import {
     createEditorDataFileInvalidResponse,
+    createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -9,7 +10,7 @@ import {
     isEditorDataRootConfigured,
     getEditorDataResourceManifest,
     readArticlesFromDisk,
-    writeArticlesToDisk,
+    writeArticlesToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 
@@ -68,13 +69,18 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    let currentArticles;
-    let currentManifest;
+    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
+    let writeResult;
 
     try {
-        currentArticles = readArticlesFromDisk();
-        currentManifest = getEditorDataResourceManifest('articles', currentArticles);
+        writeResult = writeArticlesToDiskIfRevisionMatches(articles, expectedRevision);
     } catch (error) {
+        const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
+
+        if (lockTimeoutResponse) {
+            return lockTimeoutResponse;
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
@@ -84,27 +90,24 @@ export async function PUT(request: NextRequest) {
         throw error;
     }
 
-    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
-
-    if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
+    if (!writeResult.success) {
         return NextResponse.json(
             {
                 message: '文章数据已被其他会话更新，请刷新后重试。',
-                revision: currentManifest?.revision ?? null,
-                articles: currentArticles,
+                revision: writeResult.currentManifest?.revision ?? null,
+                articles: writeResult.currentValue,
             },
             { status: 409 }
         );
     }
 
-    const resourceManifest = writeArticlesToDisk(articles);
     const remoteBackup = await syncCurrentBackupToRemote({
         reason: 'articles-write',
     });
 
     return NextResponse.json({
         success: true,
-        revision: resourceManifest.revision,
+        revision: writeResult.resourceManifest.revision,
         remoteBackup,
     });
 }

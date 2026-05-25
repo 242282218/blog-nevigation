@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/data/backup/route';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -150,6 +151,20 @@ describe('backup API', () => {
       })
     );
   });
+
+  it('reports backup export lock contention as a retryable conflict', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+    fs.mkdirSync(path.join(process.env.BLOG_DATA_ROOT, '.data-write.lock'));
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup'));
+
+    expect(response.status).toBe(423);
+    expect(await response.json()).toEqual({
+      message: '服务器运行时数据正在写入，请稍后重试。',
+    });
+  }, 10000);
 
   it('requires BLOG_DATA_ROOT before restoring a backup', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
@@ -298,6 +313,59 @@ describe('backup API', () => {
     expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8'))).toEqual([
       expect.objectContaining({
         id: 'article-newer',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale local restores after another manifest-backed write', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+    const currentManifest = await readCurrentManifest();
+    const newerArticle = {
+      id: 'article-newer-manifest',
+      title: 'Newer Manifest Article',
+      date: '2026-05-25',
+      description: 'Newer article with manifest update',
+      tags: [],
+      content: '# Newer Manifest',
+      slug: 'newer-manifest-article',
+      createdAt: 3,
+      updatedAt: 4,
+    };
+
+    writeArticlesToDisk([newerArticle]);
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentManifest,
+          version: 1,
+          data: {
+            articles: [
+              {
+                id: 'article-old-manifest',
+                title: 'Old Manifest Backup Article',
+                date: '2026-05-20',
+                description: 'Old backup article',
+                tags: [],
+                content: '# Old Manifest',
+                createdAt: 1,
+                updatedAt: 2,
+              },
+            ],
+            navigation: [],
+          },
+        }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'article-newer-manifest',
       }),
     ]);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();

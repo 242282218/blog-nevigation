@@ -7,7 +7,10 @@ import {
     isRuntimeEditorAuthConfigured,
     isValidRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
-import { EditorDataFileInvalidError } from '@/lib/editor-data-storage';
+import {
+    EditorDataFileInvalidError,
+    EditorDataLockTimeoutError,
+} from '@/lib/editor-data-storage';
 
 export const EDITOR_AUTH_CONFIG_INVALID_MESSAGE = '编辑口令配置文件损坏，请修复或删除后重试。';
 
@@ -65,6 +68,19 @@ export function createEditorDataFileInvalidResponse(error: unknown): NextRespons
             resource: error.resource,
         },
         { status: 500 }
+    );
+}
+
+export function createEditorDataLockTimeoutResponse(error: unknown): NextResponse | null {
+    if (!(error instanceof EditorDataLockTimeoutError)) {
+        return null;
+    }
+
+    return NextResponse.json(
+        {
+            message: '服务器运行时数据正在写入，请稍后重试。',
+        },
+        { status: 423 }
     );
 }
 

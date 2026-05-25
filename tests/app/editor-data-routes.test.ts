@@ -5,6 +5,7 @@ import { GET as getArticles, PUT as putArticles } from '@/app/api/data/articles/
 import { GET as getNavigation, PUT as putNavigation } from '@/app/api/data/navigation/route';
 import { GET as getSettings, PUT as putSettings } from '@/app/api/data/settings/route';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -213,6 +214,45 @@ describe('editor data write APIs', () => {
     expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'articles-write',
     });
+  });
+
+  it('rejects stale article revisions after another committed write', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const current = await (await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'))).json();
+    writeArticlesToDisk([createArticle('article-newer', 'Newer Article')]);
+
+    const response = await putArticles(
+      await createAuthedEditorRequest('http://localhost/api/data/articles', {
+        method: 'PUT',
+        body: JSON.stringify({
+          revision: current.revision,
+          articles: [createArticle('article-attempted', 'Attempted Article')],
+        }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        revision: expect.any(String),
+        articles: [
+          expect.objectContaining({
+            id: 'article-newer',
+          }),
+        ],
+      })
+    );
+    expect(payload.revision).not.toBe(current.revision);
+    expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'article-newer',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('rejects invalid navigation payloads without writing or remote sync', async () => {

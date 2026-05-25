@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     createEditorDataFileInvalidResponse,
+    createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -40,6 +41,12 @@ export async function GET(request: NextRequest) {
     try {
         return NextResponse.json(createCurrentEditorBackupPayload());
     } catch (error) {
+        const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
+
+        if (lockTimeoutResponse) {
+            return lockTimeoutResponse;
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
@@ -73,6 +80,12 @@ export async function POST(request: NextRequest) {
     try {
         result = restoreEditorBackupPayload(body, { currentManifest });
     } catch (error) {
+        const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
+
+        if (lockTimeoutResponse) {
+            return lockTimeoutResponse;
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {

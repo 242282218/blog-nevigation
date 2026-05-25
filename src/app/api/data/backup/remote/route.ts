@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     createEditorDataFileInvalidResponse,
+    createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -144,6 +145,12 @@ export async function POST(request: NextRequest) {
             remoteBackup,
         });
     } catch (error) {
+        const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
+
+        if (lockTimeoutResponse) {
+            return lockTimeoutResponse;
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {

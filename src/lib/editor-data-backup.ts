@@ -9,6 +9,7 @@ import {
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
     restoreEditorDataRootAtomically,
+    withEditorDataRootLock,
     type EditorDataManifest,
     type EditorDataResourceName,
 } from '@/lib/editor-data-storage';
@@ -113,7 +114,11 @@ export function createEditorBackupPayload(
     };
 }
 export function createCurrentEditorBackupPayload(): EditorBackupPayload {
-    return createEditorBackupPayload(readCurrentEditorBackupData());
+    if (!isEditorDataRootConfigured()) {
+        return createEditorBackupPayload(readCurrentEditorBackupData());
+    }
+
+    return withEditorDataRootLock(() => createEditorBackupPayload(readCurrentEditorBackupData()));
 }
 
 export function parseEditorBackupData(value: unknown): EditorBackupData | null {
@@ -150,15 +155,17 @@ export function restoreEditorBackupPayload(
         return null;
     }
 
-    if (options.currentManifest) {
-        assertCurrentManifestForRestore(options.currentManifest);
-    }
+    return withEditorDataRootLock(() => {
+        if (options.currentManifest) {
+            assertCurrentManifestForRestore(options.currentManifest);
+        }
 
-    restoreEditorDataRootAtomically(data);
+        restoreEditorDataRootAtomically(data);
 
-    return {
-        articles: data.articles.length,
-        categories: data.navigation.length,
-        settings: true,
-    };
+        return {
+            articles: data.articles.length,
+            categories: data.navigation.length,
+            settings: true,
+        };
+    });
 }

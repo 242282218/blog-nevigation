@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createArticleSlug } from '@/lib/article-data';
 import {
     EditorDataFileInvalidError,
     EditorDataRootNotConfiguredError,
@@ -14,6 +15,7 @@ import {
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
     writeArticlesToDisk,
+    writeArticlesToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 
@@ -30,6 +32,24 @@ function createTempDataRoot(): string {
 function writeText(filePath: string, value: string): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, value, 'utf8');
+}
+
+function createArticle(id: string, title: string) {
+    const article = {
+        id,
+        title,
+        date: '2026-05-24',
+        description: `${title} description`,
+        tags: ['test'],
+        content: `# ${title}`,
+        createdAt: 1,
+        updatedAt: 2,
+    };
+
+    return {
+        ...article,
+        slug: createArticleSlug(article),
+    };
 }
 
 afterEach(() => {
@@ -79,6 +99,45 @@ describe('editor data storage configuration', () => {
 
         expect(firstManifest.revision).toBe(manifestAfterWrite.resources.articles?.revision);
         expect(secondManifest.revision).not.toBe(firstManifest.revision);
+    });
+
+    it('writes articles only when the current revision still matches', () => {
+        createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        const nextArticles = [createArticle('article-2', 'Next Article')];
+        const originalManifest = writeArticlesToDisk(originalArticles);
+
+        const result = writeArticlesToDiskIfRevisionMatches(nextArticles, originalManifest.revision);
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                success: true,
+                resourceManifest: expect.objectContaining({
+                    revision: expect.any(String),
+                }),
+            })
+        );
+        expect(readArticlesFromDisk()).toEqual(nextArticles);
+    });
+
+    it('returns the current articles without writing when the expected revision is stale', () => {
+        createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        const newerArticles = [createArticle('article-2', 'Newer Article')];
+        const attemptedArticles = [createArticle('article-3', 'Attempted Article')];
+        const originalManifest = writeArticlesToDisk(originalArticles);
+        const newerManifest = writeArticlesToDisk(newerArticles);
+
+        const result = writeArticlesToDiskIfRevisionMatches(attemptedArticles, originalManifest.revision);
+
+        expect(result).toEqual({
+            success: false,
+            currentValue: newerArticles,
+            currentManifest: expect.objectContaining({
+                revision: newerManifest.revision,
+            }),
+        });
+        expect(readArticlesFromDisk()).toEqual(newerArticles);
     });
 
     it('derives a stable revision for existing data without writing a manifest during reads', () => {

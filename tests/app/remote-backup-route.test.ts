@@ -9,6 +9,7 @@ import {
   R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -397,6 +398,65 @@ describe('remote backup API', () => {
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
       expect.objectContaining({
         id: 'newer-article-1',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale R2 restores after another manifest-backed write', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-article-1',
+      title: 'Existing Article',
+      date: '2026-05-24',
+      description: 'Existing data',
+      tags: [],
+      content: '# Existing',
+      slug: 'existing-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const newerArticle = {
+      ...existingArticle,
+      id: 'newer-manifest-article-1',
+      title: 'Newer Manifest Article',
+      slug: 'newer-manifest-article',
+      updatedAt: 3,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    writeArticlesToDisk([newerArticle]);
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [existingArticle],
+        navigation: [],
+      },
+    });
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'restore', currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(409);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'newer-manifest-article-1',
       }),
     ]);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();

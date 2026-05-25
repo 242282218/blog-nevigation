@@ -16,6 +16,10 @@ const NAVIGATION_FILE_NAME = 'tools.json';
 const SETTINGS_FILE_NAME = 'site.json';
 const MANIFEST_FILE_NAME = 'manifest.json';
 const MANIFEST_VERSION = 1;
+const DATA_LOCK_DIRECTORY_NAME = '.data-write.lock';
+const DATA_LOCK_WAIT_TIMEOUT_MS = 5000;
+const DATA_LOCK_STALE_MS = 5 * 60 * 1000;
+const DATA_LOCK_RETRY_MS = 50;
 
 export type EditorDataResourceName = 'articles' | 'navigation' | 'settings';
 export type EditorDataFileResourceName = EditorDataResourceName | 'manifest' | 'navigation-seed';
@@ -32,10 +36,28 @@ export interface EditorDataManifest {
     resources: Partial<Record<EditorDataResourceName, EditorDataResourceManifest>>;
 }
 
+export type EditorDataResourceWriteResult<T> =
+    | {
+        success: true;
+        resourceManifest: EditorDataResourceManifest;
+    }
+    | {
+        success: false;
+        currentValue: T;
+        currentManifest: EditorDataResourceManifest | null;
+    };
+
 export class EditorDataRootNotConfiguredError extends Error {
     constructor() {
         super('BLOG_DATA_ROOT is not configured.');
         this.name = 'EditorDataRootNotConfiguredError';
+    }
+}
+
+export class EditorDataLockTimeoutError extends Error {
+    constructor(public readonly lockPath: string) {
+        super('Timed out while waiting for the editor data write lock.');
+        this.name = 'EditorDataLockTimeoutError';
     }
 }
 
@@ -47,6 +69,205 @@ export class EditorDataFileInvalidError extends Error {
     ) {
         super(`Invalid editor data file for ${resource}: ${reason}`);
         this.name = 'EditorDataFileInvalidError';
+    }
+}
+
+const heldEditorDataLocks = new Map<string, number>();
+
+type EditorDataRootLock = {
+    directory: string;
+    token: string;
+};
+
+type EditorDataLockSnapshot = {
+    mtimeMs: number;
+    owner: string | null;
+};
+
+function sleepSync(milliseconds: number): void {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function getEditorDataRootOrThrow(): string {
+    const root = getEditorDataRoot();
+
+    if (!root) {
+        throw new EditorDataRootNotConfiguredError();
+    }
+
+    return root;
+}
+
+function getLockDirectory(root: string): string {
+    return path.join(root, DATA_LOCK_DIRECTORY_NAME);
+}
+
+function readLockOwner(lockDirectory: string): string | null {
+    try {
+        return fs.readFileSync(path.join(lockDirectory, 'owner.json'), 'utf8');
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            return null;
+        }
+
+        throw error;
+    }
+}
+
+function getLockOwnerToken(lockDirectory: string): string | null {
+    const owner = readLockOwner(lockDirectory);
+
+    if (!owner) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(owner) as { token?: unknown };
+
+        return typeof parsed.token === 'string' ? parsed.token : null;
+    } catch {
+        return null;
+    }
+}
+
+function readLockSnapshot(lockDirectory: string): EditorDataLockSnapshot | null {
+    try {
+        const stats = fs.statSync(lockDirectory);
+
+        return {
+            mtimeMs: stats.mtimeMs,
+            owner: readLockOwner(lockDirectory),
+        };
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            return null;
+        }
+
+        throw error;
+    }
+}
+
+function isLockStale(snapshot: EditorDataLockSnapshot): boolean {
+    return Date.now() - snapshot.mtimeMs > DATA_LOCK_STALE_MS;
+}
+
+function isSameLockSnapshot(
+    first: EditorDataLockSnapshot,
+    second: EditorDataLockSnapshot
+): boolean {
+    return first.mtimeMs === second.mtimeMs && first.owner === second.owner;
+}
+
+function removeStaleLockIfUnchanged(
+    lockDirectory: string,
+    staleSnapshot: EditorDataLockSnapshot
+): boolean {
+    const currentSnapshot = readLockSnapshot(lockDirectory);
+
+    if (!currentSnapshot) {
+        return true;
+    }
+
+    if (!isSameLockSnapshot(staleSnapshot, currentSnapshot)) {
+        return false;
+    }
+
+    fs.rmSync(lockDirectory, { recursive: true, force: true });
+    return true;
+}
+
+function acquireEditorDataRootLock(root: string): EditorDataRootLock {
+    const resolvedRoot = path.resolve(root);
+    const lockDirectory = getLockDirectory(resolvedRoot);
+    const deadline = Date.now() + DATA_LOCK_WAIT_TIMEOUT_MS;
+    const token = `${process.pid}-${Date.now()}-${process.hrtime.bigint().toString(36)}`;
+
+    fs.mkdirSync(resolvedRoot, { recursive: true });
+
+    while (true) {
+        try {
+            fs.mkdirSync(lockDirectory);
+
+            try {
+                fs.writeFileSync(
+                    path.join(lockDirectory, 'owner.json'),
+                    JSON.stringify({
+                        token,
+                        pid: process.pid,
+                        acquiredAt: new Date().toISOString(),
+                    }, null, 2),
+                    'utf8'
+                );
+            } catch (error) {
+                fs.rmSync(lockDirectory, { recursive: true, force: true });
+                throw error;
+            }
+
+            return {
+                directory: lockDirectory,
+                token,
+            };
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+                throw error;
+            }
+
+            const snapshot = readLockSnapshot(lockDirectory);
+
+            if (!snapshot) {
+                continue;
+            }
+
+            if (isLockStale(snapshot) && removeStaleLockIfUnchanged(lockDirectory, snapshot)) {
+                continue;
+            }
+
+            if (Date.now() >= deadline) {
+                throw new EditorDataLockTimeoutError(lockDirectory);
+            }
+
+            sleepSync(DATA_LOCK_RETRY_MS);
+        }
+    }
+}
+
+function releaseEditorDataRootLock(lock: EditorDataRootLock): void {
+    if (getLockOwnerToken(lock.directory) !== lock.token) {
+        return;
+    }
+
+    fs.rmSync(lock.directory, { recursive: true, force: true });
+}
+
+export function withEditorDataRootLock<T>(operation: () => T): T {
+    const root = getEditorDataRootOrThrow();
+    const resolvedRoot = path.resolve(root);
+    const heldCount = heldEditorDataLocks.get(resolvedRoot) ?? 0;
+
+    if (heldCount > 0) {
+        heldEditorDataLocks.set(resolvedRoot, heldCount + 1);
+
+        try {
+            return operation();
+        } finally {
+            const nextHeldCount = (heldEditorDataLocks.get(resolvedRoot) ?? 1) - 1;
+
+            if (nextHeldCount <= 0) {
+                heldEditorDataLocks.delete(resolvedRoot);
+            } else {
+                heldEditorDataLocks.set(resolvedRoot, nextHeldCount);
+            }
+        }
+    }
+
+    const lock = acquireEditorDataRootLock(resolvedRoot);
+    heldEditorDataLocks.set(resolvedRoot, 1);
+
+    try {
+        return operation();
+    } finally {
+        heldEditorDataLocks.delete(resolvedRoot);
+        releaseEditorDataRootLock(lock);
     }
 }
 
@@ -429,8 +650,35 @@ export function readArticlesFromDisk(): Article[] {
 }
 
 export function writeArticlesToDisk(articles: Article[]): EditorDataResourceManifest {
-    writeJsonFile(getArticlesDataFilePath(), articles);
-    return touchEditorDataResourceManifest('articles', articles);
+    return withEditorDataRootLock(() => {
+        writeJsonFile(getArticlesDataFilePath(), articles);
+        return touchEditorDataResourceManifest('articles', articles);
+    });
+}
+
+export function writeArticlesToDiskIfRevisionMatches(
+    articles: Article[],
+    expectedRevision: string | null
+): EditorDataResourceWriteResult<Article[]> {
+    return withEditorDataRootLock(() => {
+        const currentValue = readArticlesFromDisk();
+        const currentManifest = getEditorDataResourceManifest('articles', currentValue);
+
+        if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
+            return {
+                success: false,
+                currentValue,
+                currentManifest,
+            };
+        }
+
+        writeJsonFile(getArticlesDataFilePath(), articles);
+
+        return {
+            success: true,
+            resourceManifest: touchEditorDataResourceManifest('articles', articles),
+        };
+    });
 }
 
 export function readNavigationFromDisk(): Category[] {
@@ -462,8 +710,35 @@ export function readNavigationFromDisk(): Category[] {
 }
 
 export function writeNavigationToDisk(categories: Category[]): EditorDataResourceManifest {
-    writeJsonFile(getNavigationDataFilePath(), categories);
-    return touchEditorDataResourceManifest('navigation', categories);
+    return withEditorDataRootLock(() => {
+        writeJsonFile(getNavigationDataFilePath(), categories);
+        return touchEditorDataResourceManifest('navigation', categories);
+    });
+}
+
+export function writeNavigationToDiskIfRevisionMatches(
+    categories: Category[],
+    expectedRevision: string | null
+): EditorDataResourceWriteResult<Category[]> {
+    return withEditorDataRootLock(() => {
+        const currentValue = readNavigationFromDisk();
+        const currentManifest = getEditorDataResourceManifest('navigation', currentValue);
+
+        if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
+            return {
+                success: false,
+                currentValue,
+                currentManifest,
+            };
+        }
+
+        writeJsonFile(getNavigationDataFilePath(), categories);
+
+        return {
+            success: true,
+            resourceManifest: touchEditorDataResourceManifest('navigation', categories),
+        };
+    });
 }
 
 export function readSiteSettingsFromDisk(): SiteSettings {
@@ -484,8 +759,35 @@ export function readSiteSettingsFromDisk(): SiteSettings {
 }
 
 export function writeSiteSettingsToDisk(settings: SiteSettings): EditorDataResourceManifest {
-    writeJsonFile(getSiteSettingsDataFilePath(), settings);
-    return touchEditorDataResourceManifest('settings', settings);
+    return withEditorDataRootLock(() => {
+        writeJsonFile(getSiteSettingsDataFilePath(), settings);
+        return touchEditorDataResourceManifest('settings', settings);
+    });
+}
+
+export function writeSiteSettingsToDiskIfRevisionMatches(
+    settings: SiteSettings,
+    expectedRevision: string | null
+): EditorDataResourceWriteResult<SiteSettings> {
+    return withEditorDataRootLock(() => {
+        const currentValue = readSiteSettingsFromDisk();
+        const currentManifest = getEditorDataResourceManifest('settings', currentValue);
+
+        if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
+            return {
+                success: false,
+                currentValue,
+                currentManifest,
+            };
+        }
+
+        writeJsonFile(getSiteSettingsDataFilePath(), settings);
+
+        return {
+            success: true,
+            resourceManifest: touchEditorDataResourceManifest('settings', settings),
+        };
+    });
 }
 
 export function restoreEditorDataRootAtomically(data: {
@@ -493,59 +795,56 @@ export function restoreEditorDataRootAtomically(data: {
     navigation: Category[];
     settings: SiteSettings;
 }): EditorDataManifest {
-    const root = getEditorDataRoot();
+    return withEditorDataRootLock(() => {
+        const root = getEditorDataRootOrThrow();
+        const stagingRoot = createRestoreDirectory(root, '.restore-staging');
+        const backupRoot = createRestoreDirectory(root, '.restore-backup');
+        const files = getEditorDataFiles(root);
+        const manifest = createManifestForData(data);
+        let backupCaptured = false;
 
-    if (!root) {
-        throw new EditorDataRootNotConfiguredError();
-    }
+        try {
+            writeJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), data.articles);
+            writeJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), data.navigation);
+            writeJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), data.settings);
+            writeJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), manifest);
 
-    const stagingRoot = createRestoreDirectory(root, '.restore-staging');
-    const backupRoot = createRestoreDirectory(root, '.restore-backup');
-    const files = getEditorDataFiles(root);
-    const manifest = createManifestForData(data);
-    let backupCaptured = false;
+            const stagedArticles = parseArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), 'articles'));
+            const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), 'navigation'));
+            const stagedSettings = parseSiteSettings(readJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), 'settings'));
+            const stagedManifest = parseManifest(readJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), 'manifest'));
 
-    try {
-        writeJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), data.articles);
-        writeJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), data.navigation);
-        writeJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), data.settings);
-        writeJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), manifest);
+            if (!stagedArticles || stagedArticles.length !== data.articles.length || !stagedNavigation || !stagedSettings) {
+                throw new Error('Staged restore verification failed.');
+            }
 
-        const stagedArticles = parseArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), 'articles'));
-        const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), 'navigation'));
-        const stagedSettings = parseSiteSettings(readJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), 'settings'));
-        const stagedManifest = parseManifest(readJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), 'manifest'));
+            const problems = getManifestProblems(
+                {
+                    articles: stagedArticles,
+                    navigation: stagedNavigation,
+                    settings: stagedSettings,
+                },
+                stagedManifest
+            );
 
-        if (!stagedArticles || stagedArticles.length !== data.articles.length || !stagedNavigation || !stagedSettings) {
-            throw new Error('Staged restore verification failed.');
+            if (problems.length > 0) {
+                throw new Error(`Staged restore verification failed: ${problems.join('; ')}`);
+            }
+
+            copyExistingFiles(files, root, backupRoot);
+            backupCaptured = true;
+            replaceFilesFromStaging(files, root, stagingRoot);
+
+            return manifest;
+        } catch (error) {
+            if (backupCaptured) {
+                restoreFilesFromBackup(files, root, backupRoot);
+            }
+
+            throw error;
+        } finally {
+            fs.rmSync(stagingRoot, { recursive: true, force: true });
+            fs.rmSync(backupRoot, { recursive: true, force: true });
         }
-
-        const problems = getManifestProblems(
-            {
-                articles: stagedArticles,
-                navigation: stagedNavigation,
-                settings: stagedSettings,
-            },
-            stagedManifest
-        );
-
-        if (problems.length > 0) {
-            throw new Error(`Staged restore verification failed: ${problems.join('; ')}`);
-        }
-
-        copyExistingFiles(files, root, backupRoot);
-        backupCaptured = true;
-        replaceFilesFromStaging(files, root, stagingRoot);
-
-        return manifest;
-    } catch (error) {
-        if (backupCaptured) {
-            restoreFilesFromBackup(files, root, backupRoot);
-        }
-
-        throw error;
-    } finally {
-        fs.rmSync(stagingRoot, { recursive: true, force: true });
-        fs.rmSync(backupRoot, { recursive: true, force: true });
-    }
+    });
 }

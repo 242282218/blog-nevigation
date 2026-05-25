@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
     createEditorDataFileInvalidResponse,
+    createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -8,7 +9,7 @@ import {
     getEditorDataResourceManifest,
     isEditorDataRootConfigured,
     readNavigationFromDisk,
-    writeNavigationToDisk,
+    writeNavigationToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { parseNavigationData } from '@/lib/navigation-data';
@@ -68,13 +69,18 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    let currentCategories;
-    let currentManifest;
+    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
+    let writeResult;
 
     try {
-        currentCategories = readNavigationFromDisk();
-        currentManifest = getEditorDataResourceManifest('navigation', currentCategories);
+        writeResult = writeNavigationToDiskIfRevisionMatches(parsed, expectedRevision);
     } catch (error) {
+        const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
+
+        if (lockTimeoutResponse) {
+            return lockTimeoutResponse;
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
@@ -84,27 +90,24 @@ export async function PUT(request: NextRequest) {
         throw error;
     }
 
-    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
-
-    if (!expectedRevision || currentManifest?.revision !== expectedRevision) {
+    if (!writeResult.success) {
         return NextResponse.json(
             {
                 message: '导航数据已被其他会话更新，请刷新后重试。',
-                revision: currentManifest?.revision ?? null,
-                categories: currentCategories,
+                revision: writeResult.currentManifest?.revision ?? null,
+                categories: writeResult.currentValue,
             },
             { status: 409 }
         );
     }
 
-    const resourceManifest = writeNavigationToDisk(parsed);
     const remoteBackup = await syncCurrentBackupToRemote({
         reason: 'navigation-write',
     });
 
     return NextResponse.json({
         success: true,
-        revision: resourceManifest.revision,
+        revision: writeResult.resourceManifest.revision,
         remoteBackup,
     });
 }
