@@ -51,11 +51,11 @@ jobs:
           set -euo pipefail
 
           mkdir -p output
-          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false node node_modules/next/dist/bin/next start > output/ui-smoke-server.log 2>&1 &
+          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3210 COOKIE_SECURE=false setsid npm run start > output/ui-smoke-server.log 2>&1 &
           server_pid=$!
 
           cleanup() {
-            kill "${server_pid}" >/dev/null 2>&1 || true
+            kill -TERM "-${server_pid}" >/dev/null 2>&1 || kill "${server_pid}" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 

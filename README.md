@@ -157,6 +157,9 @@ npm run build
 npm run start
 ```
 
+`npm run start` runs the generated standalone server. Run `npm run build`
+first so `.next/standalone/server.js` exists.
+
 本地或测试机已有服务运行时，可执行 UI 冒烟脚本：
 
 ```bash

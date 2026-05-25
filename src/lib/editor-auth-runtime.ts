@@ -10,6 +10,7 @@ import { getEditorDataRoot } from '@/lib/editor-data-storage';
 
 const AUTH_CONFIG_VERSION = 1;
 const AUTH_PASSWORD_NAMESPACE = 'blog-navigation-editor-password:v1';
+const AUTH_ENV_TOKEN_NAMESPACE = 'blog-navigation-editor-env-token:v1';
 const AUTH_CONFIG_FILE_NAME = 'editor-auth.json';
 const AUTH_CONFIG_DIRECTORY_NAME = 'settings';
 const MIN_EDITOR_SECRET_LENGTH = 8;
@@ -26,6 +27,15 @@ interface RuntimeEditorAuthConfig {
     createdAt: string;
     updatedAt: string;
 }
+
+interface EnvironmentEditorSessionState {
+    tokenHash: string;
+    activeSessionSalt: string;
+    activeSessionHash: string;
+    activeSessionExpiresAt: string;
+}
+
+let environmentEditorSessionState: EnvironmentEditorSessionState | null = null;
 
 export class RuntimeEditorAuthAlreadyConfiguredError extends Error {
     constructor() {
@@ -77,6 +87,10 @@ function createLegacySessionValue(secret: string): string {
     return sha256(`${SESSION_NAMESPACE}:${normalizeSecret(secret)}`);
 }
 
+function createEnvironmentTokenHash(secret: string): string {
+    return sha256(`${AUTH_ENV_TOKEN_NAMESPACE}:${normalizeSecret(secret)}`);
+}
+
 function createSessionHash(sessionValue: string, salt: string): string {
     return sha256(`${SESSION_NAMESPACE}:${salt}:${sessionValue}`);
 }
@@ -91,6 +105,15 @@ function createRuntimeEditorSessionFields(sessionValue: string) {
             Date.now() + RUNTIME_SESSION_MAX_AGE_SECONDS * 1000
         ).toISOString(),
     };
+}
+
+function isSessionExpired(expiresAt: string | undefined): boolean {
+    if (!expiresAt) {
+        return true;
+    }
+
+    const expiresAtMs = Date.parse(expiresAt);
+    return !Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now();
 }
 
 function parseRuntimeEditorAuthConfig(value: unknown, filePath: string): RuntimeEditorAuthConfig {
@@ -235,8 +258,16 @@ export async function initializeRuntimeEditorAuth(secret: string): Promise<strin
 }
 
 export async function createRuntimeEditorSession(): Promise<string | null> {
-    if (getEditorAccessToken()) {
-        return null;
+    const envSecret = getEditorAccessToken();
+    const sessionValue = randomBytes(32).toString('hex');
+
+    if (envSecret) {
+        environmentEditorSessionState = {
+            tokenHash: createEnvironmentTokenHash(envSecret),
+            ...createRuntimeEditorSessionFields(sessionValue),
+        };
+
+        return sessionValue;
     }
 
     const config = readRuntimeEditorAuthConfig();
@@ -245,7 +276,6 @@ export async function createRuntimeEditorSession(): Promise<string | null> {
         return null;
     }
 
-    const sessionValue = randomBytes(32).toString('hex');
     const nextConfig: RuntimeEditorAuthConfig = {
         ...config,
         ...createRuntimeEditorSessionFields(sessionValue),
@@ -258,6 +288,7 @@ export async function createRuntimeEditorSession(): Promise<string | null> {
 
 export function revokeRuntimeEditorSession(): void {
     if (getEditorAccessToken()) {
+        environmentEditorSessionState = null;
         return;
     }
 
@@ -314,7 +345,18 @@ export async function isValidRuntimeEditorSession(
     const envSecret = getEditorAccessToken();
 
     if (envSecret) {
-        return safeEqual(sessionValue, createLegacySessionValue(envSecret));
+        if (
+            !environmentEditorSessionState ||
+            isSessionExpired(environmentEditorSessionState.activeSessionExpiresAt) ||
+            !safeEqual(environmentEditorSessionState.tokenHash, createEnvironmentTokenHash(envSecret))
+        ) {
+            return false;
+        }
+
+        return safeEqual(
+            createSessionHash(sessionValue, environmentEditorSessionState.activeSessionSalt),
+            environmentEditorSessionState.activeSessionHash
+        );
     }
 
     const config = readRuntimeEditorAuthConfig();
@@ -322,8 +364,7 @@ export async function isValidRuntimeEditorSession(
     if (
         !config?.activeSessionSalt ||
         !config.activeSessionHash ||
-        !config.activeSessionExpiresAt ||
-        Date.parse(config.activeSessionExpiresAt) <= Date.now()
+        isSessionExpired(config.activeSessionExpiresAt)
     ) {
         return false;
     }
@@ -334,14 +375,8 @@ export async function isValidRuntimeEditorSession(
     );
 }
 
-export function getCurrentRuntimeEditorSessionValue(): string | null {
-    const envSecret = getEditorAccessToken();
-
-    if (envSecret) {
-        return createLegacySessionValue(envSecret);
-    }
-
-    return null;
+export function resetEnvironmentEditorSessionForTests(): void {
+    environmentEditorSessionState = null;
 }
 
 export function getRuntimeEditorAuthSetupToken(): string | null {

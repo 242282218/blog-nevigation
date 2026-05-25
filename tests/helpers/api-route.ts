@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
-import { EDITOR_SESSION_COOKIE, createEditorSessionValue } from '@/lib/editor-auth';
+import { POST as loginEditor } from '@/app/api/editor-auth/route';
+import { EDITOR_SESSION_COOKIE } from '@/lib/editor-auth';
 
 export function createTempDirectory(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -28,10 +29,22 @@ export function restoreEnv(snapshot: Record<string, string | undefined>): void {
 
 export async function createAuthedEditorRequest(url: string, init?: RequestInit): Promise<NextRequest> {
   const token = process.env.EDITOR_ACCESS_TOKEN ?? '';
-  const session = await createEditorSessionValue(token);
+  const loginResponse = await loginEditor(new NextRequest('http://localhost/api/editor-auth', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ secret: token }),
+  }));
+  const sessionCookie = loginResponse.headers.get('set-cookie')?.split(';')[0] ?? '';
+
+  if (loginResponse.status !== 200 || !sessionCookie.startsWith(`${EDITOR_SESSION_COOKIE}=`)) {
+    throw new Error(`Failed to create authenticated editor request: status=${loginResponse.status}`);
+  }
+
   const headers = new Headers(init?.headers);
 
-  headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${session}`);
+  headers.set('Cookie', sessionCookie);
 
   return new NextRequest(url, {
     body: init?.body,

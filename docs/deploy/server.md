@@ -44,6 +44,9 @@ secret, start the container, then open `/editor/login` and enter that setup
 secret plus the new editor password. Do not enable
 `EDITOR_ALLOW_RUNTIME_AUTH_SETUP=true` on a public production host unless the
 host is otherwise isolated.
+Environment-token logins issue random in-memory sessions, so keep one app
+process per data directory unless you add sticky routing or shared session
+storage.
 
 Docker Compose sets `EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3000` by
 default so production middleware can verify runtime editor sessions without

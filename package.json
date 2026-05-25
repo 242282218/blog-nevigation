@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start-standalone.mjs",
     "lint": "eslint src tests eslint.config.mjs next.config.mjs postcss.config.mjs tailwind.config.ts",
     "typecheck": "tsc --noEmit --incremental false --pretty false",
     "audit:high": "npm audit --audit-level=high",

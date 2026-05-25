@@ -11,9 +11,11 @@ import {
 import { ensureEditorSession } from '@/lib/editor-api-auth';
 import {
   EDITOR_SESSION_COOKIE,
-  createEditorSessionValue,
+  SESSION_NAMESPACE,
   getSafeEditorNextPath,
 } from '@/lib/editor-auth';
+import { resetEditorAuthRateLimitForTests } from '@/lib/editor-auth-rate-limit';
+import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
 import {
   cleanupTempDirectories,
   createTempDirectory,
@@ -28,6 +30,17 @@ const ORIGINAL_ENV = {
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
 };
 const TEMP_DIRECTORIES: string[] = [];
+
+async function createLegacyEditorSessionValue(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${SESSION_NAMESPACE}:${secret.trim()}`)
+  );
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
 
 function resetEnv(): void {
   restoreEnv(ORIGINAL_ENV);
@@ -51,28 +64,34 @@ function useCorruptRuntimeAuthConfig(prefix: string): string {
   return configFilePath;
 }
 
-function createJsonRequest(body: unknown): NextRequest {
+function createJsonRequest(body: unknown, headersInit?: HeadersInit): NextRequest {
+  const headers = new Headers(headersInit);
+
+  headers.set('Content-Type', 'application/json');
+
   return new NextRequest('http://localhost/api/editor-auth', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
 }
 
-async function createSessionRequest(secret: string): Promise<NextRequest> {
-  const session = await createEditorSessionValue(secret);
+function extractSessionCookie(response: Response): string {
+  return response.headers.get('set-cookie')?.split(';')[0] ?? '';
+}
 
+function createRequestWithSession(sessionCookie: string): NextRequest {
   return new NextRequest('http://localhost/api/data/articles', {
     headers: {
-      Cookie: `${EDITOR_SESSION_COOKIE}=${session}`,
+      Cookie: sessionCookie,
     },
   });
 }
 
 afterEach(() => {
   resetEnv();
+  resetEditorAuthRateLimitForTests();
+  resetEnvironmentEditorSessionForTests();
   cleanupTempDirectories(TEMP_DIRECTORIES);
 });
 
@@ -256,6 +275,7 @@ describe('editor auth API', () => {
 
     const response = await POST(createJsonRequest({ secret: 'correct-secret' }));
     const setCookie = response.headers.get('set-cookie');
+    const legacySession = await createLegacyEditorSessionValue('correct-secret');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
@@ -263,6 +283,104 @@ describe('editor auth API', () => {
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('SameSite=lax');
     expect(setCookie).toContain('Max-Age=28800');
+    expect(setCookie).not.toContain(legacySession);
+  });
+
+  it('rotates environment-token sessions and rejects legacy deterministic sessions', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    const legacySession = await createLegacyEditorSessionValue('correct-secret');
+
+    const firstLogin = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const firstCookie = extractSessionCookie(firstLogin);
+    const secondLogin = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const secondCookie = extractSessionCookie(secondLogin);
+
+    expect(firstLogin.status).toBe(200);
+    expect(secondLogin.status).toBe(200);
+    expect(firstCookie).toContain(`${EDITOR_SESSION_COOKIE}=`);
+    expect(secondCookie).toContain(`${EDITOR_SESSION_COOKIE}=`);
+    expect(secondCookie).not.toBe(firstCookie);
+
+    const staleResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: { Cookie: firstCookie },
+    }));
+    const currentResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: { Cookie: secondCookie },
+    }));
+    const legacyResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: { Cookie: `${EDITOR_SESSION_COOKIE}=${legacySession}` },
+    }));
+
+    expect(await staleResponse.json()).toEqual(expect.objectContaining({ authenticated: false }));
+    expect(await currentResponse.json()).toEqual(expect.objectContaining({ authenticated: true }));
+    expect(await legacyResponse.json()).toEqual(expect.objectContaining({ authenticated: false }));
+  });
+
+  it('rate limits repeated login failures', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await POST(createJsonRequest({ secret: 'wrong-secret' }));
+      expect(response.status).toBe(401);
+    }
+
+    const blockedResponse = await POST(createJsonRequest({ secret: 'correct-secret' }));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('set-cookie')).toBeNull();
+    expect(await blockedResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('尝试次数过多'),
+      })
+    );
+  });
+
+  it('does not trust forwarded IP headers for login rate limiting', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await POST(createJsonRequest(
+        { secret: 'wrong-secret' },
+        { 'X-Forwarded-For': `198.51.100.${attempt + 1}` }
+      ));
+
+      expect(response.status).toBe(401);
+    }
+
+    const blockedResponse = await POST(createJsonRequest(
+      { secret: 'correct-secret' },
+      { 'X-Forwarded-For': '198.51.100.200' }
+    ));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('rate limits repeated setup failures', async () => {
+    delete process.env.EDITOR_ACCESS_TOKEN;
+    process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
+    process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
+      createTempDirectoryWithCleanup('editor-auth-setup-rate-limit-'),
+      'editor-auth.json'
+    );
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await PUT(createJsonRequest({
+        secret: 'new-secret',
+        confirmSecret: 'new-secret',
+        setupToken: 'wrong-token',
+      }));
+      expect(response.status).toBe(403);
+    }
+
+    const blockedResponse = await PUT(createJsonRequest({
+      secret: 'new-secret',
+      confirmSecret: 'new-secret',
+      setupToken: 'setup-token',
+    }));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('set-cookie')).toBeNull();
   });
 
   it('clears the editor session cookie on logout', async () => {
@@ -360,15 +478,18 @@ describe('editor API session guard', () => {
 
   it('rejects missing or stale sessions and accepts the current session', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'current-secret';
+    const loginResponse = await POST(createJsonRequest({ secret: 'current-secret' }));
+    const currentSessionCookie = extractSessionCookie(loginResponse);
+    const staleSession = await createLegacyEditorSessionValue('current-secret');
 
     const missingSessionResponse = await ensureEditorSession(
       new NextRequest('http://localhost/api/data/articles')
     );
     const staleSessionResponse = await ensureEditorSession(
-      await createSessionRequest('old-secret')
+      createRequestWithSession(`${EDITOR_SESSION_COOKIE}=${staleSession}`)
     );
     const currentSessionResponse = await ensureEditorSession(
-      await createSessionRequest('current-secret')
+      createRequestWithSession(currentSessionCookie)
     );
 
     expect(missingSessionResponse?.status).toBe(401);

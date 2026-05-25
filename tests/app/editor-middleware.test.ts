@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { config, middleware } from '@/middleware';
 import {
   EDITOR_SESSION_COOKIE,
-  createEditorSessionValue,
+  SESSION_NAMESPACE,
 } from '@/lib/editor-auth';
 import { restoreEnv } from '../helpers/api-route';
 
@@ -17,11 +17,22 @@ function resetEnv(): void {
   restoreEnv(ORIGINAL_ENV);
 }
 
+async function createLegacyEditorSessionValue(secret: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`${SESSION_NAMESPACE}:${secret.trim()}`)
+  );
+
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 async function createEditorRequest(path: string, secret?: string): Promise<NextRequest> {
   const headers = new Headers();
 
   if (secret) {
-    headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${await createEditorSessionValue(secret)}`);
+    headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${await createLegacyEditorSessionValue(secret)}`);
   }
 
   return new NextRequest(`http://localhost${path}`, {
@@ -60,13 +71,45 @@ describe('editor middleware', () => {
     expect(location).toBe('http://localhost/editor/login?next=%2Feditor%2Fsettings%3Ftab%3Dr2');
   });
 
-  it('allows editor requests with the current session cookie', async () => {
+  it('allows editor requests when the internal auth status accepts the session', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
 
     const response = await middleware(await createEditorRequest('/editor/navigation', 'editor-secret'));
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL('/api/editor-auth', 'http://localhost'),
+      expect.objectContaining({
+        headers: {
+          Cookie: expect.stringContaining(`${EDITOR_SESSION_COOKIE}=`),
+        },
+      })
+    );
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
+  });
+
+  it('rejects legacy deterministic editor cookies when the auth status does not accept them', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ authenticated: false }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await middleware(await createEditorRequest('/editor/navigation', 'editor-secret'));
+
+    expect(fetchMock).toHaveBeenCalled();
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost/editor/login?next=%2Feditor%2Fnavigation');
   });
 
   it('does not trust the request host for runtime auth checks in production', async () => {

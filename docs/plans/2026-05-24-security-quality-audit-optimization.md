@@ -56,7 +56,7 @@ Use the smallest secure path that preserves existing deployments:
   scripts so UI checks can be run consistently on local or test hosts.
 - Added a bounded `UI Smoke` GitHub Actions workflow that builds the app, runs
   the public and authenticated editor Playwright smoke scripts against
-  `next start`, and uploads
+  the standalone production server, and uploads
   screenshots and server logs as failure artifacts.
 - Hardened runtime data reads so corrupt or structurally invalid JSON fails
   explicitly instead of being treated as empty articles, default settings, or
@@ -135,6 +135,33 @@ deployments safe by default:
   not the default posture.
 - Architecture tests now pin the secure Compose default and reject the old
   placeholder production token example.
+
+## Editor Session Hardening Follow-up
+
+The next security review closed the remaining risk in the environment-token
+login path. Previously, `EDITOR_ACCESS_TOKEN` could be transformed into a
+deterministic session cookie, so a leaked cookie stayed reusable for as long as
+the secret remained unchanged.
+
+The chosen fix preserves the simple `EDITOR_ACCESS_TOKEN` login model while
+making issued sessions random and revocable:
+
+- Successful environment-token logins now create a random server-side session
+  and persist only its hash, salt, and expiry in memory.
+- Legacy deterministic session cookies are no longer accepted by the runtime
+  auth checker.
+- Logout clears the active environment-token session instead of leaving a
+  reusable derived cookie valid.
+- Login and first-use setup now share a lightweight in-memory failure limiter
+  that returns 429 after repeated bad attempts.
+- The failure limiter uses a global operation window instead of trusting
+  client-controlled forwarding headers.
+- Middleware session checks always go through `/api/editor-auth` when a cookie
+  is present, with `EDITOR_AUTH_INTERNAL_ORIGIN` configured in local Compose,
+  Docker docs, and CI UI smoke startup.
+- Deployment docs now call out that environment-token sessions are in-memory
+  and should be treated as single-process sessions unless sticky routing or a
+  shared session store is added.
 
 ## Verification
 

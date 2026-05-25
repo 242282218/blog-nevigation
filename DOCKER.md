@@ -13,6 +13,7 @@ EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
 
 docker run -p 3000:3000 \
   -e EDITOR_ACCESS_TOKEN="${EDITOR_ACCESS_TOKEN}" \
+  -e EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3000 \
   -e BLOG_DATA_ROOT=/var/lib/blog-navigation \
   -e COOKIE_SECURE=false \
   -e R2_BACKUP_ENABLED=false \
@@ -33,6 +34,10 @@ The compose stack uses a single bind mount: `./data:/var/lib/blog-navigation`.
 Runtime editor data stays outside the repository and can be migrated by copying
 the `data/` directory.
 Public blog articles and editor articles share the same runtime data under `/var/lib/blog-navigation/articles`.
+
+`EDITOR_ACCESS_TOKEN` logins issue random in-memory sessions. Run one app
+replica per data directory, or expect editor sessions to be invalidated when a
+request reaches a different process or after a restart.
 
 ## Portable data backup
 

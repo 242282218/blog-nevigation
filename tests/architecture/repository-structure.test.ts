@@ -50,10 +50,12 @@ describe('repository structure migration', () => {
         const nodeVersion = fs.readFileSync(resolveRepoPath('.nvmrc'), 'utf8').trim();
         const packageJson = JSON.parse(fs.readFileSync(resolveRepoPath('package.json'), 'utf8')) as {
             packageManager?: string;
+            scripts?: Record<string, string>;
         };
         const nextConfig = fs.readFileSync(resolveRepoPath('next.config.mjs'), 'utf8');
         const deployCompose = fs.readFileSync(resolveRepoPath('deploy', 'compose.prod.yaml'), 'utf8');
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
+        const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
         const r2Docs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'cloudflare-r2.md'), 'utf8');
         const serverDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'server.md'), 'utf8');
@@ -65,6 +67,7 @@ describe('repository structure migration', () => {
         expect(dockerIgnore).toMatch(/^\.env\.\*$/m);
         expect(nodeVersion).toBe('24');
         expect(packageJson.packageManager).toBe('npm@11.6.2');
+        expect(packageJson.scripts?.start).toBe('node scripts/start-standalone.mjs');
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
         expect(dockerfile).toContain('FROM node:24-alpine AS runner');
@@ -81,9 +84,11 @@ describe('repository structure migration', () => {
         expect(dockerEntrypoint).toContain('chown -R nextjs:nodejs "$DATA_ROOT"');
         expect(dockerEntrypoint).toContain('exec su-exec nextjs "$@"');
         expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
+        expect(localCompose).toContain('EDITOR_AUTH_INTERNAL_ORIGIN: ${EDITOR_AUTH_INTERNAL_ORIGIN:-http://127.0.0.1:3000}');
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
         expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(dockerDocs).toContain('EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"');
+        expect(dockerDocs).toContain('-e EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3000');
         expect(dockerDocs).toContain('-e COOKIE_SECURE=false');
         expect(dockerDocs).toContain('deploy/compose.prod.yaml');
         expect(dockerDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
@@ -115,6 +120,9 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).toContain('PREV_IMAGE_ID=$(docker inspect');
         expect(deployWorkflow).toContain('docker image inspect');
         expect(deployWorkflow).not.toMatch(/curl[^\n]+http:\/\/127\.0\.0\.1:3000\//);
+        expect(uiSmokeWorkflow).toContain('EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3210');
+        expect(uiSmokeWorkflow).toContain('npm run start');
+        expect(uiSmokeWorkflow).not.toContain('next start');
         expect(migrationDocs).toContain('data .env compose.prod.yaml');
         expect(migrationDocs).toContain('npm run data:verify -- /opt/blog-nevigation/data');
         expect(readme).toContain('data/settings/cloudflare-r2.json');

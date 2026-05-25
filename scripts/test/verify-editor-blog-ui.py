@@ -23,7 +23,7 @@ def main() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        context = create_authenticated_context(browser, BASE_URL, {"width": 1440, "height": 960}, "playwright-token")
+        context = create_authenticated_context(browser, BASE_URL, {"width": 1440, "height": 960}, "local-dev-only-secret")
         page = context.new_page()
         page.set_default_timeout(90000)
         page.set_default_navigation_timeout(90000)
@@ -58,7 +58,7 @@ def main() -> None:
 
         page.screenshot(path=str(SCREENSHOT_PATH), full_page=True)
 
-        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "playwright-token")
+        mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "local-dev-only-secret")
         mobile_page = mobile_context.new_page()
         mobile_page.set_default_timeout(90000)
         mobile_page.set_default_navigation_timeout(90000)

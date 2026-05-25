@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-    EDITOR_SESSION_COOKIE,
     getSafeEditorNextPath,
-    isValidEditorSession,
 } from '@/lib/editor-auth';
 
 const EDITOR_AUTH_STATUS_TIMEOUT_MS = 1500;
@@ -55,19 +53,15 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
-    const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
-
-    if (await isValidEditorSession(session)) {
-        return NextResponse.next();
-    }
-
     const authInternalOrigin = getEditorAuthInternalOrigin(request);
 
-    if (authInternalOrigin) {
+    const cookieHeader = request.headers.get('cookie') ?? '';
+
+    if (authInternalOrigin && cookieHeader) {
         const authStatusUrl = new URL('/api/editor-auth', authInternalOrigin);
         const authStatus = await fetchEditorAuthStatus(
             authStatusUrl,
-            request.headers.get('cookie') ?? ''
+            cookieHeader
         );
 
         if (typeof authStatus === 'object' && authStatus && 'authenticated' in authStatus) {

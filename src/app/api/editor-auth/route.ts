@@ -9,7 +9,6 @@ import {
     RuntimeEditorAuthAlreadyConfiguredError,
     RuntimeEditorAuthInvalidSecretError,
     createRuntimeEditorSession,
-    getCurrentRuntimeEditorSessionValue,
     initializeRuntimeEditorAuth,
     isRuntimeEditorAuthConfigured,
     isRuntimeEditorAuthSetupEnabled,
@@ -20,6 +19,11 @@ import {
     readRuntimeEditorAuthConfig,
     revokeRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
+import {
+    clearEditorAuthFailures,
+    getEditorAuthRateLimitResponse,
+    recordEditorAuthFailure,
+} from '@/lib/editor-auth-rate-limit';
 
 function createSessionResponse(sessionValue: string): NextResponse {
     const response = NextResponse.json({ success: true });
@@ -74,10 +78,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        const rateLimitResponse = getEditorAuthRateLimitResponse(request, 'login');
+
+        if (rateLimitResponse) {
+            return rateLimitResponse;
+        }
+
         const body = await request.json().catch(() => null);
         const secret = typeof body?.secret === 'string' ? body.secret : '';
 
         if (!(await isValidRuntimeEditorSecret(secret))) {
+            recordEditorAuthFailure(request, 'login');
             return NextResponse.json(
                 {
                     message: '口令错误。',
@@ -86,8 +97,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const sessionValue = getCurrentRuntimeEditorSessionValue()
-            ?? await createRuntimeEditorSession();
+        clearEditorAuthFailures(request, 'login');
+        const sessionValue = await createRuntimeEditorSession();
 
         if (!sessionValue) {
             return NextResponse.json(
@@ -129,6 +140,11 @@ export async function PUT(request: NextRequest) {
     const secret = typeof body?.secret === 'string' ? body.secret : '';
     const confirmSecret = typeof body?.confirmSecret === 'string' ? body.confirmSecret : '';
     const setupToken = typeof body?.setupToken === 'string' ? body.setupToken : '';
+    const rateLimitResponse = getEditorAuthRateLimitResponse(request, 'setup');
+
+    if (rateLimitResponse) {
+        return rateLimitResponse;
+    }
 
     if (!isRuntimeEditorAuthSetupEnabled()) {
         return NextResponse.json(
@@ -140,6 +156,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (!isValidRuntimeEditorAuthSetupToken(setupToken)) {
+        recordEditorAuthFailure(request, 'setup');
         return NextResponse.json(
             {
                 message: '初始化密钥错误。',
@@ -149,6 +166,7 @@ export async function PUT(request: NextRequest) {
     }
 
     if (!secret.trim() || secret.trim() !== confirmSecret.trim()) {
+        recordEditorAuthFailure(request, 'setup');
         return NextResponse.json(
             {
                 message: '两次输入的编辑口令不一致。',
@@ -159,6 +177,7 @@ export async function PUT(request: NextRequest) {
 
     try {
         const sessionValue = await initializeRuntimeEditorAuth(secret);
+        clearEditorAuthFailures(request, 'setup');
         return createSessionResponse(sessionValue);
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
@@ -177,6 +196,7 @@ export async function PUT(request: NextRequest) {
         }
 
         if (error instanceof RuntimeEditorAuthInvalidSecretError) {
+            recordEditorAuthFailure(request, 'setup');
             return NextResponse.json(
                 {
                     message: '编辑口令至少需要 8 个字符。',
