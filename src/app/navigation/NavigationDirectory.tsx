@@ -1,20 +1,21 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowRight, Layers, Search, X } from 'lucide-react';
+import { ArrowRight, Grid2X2, Search, X } from 'lucide-react';
 import { CategoryCard } from '@/app/components/navigation';
 import { EmptyState } from '@/app/components/ui';
 import type { Category } from '@/app/types/navigation';
 
 interface NavigationDirectoryProps {
     categories: Category[];
+    totalLinkCount: number;
 }
 
 function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
 }
 
-export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
+export function NavigationDirectory({ categories, totalLinkCount }: NavigationDirectoryProps) {
     const [activeSlug, setActiveSlug] = useState('all');
     const [query, setQuery] = useState('');
     const normalizedQuery = query.trim().toLowerCase();
@@ -36,69 +37,55 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
             .filter((category) => category.tools.length > 0 || !normalizedQuery);
     }, [activeSlug, categories, normalizedQuery]);
     const visibleToolCount = filteredCategories.reduce((total, category) => total + category.tools.length, 0);
-    const totalToolCount = categories.reduce((total, category) => total + category.tools.length, 0);
+    const activeLabel = activeCategory ? activeCategory.name : '全部分类';
 
     return (
-        <div className="space-y-10">
-            <section className="rounded-token-card border border-border bg-surface-elevated p-4 md:p-5">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_200px] lg:items-stretch">
-                    <div className="rounded-token-card border border-border-soft bg-bg p-3">
-                        <div className="mb-3 flex items-center justify-between gap-3 px-1">
-                            <div>
-                                <p className="font-mono text-xs uppercase tracking-token-caps text-accent">Find a resource</p>
-                                <p className="mt-1 text-sm text-muted">
-                                    搜索会同时匹配标题、简介、标签和域名。
-                                </p>
-                            </div>
-                            <span className="hidden rounded-token-full bg-accent-50 px-2.5 py-1 font-mono text-xs text-accent sm:inline-flex">
-                                live filter
-                            </span>
-                        </div>
-                        <label className="flex min-h-[52px] items-center gap-3 rounded-token-input border border-border bg-surface-elevated px-4 py-3 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
-                            <Search className="h-5 w-5 text-accent" />
-                            <input
-                                value={query}
-                                onChange={(event) => setQuery(event.target.value)}
-                                placeholder="搜索工具、标签或域名"
-                                className="min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-subtle"
-                            />
-                            {query ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setQuery('')}
-                                    className="rounded-token-full p-2 text-subtle transition-colors duration-token-fast hover:bg-warm-100 hover:text-fg"
-                                    aria-label="清空搜索"
-                                >
-                                    <X className="h-4 w-4" />
-                                </button>
-                            ) : null}
-                        </label>
-                    </div>
+        <div className="space-y-4">
+            <section className="rounded-token-card border border-border bg-surface-elevated p-2.5 md:p-3">
+                <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px] lg:items-stretch">
+                    <label className="flex min-h-10 items-center gap-2.5 rounded-token-input border border-border bg-bg px-3 py-2 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
+                        <Search className="h-4 w-4 text-accent" />
+                        <input
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder="搜索工具、标签或域名"
+                            className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
+                        />
+                        <span className="hidden font-mono text-[0.68rem] text-subtle sm:inline">title/tag/url</span>
+                        {query ? (
+                            <button
+                                type="button"
+                                onClick={() => setQuery('')}
+                                className="rounded-token-full p-1.5 text-subtle transition-colors duration-token-fast hover:bg-warm-100 hover:text-fg"
+                                aria-label="清空搜索"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        ) : null}
+                    </label>
 
-                    <div className="flex flex-col justify-between rounded-token-card border border-warm-700 bg-warm-900 p-5 text-white">
-                        <div className="flex items-center justify-between gap-3">
-                            <Layers className="h-5 w-5 text-accent-200" />
-                            <span className="font-mono text-xs text-white/55" aria-live="polite">
-                                {visibleToolCount}/{totalToolCount}
-                            </span>
+                    <div className="flex min-h-10 items-center justify-between gap-3 rounded-token-card border border-warm-700 bg-warm-900 px-3 py-2 text-white">
+                        <div className="flex min-w-0 items-center gap-2">
+                            <Grid2X2 className="h-4 w-4 text-accent-200" />
+                            <span className="truncate text-xs text-white/68">{activeLabel}</span>
                         </div>
-                        <div className="mt-6">
-                            <p className="font-serif text-3xl leading-none">{visibleToolCount}</p>
-                            <p className="mt-2 text-sm leading-relaxed text-white/68">
-                                {activeCategory ? activeCategory.name : '全部分类'}中可见链接
-                            </p>
+                        <div className="flex items-baseline gap-1.5">
+                            <span className="text-lg font-semibold leading-none">{visibleToolCount}</span>
+                            <span className="font-mono text-xs text-white/55" aria-live="polite">
+                                /{totalLinkCount}
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                <div className="mt-5 flex gap-2 overflow-x-auto pb-1" aria-label="导航分类">
+                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="导航分类">
                     <button
                         type="button"
                         onClick={() => setActiveSlug('all')}
                         aria-pressed={activeSlug === 'all'}
                         className={activeSlug === 'all'
-                            ? 'min-h-10 shrink-0 rounded-token-full bg-fg px-4 py-2 text-sm font-medium text-surface shadow-token-md'
-                            : 'min-h-10 shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
+                            ? 'min-h-8 shrink-0 rounded-token-full bg-fg px-3 py-1.5 text-xs font-medium text-surface shadow-token-md'
+                            : 'min-h-8 shrink-0 rounded-token-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
                     >
                         全部
                     </button>
@@ -109,11 +96,11 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                             onClick={() => setActiveSlug(category.slug)}
                             aria-pressed={activeSlug === category.slug}
                             className={activeSlug === category.slug
-                                ? 'min-h-10 shrink-0 rounded-token-full bg-fg px-4 py-2 text-sm font-medium text-surface shadow-token-md'
-                                : 'min-h-10 shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
+                                ? 'min-h-8 shrink-0 rounded-token-full bg-fg px-3 py-1.5 text-xs font-medium text-surface shadow-token-md'
+                                : 'min-h-8 shrink-0 rounded-token-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
                         >
                             {category.name}
-                            <span className="ml-2 font-mono text-xs opacity-60">{category.tools.length}</span>
+                            <span className="ml-1.5 font-mono text-[0.68rem] opacity-60">{category.tools.length}</span>
                         </button>
                     ))}
                 </div>
@@ -125,28 +112,28 @@ export function NavigationDirectory({ categories }: NavigationDirectoryProps) {
                     description="换一个关键词，或切换到全部分类再试。"
                 />
             ) : (
-                <div className="space-y-12">
+                <div className="space-y-6">
                     {filteredCategories.map((category, categoryIndex) => (
                         <section
                             key={category.slug}
                             className="scroll-mt-24"
                         >
-                            <div className="mb-5 grid gap-4 border-b border-border/70 pb-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                            <div className="mb-2 flex items-end justify-between gap-3 border-b border-border/70 pb-2">
                                 <div>
                                     <p className="font-mono text-xs tracking-token-caps text-accent uppercase">
                                         0{categoryIndex + 1} / {category.slug}
                                     </p>
-                                    <h2 className="mt-2 text-2xl font-semibold leading-tight tracking-token-normal text-fg md:text-3xl">
+                                    <h2 className="mt-0.5 text-lg font-semibold leading-tight tracking-token-normal text-fg">
                                         {category.name}
                                     </h2>
                                 </div>
-                                <div className="flex items-center gap-2 rounded-token-full border border-border-soft bg-surface/70 px-3 py-2 font-mono text-xs text-subtle">
+                                <div className="flex items-center gap-2 rounded-token-full border border-border-soft bg-surface/70 px-2.5 py-1.5 font-mono text-xs text-subtle">
                                     {category.tools.length} links
                                     <ArrowRight className="h-3.5 w-3.5" />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                                 {category.tools.map((tool) => (
                                     <a
                                         key={`${category.slug}-${tool.title}-${tool.url}`}

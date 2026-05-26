@@ -384,11 +384,19 @@ export function getRuntimeEditorAuthSetupToken(): string | null {
     return token ? token : null;
 }
 
+function isRuntimeEditorAuthAlreadyInitialized(): boolean {
+    return Boolean(getEditorAccessToken() || readRuntimeEditorAuthConfig());
+}
+
 export function isRuntimeEditorAuthSetupEnabled(): boolean {
-    return Boolean(
+    if (
         process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
         getRuntimeEditorAuthSetupToken()
-    );
+    ) {
+        return true;
+    }
+
+    return !isRuntimeEditorAuthAlreadyInitialized();
 }
 
 export function isRuntimeEditorAuthSetupTokenRequired(): boolean {
@@ -399,7 +407,10 @@ export function isValidRuntimeEditorAuthSetupToken(candidate: string): boolean {
     const setupToken = getRuntimeEditorAuthSetupToken();
 
     if (!setupToken) {
-        return process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true';
+        return (
+            process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
+            !isRuntimeEditorAuthAlreadyInitialized()
+        );
     }
 
     return safeEqual(candidate.trim(), setupToken);

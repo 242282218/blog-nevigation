@@ -21,4 +21,24 @@ describe('site settings parser', () => {
         expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, siteName: '' })).toBeNull();
         expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, heroDescription: undefined })).toBeNull();
     });
+
+    it('fills editable intro card fields for legacy settings files', () => {
+        const legacySettings = {
+            siteName: 'Legacy Site',
+            siteDescription: 'Legacy settings',
+            workspaceLabel: 'legacy / workspace',
+            heroTitleLineOne: 'Legacy',
+            heroTitleLineTwo: 'Settings',
+            heroDescription: 'Existing runtime settings should keep working.',
+        };
+
+        expect(parseSiteSettings(legacySettings)).toEqual({
+            ...DEFAULT_SITE_SETTINGS,
+            ...legacySettings,
+        });
+    });
+
+    it('rejects blank intro card values when they are present', () => {
+        expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, introCardTitle: ' ' })).toBeNull();
+    });
 });

@@ -8,8 +8,8 @@ interface SectionProps {
 
 const spacingMap = {
     sm: 'space-y-4',
-    md: 'space-y-8',
-    lg: 'space-y-16',
+    md: 'space-y-6',
+    lg: 'space-y-10',
 };
 
 export function Section({ children, className, spacing = 'md' }: SectionProps) {

@@ -114,8 +114,8 @@
   --card-bg: var(--surface);
   --card-border: var(--border);
   --card-radius: 8px;
-  --card-padding: 24px;
-  --card-padding-sm: 16px;
+  --card-padding: 18px;
+  --card-padding-sm: 12px;
   --card-shadow: none;
   --card-shadow-hover: 0 8px 24px rgba(26, 25, 23, 0.07);
 
@@ -134,14 +134,14 @@
   --badge-fg: var(--warm-600);
 
   /* Header */
-  --header-height: 64px;
+  --header-height: 56px;
   --header-bg: rgba(247, 248, 245, 0.9);
   --header-border: var(--border);
   --header-shadow: 0 1px 0 rgba(26, 25, 23, 0.06);
 
   /* Section */
-  --section-gap: 80px;
-  --section-gap-sm: 48px;
+  --section-gap: 40px;
+  --section-gap-sm: 28px;
 
   /* ============================================
    * SPACING SYSTEM (8px base)

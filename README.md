@@ -35,7 +35,18 @@ npm run dev
 
 ## 部署
 
-推送到 `main` 会自动通过 GitHub Actions 构建镜像并推送到 GHCR。
+推荐部署模型：Docker 镜像只在 GitHub Actions 构建，服务器只用 Git 拉取部署文件、
+拉取 GHCR 镜像并重启 Docker Compose。
+
+```text
+git push main -> GitHub Actions -> GHCR image
+                                      |
+                                      v
+server deploy/git-deploy.sh -> git checkout -> docker compose pull/up
+```
+
+服务器不需要执行 `npm install`、`npm run build` 或 `docker build`。
+
 详细部署文档见：
 
 - [服务器部署](docs/deploy/server.md)
@@ -43,46 +54,89 @@ npm run dev
 - [Cloudflare R2 备份](docs/deploy/cloudflare-r2.md)
 - [GitHub 加密备份](docs/deploy/github-backup.md)
 
-### 首次部署
+### GitHub 构建镜像
 
-生产部署目录只需要保留 `compose.prod.yaml`、`.env` 和 `data/`。迁移服务器时优先整体复制这三项，其中 `data/` 是唯一运行时数据边界。
+推送到 `main` 或 `master` 会触发 `.github/workflows/docker-deploy.yml`：
+
+- 执行依赖审计、lint、类型检查和单元测试。
+- 构建 Docker 镜像并做容器冒烟检查。
+- 非 PR 事件会推送镜像到 `ghcr.io/242282218/blog-nevigation`。
+- 默认镜像标签：`latest`、`main`、`main-<7位commit短哈希>`。
+
+如果 GHCR Package 没有设置为 Public，服务器需要先登录：
+
+```bash
+echo "<github-token>" | docker login ghcr.io -u "<github-user>" --password-stdin
+```
+
+### 首次服务器部署
+
+生产部署目录保留 `.env`、`data/`、`compose.prod.yaml` 和一个受控 Git checkout
+`repo/`。迁移服务器时优先复制 `.env` 与 `data/`，其中 `data/` 是唯一运行时数据边界。
 
 ```bash
 mkdir -p /opt/blog-nevigation && cd /opt/blog-nevigation
 
-# 下载生产 compose 文件
-curl -LO https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/compose.prod.yaml
+# 安装服务器侧部署脚本；脚本会在 ./repo 维护 Git checkout
+curl -fsSL https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/git-deploy.sh \
+  -o /opt/blog-nevigation/git-deploy.sh
+chmod +x /opt/blog-nevigation/git-deploy.sh
 
 # 创建 .env，使用随机编辑器访问口令
 EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
 cat > .env <<EOF
 EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
+APP_PORT=3000
 COOKIE_SECURE=true
+R2_BACKUP_ENABLED=false
 EOF
 
-# 创建数据目录并启动
-mkdir -p data
-docker compose -f compose.prod.yaml pull
-docker compose -f compose.prod.yaml up -d
+# 拉取 Git 部署文件和 GHCR 镜像，然后启动
+DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
 ```
 
 ### 更新部署
 
 ```bash
-cd /opt/blog-nevigation
-export DEPLOY_IMAGE=ghcr.io/242282218/blog-nevigation:main-<commit-sha>
-docker compose -f compose.prod.yaml pull
-docker compose -f compose.prod.yaml up -d
+DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
 ```
 
-> 镜像标签格式：`latest`、`main`、`main-<7位commit短哈希>`
+脚本默认部署当前 Git commit 对应的 `main-<7位commit短哈希>` 镜像，并在镜像尚未发布到
+GHCR 时自动短暂重试。需要临时部署分支浮动标签时可以显式覆盖：
+
+```bash
+IMAGE_TAG=main DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
+```
+
+需要更新部署脚本自身时重新下载一次：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/git-deploy.sh \
+  -o /opt/blog-nevigation/git-deploy.sh
+chmod +x /opt/blog-nevigation/git-deploy.sh
+```
 
 ### 查看状态
 
 ```bash
+cd /opt/blog-nevigation
 docker compose -f compose.prod.yaml ps
 docker compose -f compose.prod.yaml logs --tail=100 app
 ```
+
+### Git 部署脚本变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `DEPLOY_PATH` | 服务器部署目录 | `/opt/blog-nevigation` |
+| `REPO_URL` | 部署文件来源仓库 | `https://github.com/242282218/blog-nevigation.git` |
+| `DEPLOY_BRANCH` | 要部署的 Git 分支 | `main` |
+| `REPO_PATH` | 受控 Git checkout 目录 | `$DEPLOY_PATH/repo` |
+| `IMAGE_REPOSITORY` | GHCR 镜像仓库 | `ghcr.io/242282218/blog-nevigation` |
+| `IMAGE_TAG` | 要部署的镜像标签；不设置时用当前 commit 标签 | `$DEPLOY_BRANCH-<7位commit短哈希>` |
+| `PULL_ATTEMPTS` | 拉镜像重试次数 | `12` |
+| `PULL_RETRY_SECONDS` | 拉镜像重试间隔 | `10` |
+| `HEALTHCHECK_TIMEOUT_SECONDS` | 部署后健康检查超时 | `90` |
 
 ### 环境变量
 

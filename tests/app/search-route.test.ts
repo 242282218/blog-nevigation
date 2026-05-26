@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/search/route';
 import { readNavigationFromDisk } from '@/lib/editor-data-storage';
 import { getPosts } from '@/lib/markdown';
+import type { PostMeta } from '@/lib/markdown';
 
 vi.mock('@/lib/markdown', () => ({
   getPosts: vi.fn(),
@@ -17,6 +18,21 @@ const mockedReadNavigationFromDisk = vi.mocked(readNavigationFromDisk);
 
 function createRequest(query: string): NextRequest {
   return new NextRequest(`http://localhost/api/search?q=${encodeURIComponent(query)}`);
+}
+
+function createPost(partial: Partial<PostMeta> & Pick<PostMeta, 'slug' | 'slugArray' | 'title'>): PostMeta {
+  return {
+    date: '2026-05-24',
+    description: '',
+    tags: [],
+    kind: 'essay',
+    status: 'published',
+    featured: false,
+    readingMinutes: 1,
+    sourceLinks: [],
+    revisionNotes: [],
+    ...partial,
+  };
 }
 
 beforeEach(() => {
@@ -37,20 +53,20 @@ describe('search API', () => {
 
   it('normalizes case and whitespace when matching post results', async () => {
     mockedGetPosts.mockReturnValue([
-      {
+      createPost({
         slug: 'next-runtime-data',
         slugArray: ['next-runtime-data'],
         title: 'Next Runtime Data',
         date: '2026-05-24',
         description: 'Runtime data guide',
-      },
-      {
+      }),
+      createPost({
         slug: 'navigation',
         slugArray: ['navigation'],
         title: 'Navigation Index',
         date: '2026-05-23',
         description: 'Filtered system page',
-      },
+      }),
     ]);
     mockedReadNavigationFromDisk.mockReturnValue([]);
 
@@ -70,7 +86,7 @@ describe('search API', () => {
 
   it('returns tool matches and caps the combined result count', async () => {
     mockedGetPosts.mockReturnValue(
-      Array.from({ length: 6 }, (_, index) => ({
+      Array.from({ length: 6 }, (_, index) => createPost({
         slug: `search-post-${index}`,
         slugArray: [`search-post-${index}`],
         title: `Search Post ${index}`,

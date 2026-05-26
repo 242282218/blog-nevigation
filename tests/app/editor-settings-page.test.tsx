@@ -54,6 +54,13 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function setTextareaValue(input: HTMLTextAreaElement, value: string): void {
+  const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+
+  valueSetter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function getButtonByText(container: HTMLElement, text: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
     candidate.textContent?.includes(text)
@@ -294,6 +301,100 @@ describe('EditorSettingsPage', () => {
 
     expect(container.textContent).toContain('未配置持久化目录');
     expect(getButtonByText(container, '保存设置').disabled).toBe(true);
+  });
+
+  it('submits edited homepage intro card settings', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            accessKeyId: '',
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'default',
+            message: null,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          revision: 'next-settings-revision',
+          settings: {
+            ...DEFAULT_SITE_SETTINGS,
+            introCardTitle: '新的介绍标题',
+            introCardDescription: '新的介绍说明',
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('首页右侧介绍卡片');
+
+    const titleInput = container.querySelector<HTMLInputElement>('#settings-introCardTitle');
+    const descriptionInput = container.querySelector<HTMLTextAreaElement>('#settings-introCardDescription');
+    const form = container.querySelector<HTMLFormElement>('#site-settings-form');
+
+    await act(async () => {
+      if (titleInput) {
+        setInputValue(titleInput, '  新的介绍标题  ');
+      }
+
+      if (descriptionInput) {
+        setTextareaValue(descriptionInput, '  新的介绍说明  ');
+      }
+    });
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/data/settings',
+      expect.objectContaining({
+        method: 'PUT',
+        body: expect.any(String),
+      })
+    );
+
+    const body = JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string);
+
+    expect(body).toEqual(
+      expect.objectContaining({
+        revision: 'settings-revision',
+        settings: expect.objectContaining({
+          introCardTitle: '新的介绍标题',
+          introCardDescription: '新的介绍说明',
+          introCardMetaOneLabel: DEFAULT_SITE_SETTINGS.introCardMetaOneLabel,
+        }),
+      })
+    );
   });
 
   it('warns when settings page remote restore succeeds but the follow-up snapshot sync fails', async () => {

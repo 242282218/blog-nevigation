@@ -54,16 +54,16 @@ def main():
             )
             page.on("pageerror", lambda error: page_errors.append(str(error)))
 
-            verify_page(page, "/", "技术博客与常用链接的个人工作台", console_errors, page_errors)
+            verify_page(page, "/", "把解决过的问题，整理成下次还能用的笔记", console_errors, page_errors)
             page.screenshot(path=OUTPUT_DIR / f"home-{name}.png", full_page=True)
 
-            verify_page(page, "/blog", "技术文章归档", console_errors, page_errors)
+            verify_page(page, "/blog", "文章归档", console_errors, page_errors)
             page.screenshot(path=OUTPUT_DIR / f"blog-{name}.png", full_page=True)
 
             verify_page(
                 page,
-                "/posts/2025-02-28-react-performance-optimization",
-                "React 性能优化实践指南",
+                "/posts/2026-05-25-getting-started",
+                "从这里开始读这本公开笔记",
                 console_errors,
                 page_errors,
             )

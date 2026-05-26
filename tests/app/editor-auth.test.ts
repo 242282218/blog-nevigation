@@ -189,24 +189,45 @@ describe('editor auth API', () => {
     );
   });
 
-  it('keeps first-use initialization closed until a setup token or explicit flag is configured', async () => {
+  it('allows first-use initialization directly from the web when no editor auth exists', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
-    process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
-      createTempDirectoryWithCleanup('editor-auth-closed-'),
+    const configFilePath = path.join(
+      createTempDirectoryWithCleanup('editor-auth-web-setup-'),
       'editor-auth.json'
     );
 
-    const response = await PUT(createJsonRequest({
+    process.env.EDITOR_AUTH_CONFIG_FILE = configFilePath;
+
+    const statusBeforeSetup = await GET(new NextRequest('http://localhost/api/editor-auth'));
+
+    expect(await statusBeforeSetup.json()).toEqual({
+      configured: false,
+      authenticated: false,
+      setupEnabled: true,
+      setupTokenRequired: false,
+    });
+
+    const setupResponse = await PUT(createJsonRequest({
       secret: 'new-secret',
       confirmSecret: 'new-secret',
     }));
 
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining('首次初始化未启用'),
-      })
-    );
+    expect(setupResponse.status).toBe(200);
+    expect(await setupResponse.json()).toEqual({ success: true });
+    expect(fs.readFileSync(configFilePath, 'utf8')).not.toContain('new-secret');
+
+    const statusAfterSetup = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: {
+        Cookie: extractSessionCookie(setupResponse),
+      },
+    }));
+
+    expect(await statusAfterSetup.json()).toEqual({
+      configured: true,
+      authenticated: true,
+      setupEnabled: false,
+      setupTokenRequired: false,
+    });
   });
 
   it('rejects first-use initialization when the setup token is wrong', async () => {

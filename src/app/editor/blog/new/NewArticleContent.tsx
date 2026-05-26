@@ -12,6 +12,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   Columns2,
@@ -23,6 +24,7 @@ import {
   ListTree,
   Loader2,
   Save,
+  ShieldCheck,
 } from 'lucide-react';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { PreviewPane } from '../components/PreviewPane';
@@ -32,6 +34,14 @@ import { getDefaultTemplate, getTemplateById } from '@/lib/templates';
 import { Frontmatter } from '@/app/types/article';
 import { StatusMessage } from '@/app/components/ui';
 import { cn } from '@/lib/utils';
+import { getArticleKindLabel, getArticleStatusLabel, QUALITY_SEVERITY_LABELS } from '@/lib/article-metadata';
+import {
+  countMarkdownWords,
+  getArticleQualityChecks,
+  getMarkdownHeadings,
+  type ArticleQualityCheck,
+  type MarkdownHeading,
+} from '@/lib/article-quality';
 import { LogoutButton } from '../../components/LogoutButton';
 import {
   EditorButton,
@@ -50,11 +60,7 @@ interface StoredDraft {
   frontmatter: Frontmatter;
 }
 
-interface HeadingItem {
-  level: number;
-  text: string;
-  index: number;
-}
+type HeadingItem = MarkdownHeading;
 
 const DRAFT_VERSION = 1;
 const DRAFT_KEY_PREFIX = 'blog-editor-article-draft:v2';
@@ -71,9 +77,19 @@ function createSnapshot(frontmatter: Frontmatter, content: string): string {
 function normalizeFrontmatter(frontmatter: Frontmatter): Frontmatter {
   return {
     title: frontmatter.title.trim(),
+    slug: frontmatter.slug?.trim(),
     date: frontmatter.date || getTodayString(),
+    updatedDate: frontmatter.updatedDate || undefined,
     description: frontmatter.description.trim(),
+    kind: frontmatter.kind || 'essay',
+    status: frontmatter.status || 'draft',
+    category: frontmatter.category?.trim(),
+    series: frontmatter.series?.trim(),
+    featured: Boolean(frontmatter.featured),
     tags: frontmatter.tags.map((tag) => tag.trim()).filter(Boolean),
+    sourceLinks: frontmatter.sourceLinks || [],
+    revisionNotes: frontmatter.revisionNotes || [],
+    templateId: frontmatter.templateId,
   };
 }
 
@@ -148,42 +164,6 @@ function clearStoredDraft(key: string): void {
   }
 }
 
-function countMarkdownWords(value: string): number {
-  const content = value
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]*`/g, ' ')
-    .replace(/[#>*_[\]()!-]/g, ' ');
-  const cjkCount = content.match(/[\u4e00-\u9fff]/g)?.length || 0;
-  const wordCount = content
-    .replace(/[\u4e00-\u9fff]/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-
-  return cjkCount + wordCount;
-}
-
-function getHeadings(content: string): HeadingItem[] {
-  const headings: HeadingItem[] = [];
-  let index = 0;
-
-  for (const line of content.split('\n')) {
-    const match = /^(#{1,3})\s+(.+?)\s*#*$/.exec(line.trim());
-
-    if (match) {
-      headings.push({
-        level: match[1].length,
-        text: match[2],
-        index,
-      });
-    }
-
-    index += line.length + 1;
-  }
-
-  return headings;
-}
-
 function formatDraftTime(timestamp: number | null): string {
   if (!timestamp) {
     return '尚未生成';
@@ -219,6 +199,10 @@ export function NewArticleContent() {
     title: '',
     date: getTodayString(),
     description: '',
+    kind: 'essay',
+    status: 'draft',
+    category: '',
+    featured: false,
     tags: [],
   });
   const [editorMode, setEditorMode] = useState<EditorMode>('split');
@@ -234,8 +218,16 @@ export function NewArticleContent() {
   const isDirty = Boolean(savedSnapshot && currentSnapshot !== savedSnapshot);
   const wordCount = useMemo(() => countMarkdownWords(content), [content]);
   const readingMinutes = Math.max(1, Math.ceil(wordCount / 450));
-  const headings = useMemo(() => getHeadings(content), [content]);
+  const headings = useMemo(() => getMarkdownHeadings(content), [content]);
   const editingArticle = editId ? getArticleById(editId) : undefined;
+  const activeTemplate = useMemo(
+    () => getTemplateById(frontmatter.templateId || templateId || '') || undefined,
+    [frontmatter.templateId, templateId]
+  );
+  const qualityChecks = useMemo(
+    () => getArticleQualityChecks({ ...frontmatter, content }, activeTemplate),
+    [activeTemplate, content, frontmatter]
+  );
   const missingArticle = Boolean(editId && isLoaded && loadedArticleKey === articleKey && !editingArticle);
 
   useEffect(() => {
@@ -260,6 +252,10 @@ export function NewArticleContent() {
       title: '',
       date: getTodayString(),
       description: '',
+      kind: 'essay',
+      status: 'draft',
+      category: '',
+      featured: false,
       tags: [],
     };
 
@@ -274,9 +270,19 @@ export function NewArticleContent() {
       nextContent = article.content;
       nextFrontmatter = {
         title: article.title,
+        slug: article.slug,
         date: article.date,
+        updatedDate: article.updatedDate,
         description: article.description,
+        kind: article.kind || 'essay',
+        status: article.status || 'published',
+        category: article.category || '',
+        series: article.series || '',
+        featured: Boolean(article.featured),
         tags: article.tags,
+        sourceLinks: article.sourceLinks || [],
+        revisionNotes: article.revisionNotes || [],
+        templateId: article.templateId,
       };
     } else {
       const template = getTemplateById(templateId || 'blank') || getDefaultTemplate();
@@ -285,6 +291,12 @@ export function NewArticleContent() {
       nextFrontmatter = {
         ...template.frontmatter,
         date: getTodayString(),
+        updatedDate: template.defaultStatus === 'evergreen' ? getTodayString() : template.frontmatter.updatedDate,
+        kind: template.kind || template.frontmatter.kind || 'essay',
+        status: template.defaultStatus || template.frontmatter.status || 'draft',
+        category: template.frontmatter.category || '',
+        featured: Boolean(template.frontmatter.featured),
+        templateId: template.id,
       };
     }
 
@@ -352,6 +364,17 @@ export function NewArticleContent() {
       return;
     }
 
+    const failedBlockingCheck = getArticleQualityChecks(
+      { ...normalizedFrontmatter, content },
+      activeTemplate
+    ).find((check) => check.severity === 'blocking' && !check.passed);
+
+    if (failedBlockingCheck) {
+      setSaveState('error');
+      setStatusMessage({ tone: 'danger', text: `保存前需要处理：${failedBlockingCheck.label}。` });
+      return;
+    }
+
     setSaveState('saving');
     setStatusMessage(null);
 
@@ -386,16 +409,26 @@ export function NewArticleContent() {
       setSaveState('error');
       setStatusMessage({ tone: 'danger', text: '保存失败，请稍后重试。' });
     }
-  }, [content, createArticle, draftKey, editId, frontmatter, router, updateArticleContent]);
+  }, [activeTemplate, content, createArticle, draftKey, editId, frontmatter, router, updateArticleContent]);
 
   const handleExport = useCallback(() => {
     const normalizedFrontmatter = normalizeFrontmatter(frontmatter);
     const article = {
       id: editId || 'new',
       title: normalizedFrontmatter.title,
+      slug: normalizedFrontmatter.slug,
       date: normalizedFrontmatter.date,
+      updatedDate: normalizedFrontmatter.updatedDate,
       description: normalizedFrontmatter.description,
+      kind: normalizedFrontmatter.kind,
+      status: normalizedFrontmatter.status,
+      category: normalizedFrontmatter.category,
+      series: normalizedFrontmatter.series,
+      featured: normalizedFrontmatter.featured,
       tags: normalizedFrontmatter.tags,
+      sourceLinks: normalizedFrontmatter.sourceLinks,
+      revisionNotes: normalizedFrontmatter.revisionNotes,
+      templateId: normalizedFrontmatter.templateId,
       content,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -529,7 +562,9 @@ export function NewArticleContent() {
               headings={headings}
               isDirty={isDirty}
               onJumpToHeading={handleJumpToHeading}
+              qualityChecks={qualityChecks}
               readingMinutes={readingMinutes}
+              templateName={activeTemplate?.name}
               wordCount={wordCount}
             />
           </aside>
@@ -537,7 +572,9 @@ export function NewArticleContent() {
           <section className="overflow-hidden rounded-token-card border border-border bg-surface shadow-token-card">
             <div className="flex flex-col gap-3 border-b border-border bg-background/80 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
-                <p className="font-mono text-xs text-accent">{editId ? 'editing' : 'draft'}</p>
+                <p className="font-mono text-xs text-accent">
+                  {getArticleKindLabel(frontmatter.kind)} / {getArticleStatusLabel(frontmatter.status)}
+                </p>
                 <h2 className="truncate text-base font-semibold text-fg">
                   {frontmatter.title || '未命名草稿'}
                 </h2>
@@ -566,7 +603,11 @@ export function NewArticleContent() {
 
               {editorMode !== 'write' ? (
                 <div className="min-h-0">
-                  <PreviewPane content={deferredContent} />
+                  <PreviewPane
+                    content={deferredContent}
+                    frontmatter={frontmatter}
+                    readingMinutes={readingMinutes}
+                  />
                 </div>
               ) : null}
             </div>
@@ -619,6 +660,8 @@ function WritingInspector({
   headings,
   draftSavedAt,
   isDirty,
+  templateName,
+  qualityChecks,
   onJumpToHeading,
 }: {
   wordCount: number;
@@ -626,8 +669,13 @@ function WritingInspector({
   headings: HeadingItem[];
   draftSavedAt: number | null;
   isDirty: boolean;
+  templateName?: string;
+  qualityChecks: ArticleQualityCheck[];
   onJumpToHeading: (heading: HeadingItem) => void;
 }) {
+  const failedBlocking = qualityChecks.filter((check) => check.severity === 'blocking' && !check.passed).length;
+  const failedWarnings = qualityChecks.filter((check) => check.severity === 'warning' && !check.passed).length;
+
   return (
     <div className="space-y-4">
       <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
@@ -653,6 +701,55 @@ function WritingInspector({
 
       <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
         <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-subtle" />
+          <h2 className="text-base font-semibold text-fg">写作检查</h2>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          {templateName ? (
+            <span className="rounded-token-badge border border-border bg-background px-2 py-1 text-subtle">
+              {templateName}
+            </span>
+          ) : null}
+          <span className="rounded-token-badge bg-error-50 px-2 py-1 text-error-600">
+            {failedBlocking} 阻塞
+          </span>
+          <span className="rounded-token-badge bg-warning-50 px-2 py-1 text-warning-600">
+            {failedWarnings} 建议
+          </span>
+        </div>
+        <div className="mt-3 space-y-2">
+          {qualityChecks.slice(0, 10).map((check) => (
+            <div
+              key={check.id}
+              className={cn(
+                'flex items-start gap-2 rounded-token-card border px-3 py-2 text-sm',
+                check.passed
+                  ? 'border-success-light bg-success-50/60 text-success'
+                  : check.severity === 'blocking'
+                    ? 'border-error-200 bg-error-50 text-error-600'
+                    : 'border-warning-200 bg-warning-50 text-warning-600'
+              )}
+            >
+              {check.passed ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : check.severity === 'blocking' ? (
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <div className="min-w-0">
+                <p className="font-medium">{check.label}</p>
+                <p className="font-mono text-[11px] opacity-75">
+                  {QUALITY_SEVERITY_LABELS[check.severity]}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
+        <div className="flex items-center gap-2">
           <ListTree className="h-4 w-4 text-subtle" />
           <h2 className="text-base font-semibold text-fg">目录</h2>
         </div>
@@ -665,7 +762,7 @@ function WritingInspector({
                 onClick={() => onJumpToHeading(heading)}
                 className={cn(
                   'block w-full truncate rounded-token-sm px-2 py-1.5 text-left text-sm text-muted transition hover:bg-accent-50 hover:text-accent',
-                  heading.level === 2 ? 'pl-4' : heading.level === 3 ? 'pl-7' : ''
+                  heading.level === 2 ? 'pl-4' : heading.level === 3 ? 'pl-7' : heading.level === 4 ? 'pl-10' : ''
                 )}
               >
                 {heading.text}

@@ -21,7 +21,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'rounded-token-card border border-dashed border-border bg-surface px-6 py-12 text-center',
+        'rounded-token-card border border-dashed border-border bg-surface px-5 py-8 text-center',
         className
       )}
     >

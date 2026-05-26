@@ -76,7 +76,7 @@ describe('markdown runtime article source', () => {
     const posts = getPosts();
 
     expect(posts.length).toBeGreaterThan(0);
-    expect(posts.some((p) => p.title === 'React 性能优化实践指南')).toBe(true);
+    expect(posts.some((p) => p.title === '从这里开始读这本公开笔记')).toBe(true);
   });
 
   it('loads article detail content from BLOG_DATA_ROOT article data', async () => {
@@ -105,6 +105,29 @@ describe('markdown runtime article source', () => {
         }),
       })
     );
+  });
+
+  it('does not expose draft runtime articles publicly', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([
+      {
+        id: 'draft-article',
+        slug: 'draft-article',
+        title: 'Draft Article',
+        date: '2026-03-08',
+        description: 'Draft content',
+        tags: ['draft'],
+        content: '## Draft content',
+        status: 'draft',
+        createdAt: 3,
+        updatedAt: 4,
+      },
+    ]);
+
+    const { getPostBySlugArray, getPosts } = await importMarkdownModule();
+
+    expect(getPosts()).toEqual(expect.arrayContaining([]));
+    expect(getPosts().some((post) => post.title === 'Draft Article')).toBe(false);
+    expect(getPostBySlugArray(['draft-article'])).toBeNull();
   });
 
   it('uses stored runtime article slugs instead of deriving URLs from mutable titles', async () => {

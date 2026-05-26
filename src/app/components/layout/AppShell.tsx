@@ -20,7 +20,7 @@ export function AppShell({ children }: AppShellProps) {
                 className={cn(
                     isEditorRoute
                         ? 'min-h-screen'
-                        : 'mx-auto min-h-[calc(100vh-4rem)] max-w-token-wide px-4 py-8 sm:px-6 md:py-12'
+                        : 'mx-auto min-h-[calc(100vh-4rem)] max-w-token-wide px-4 py-5 sm:px-6 md:py-7'
                 )}
             >
                 {children}

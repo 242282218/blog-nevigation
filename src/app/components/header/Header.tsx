@@ -6,7 +6,7 @@ import { Navigation } from './Navigation';
 export function Header() {
     return (
         <header className="sticky top-0 z-token-sticky w-full border-b border-border bg-[var(--header-bg)] backdrop-blur-xl shadow-token-header">
-            <div className="mx-auto flex h-16 max-w-token-wide items-center justify-between gap-4 px-4 sm:px-6">
+            <div className="mx-auto flex h-14 max-w-token-wide items-center justify-between gap-4 px-4 sm:px-6">
                 <TypewriterLogo />
 
                 <div className="hidden flex-1 justify-center lg:flex">

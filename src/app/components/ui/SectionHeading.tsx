@@ -17,14 +17,14 @@ export function SectionHeading({
   className,
 }: SectionHeadingProps) {
   return (
-    <div className={cn('mb-5 flex items-end justify-between gap-4', className)}>
+    <div className={cn('mb-4 flex items-end justify-between gap-4', className)}>
       <div className="min-w-0">
         {eyebrow ? (
           <p className="font-mono text-xs uppercase tracking-token-caps text-accent">
             {eyebrow}
           </p>
         ) : null}
-        <h2 className="mt-1 text-2xl font-semibold text-fg">
+        <h2 className="mt-1 text-xl font-semibold text-fg">
           {title}
         </h2>
         {description ? (

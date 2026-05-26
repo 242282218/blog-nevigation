@@ -7,6 +7,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const repoRoot = process.cwd();
 const tempDirectories: string[] = [];
+const defaultIntroCardSettings = {
+  introCardEyebrow: 'about this desk',
+  introCardTitle: '你好，这里是我的公开工作日志',
+  introCardDescription:
+    '我把正在做、正在学、反复查的东西整理成可回看的笔记。每篇尽量保留背景、判断过程和最后可复用的结论。',
+  introCardMetaOneLabel: '最近在想',
+  introCardMetaOneValue: '前端体验、工程效率、AI 辅助开发',
+  introCardMetaTwoLabel: '写作原则',
+  introCardMetaTwoValue: '从真实问题出发，写清背景、取舍和后续',
+  introCardMetaThreeLabel: '适合阅读',
+  introCardMetaThreeValue: '快速了解我怎么做项目、选工具、处理问题',
+  introCardStartLabel: 'start here',
+};
 const validSettings = {
   siteName: 'Runtime Site',
   siteDescription: 'Runtime settings',
@@ -14,6 +27,7 @@ const validSettings = {
   heroTitleLineOne: 'Runtime',
   heroTitleLineTwo: 'Data',
   heroDescription: 'Runtime data scripts require complete settings when the file exists.',
+  ...defaultIntroCardSettings,
 };
 
 function createTempDirectory(): string {
@@ -65,6 +79,7 @@ describe('runtime data migration scripts', () => {
       heroTitleLineOne: 'Portable',
       heroTitleLineTwo: 'Runtime Data',
       heroDescription: 'Settings travel with the backup envelope.',
+      ...defaultIntroCardSettings,
     };
 
     writeJson(path.join(sourceRoot, 'articles', 'articles.json'), [article]);
@@ -813,13 +828,14 @@ describe('runtime data migration scripts', () => {
     );
 
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual({
-      siteName: '个人技术博客导航',
-      siteDescription: '个人技术文章、常用链接和知识入口',
-      workspaceLabel: 'workspace / blog-navigation',
-      heroTitleLineOne: '技术博客与常用链接的',
-      heroTitleLineTwo: '个人工作台',
+      siteName: '我的技术书桌',
+      siteDescription: '记录工程实践、项目复盘和长期资料的个人博客',
+      workspaceLabel: 'personal notes / engineering blog',
+      heroTitleLineOne: '把解决过的问题，',
+      heroTitleLineTwo: '整理成下次还能用的笔记',
       heroDescription:
-        '把长期文章、开发文档、工具入口和编辑数据放在一个轻量系统里，公开阅读和服务器迁移都保持清晰。',
+        '这里记录我在前端体验、工程效率、AI 工具和个人知识管理里的真实问题：背景、判断、试错和最后留下的做法。它不是教程合集，更像一份持续校准的工作日志。',
+      ...defaultIntroCardSettings,
     });
   });
 

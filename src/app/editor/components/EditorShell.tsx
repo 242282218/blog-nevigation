@@ -89,12 +89,12 @@ export function EditorTopBar({
 }: EditorTopBarProps) {
     return (
         <header className="sticky top-0 z-50 border-b border-border bg-background/90 shadow-header backdrop-blur-xl">
-            <div className={cn('mx-auto flex min-h-16 flex-col gap-3 px-4 py-3 sm:px-6 md:flex-row md:items-center md:justify-between', widthClass[width])}>
+            <div className={cn('mx-auto flex min-h-14 flex-col gap-2 px-4 py-2 sm:px-6 md:flex-row md:items-center md:justify-between', widthClass[width])}>
                 <div className="flex min-w-0 items-center gap-3 md:flex-1">
                     {backHref ? (
                         <Link
                             href={backHref}
-                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-token-card border border-border bg-surface text-muted transition hover:border-border hover:bg-surface hover:text-fg focus:ring-2 focus:ring-link focus:ring-offset-2"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-token-card border border-border bg-surface text-muted transition hover:border-border hover:bg-surface hover:text-fg focus:ring-2 focus:ring-link focus:ring-offset-2"
                             aria-label="返回"
                         >
                             <ArrowLeft className="h-4 w-4" />
@@ -102,7 +102,7 @@ export function EditorTopBar({
                     ) : null}
                     <div className="min-w-0">
                         <p className="font-mono text-xs text-accent">{eyebrow}</p>
-                        <h1 className="truncate text-xl font-semibold text-fg">{title}</h1>
+                        <h1 className="truncate text-lg font-semibold text-fg">{title}</h1>
                         {description ? (
                             <p className="mt-0.5 truncate text-sm text-muted">{description}</p>
                         ) : null}
@@ -120,7 +120,7 @@ export function EditorTopBar({
 
 export function EditorMain({ children, width = 'md', className }: EditorMainProps) {
     return (
-        <div className={cn('mx-auto px-4 py-8 sm:px-6', widthClass[width], className)}>
+        <div className={cn('mx-auto px-4 py-5 sm:px-6 md:py-6', widthClass[width], className)}>
             {children}
         </div>
     );
@@ -145,7 +145,7 @@ export function EditorButton({
         <button
             type={type}
             className={cn(
-                'inline-flex min-h-10 items-center justify-center gap-2 rounded-token-card border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 focus:ring-2 focus:ring-link focus:ring-offset-2',
+                'inline-flex min-h-9 items-center justify-center gap-2 rounded-token-card border px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 focus:ring-2 focus:ring-link focus:ring-offset-2',
                 buttonVariantClass[variant],
                 className
             )}
@@ -168,7 +168,7 @@ export function EditorLinkButton({
             href={href}
             aria-label={ariaLabel}
             className={cn(
-                'inline-flex min-h-10 items-center justify-center gap-2 rounded-token-card border px-3 py-2 text-sm font-medium transition focus:ring-2 focus:ring-link focus:ring-offset-2',
+                'inline-flex min-h-9 items-center justify-center gap-2 rounded-token-card border px-3 py-1.5 text-sm font-medium transition focus:ring-2 focus:ring-link focus:ring-offset-2',
                 buttonVariantClass[variant],
                 className
             )}
@@ -188,21 +188,21 @@ export function EditorActionCard({
     return (
         <Link
             href={href}
-            className="group block rounded-token-card border border-border bg-surface p-6 shadow-token-card transition hover:border-accent-300 hover:shadow-token-card-hover focus:ring-2 focus:ring-link focus:ring-offset-2"
+            className="group block rounded-token-card border border-border bg-surface p-4 shadow-token-card transition hover:border-accent-300 hover:shadow-token-card-hover focus:ring-2 focus:ring-link focus:ring-offset-2"
         >
             <div className="flex items-start justify-between gap-4">
-                <div className="rounded-lg border border-accent-200 bg-accent-50 p-3 text-accent">
-                    <Icon className="h-6 w-6" />
+                <div className="rounded-token-card border border-accent-200 bg-accent-50 p-2 text-accent">
+                    <Icon className="h-5 w-5" />
                 </div>
                 <span className="font-mono text-xs text-subtle transition group-hover:text-accent">
                     open
                 </span>
             </div>
-            <h2 className="mt-6 text-xl font-semibold text-fg transition-colors group-hover:text-accent">
+            <h2 className="mt-4 text-lg font-semibold text-fg transition-colors group-hover:text-accent">
                 {title}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-muted">{description}</p>
-            <div className="mt-5 text-sm font-medium text-accent">{action}</div>
+            <p className="mt-1.5 line-clamp-2 text-sm leading-6 text-muted">{description}</p>
+            <div className="mt-3 text-sm font-medium text-accent">{action}</div>
         </Link>
     );
 }

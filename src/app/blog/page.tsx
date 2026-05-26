@@ -2,13 +2,61 @@ import { getPosts } from '@/lib/markdown';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { ArrowRight, CalendarDays, FileText } from 'lucide-react';
+import { ArrowRight, CalendarDays, Clock3, FileText, Tag } from 'lucide-react';
 import { EmptyState, PageHero } from '@/app/components/ui';
+import { ARTICLE_KIND_OPTIONS, getArticleKindLabel } from '@/lib/article-metadata';
 
 export const dynamic = 'force-dynamic';
 
-export default function BlogPage() {
-    const articlePosts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
+function getSearchParamValue(value: string | string[] | undefined): string {
+    return Array.isArray(value) ? value[0] || '' : value || '';
+}
+
+function createFilterHref(filters: { kind?: string; category?: string }): string {
+    const params = new URLSearchParams();
+
+    if (filters.kind) {
+        params.set('kind', filters.kind);
+    }
+
+    if (filters.category) {
+        params.set('category', filters.category);
+    }
+
+    const query = params.toString();
+
+    return query ? `/blog?${query}` : '/blog';
+}
+
+function cnFilter(active: boolean): string {
+    return [
+        'rounded-token-button border px-3 py-1.5 text-sm font-medium transition',
+        active
+            ? 'border-accent-300 bg-accent-50 text-accent'
+            : 'border-border bg-background text-muted hover:border-accent-200 hover:text-accent',
+    ].join(' ');
+}
+
+export default async function BlogPage({
+    searchParams,
+}: {
+    searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+    const resolvedSearchParams = await searchParams;
+    const selectedKind = getSearchParamValue(resolvedSearchParams?.kind);
+    const selectedCategory = getSearchParamValue(resolvedSearchParams?.category);
+    const allArticlePosts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
+    const articlePosts = allArticlePosts.filter((post) => (
+        (!selectedKind || post.kind === selectedKind) &&
+        (!selectedCategory || post.category === selectedCategory)
+    ));
+    const featuredPosts = allArticlePosts
+        .filter((post) => post.featured)
+        .sort((first, second) => (second.updatedDate || second.date).localeCompare(first.updatedDate || first.date))
+        .slice(0, 3);
+    const categories = Array.from(
+        new Set(allArticlePosts.map((post) => post.category).filter(Boolean) as string[])
+    ).sort();
     const postsByYear = articlePosts.reduce((acc, post) => {
         const year = post.date ? post.date.split('-')[0] : '未分类';
 
@@ -22,13 +70,13 @@ export default function BlogPage() {
     const sortedYears = Object.keys(postsByYear).sort((a, b) => b.localeCompare(a));
 
     return (
-        <div className="space-y-token-section pb-16">
+        <div className="space-y-token-section pb-10">
             <PageHero
-                eyebrow={`${articlePosts.length} posts`}
-                title="技术文章归档"
-                description="按时间整理的工程实践、工具链记录和项目复盘。"
+                eyebrow={`${allArticlePosts.length} posts`}
+                title="文章归档"
+                description="按时间收起这些工程笔记、项目复盘和资料整理，方便回到某个阶段看当时为什么这么做。"
                 aside={(
-                    <div className="rounded-token-card border border-border bg-surface p-5">
+                    <div className="rounded-token-card border border-border bg-surface p-4">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-token-card border border-accent-200 bg-accent-50 text-accent">
                                 <FileText className="h-5 w-5" />
@@ -39,11 +87,78 @@ export default function BlogPage() {
                             </div>
                         </div>
                         <p className="mt-4 text-sm leading-relaxed text-muted">
-                            文章按年份聚合，适合快速回看某个阶段的技术选择和项目记录。
+                            文章按年份聚合，保留问题、背景和结论，适合回看一段时间里的技术选择。
                         </p>
                     </div>
                 )}
             />
+
+            {featuredPosts.length > 0 ? (
+                <section className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-semibold text-fg">精选入口</h2>
+                        <Link href={createFilterHref({})} className="text-sm font-medium text-accent hover:text-accent-800">
+                            查看全部
+                        </Link>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                        {featuredPosts.map((post) => (
+                            <Link
+                                key={post.slug}
+                                href={`/posts/${post.slug}`}
+                                className="rounded-token-card border border-border bg-surface p-4 shadow-token-card transition hover:border-accent-300 hover:bg-accent-50/40"
+                            >
+                                <p className="font-mono text-xs text-subtle">
+                                    {post.updatedDate ? `更新 ${post.updatedDate}` : post.date}
+                                </p>
+                                <h3 className="mt-2 line-clamp-2 font-semibold text-fg">{post.title}</h3>
+                                {post.description ? (
+                                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted">{post.description}</p>
+                                ) : null}
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+            ) : null}
+
+            <section className="flex flex-col gap-3 rounded-token-card border border-border bg-surface p-4 shadow-token-card">
+                <div className="flex flex-wrap gap-2">
+                    <Link
+                        href={createFilterHref({ category: selectedCategory })}
+                        className={cnFilter(!selectedKind)}
+                    >
+                        全部类型
+                    </Link>
+                    {ARTICLE_KIND_OPTIONS.filter((option) => allArticlePosts.some((post) => post.kind === option.value)).map((option) => (
+                        <Link
+                            key={option.value}
+                            href={createFilterHref({ kind: option.value, category: selectedCategory })}
+                            className={cnFilter(selectedKind === option.value)}
+                        >
+                            {option.label}
+                        </Link>
+                    ))}
+                </div>
+                {categories.length ? (
+                    <div className="flex flex-wrap gap-2">
+                        <Link
+                            href={createFilterHref({ kind: selectedKind })}
+                            className={cnFilter(!selectedCategory)}
+                        >
+                            全部分类
+                        </Link>
+                        {categories.map((category) => (
+                            <Link
+                                key={category}
+                                href={createFilterHref({ kind: selectedKind, category })}
+                                className={cnFilter(selectedCategory === category)}
+                            >
+                                {category}
+                            </Link>
+                        ))}
+                    </div>
+                ) : null}
+            </section>
 
             {articlePosts.length === 0 ? (
                 <EmptyState title="暂无文章" description="创建文章后，归档会按年份自动聚合。" />
@@ -64,7 +179,7 @@ export default function BlogPage() {
                         </div>
                     </aside>
 
-                    <div className="space-y-10">
+                    <div className="space-y-7">
                         {sortedYears.map((year) => (
                             <section
                                 key={year}
@@ -86,8 +201,9 @@ export default function BlogPage() {
                                             <Link
                                                 key={post.slug}
                                                 href={`/posts/${post.slug}`}
-                                                className="group grid gap-4 rounded-token-card border border-border bg-surface-elevated p-4 transition-shadow duration-token-normal ease-token-out hover:border-accent-200 hover:shadow-token-card-hover md:grid-cols-[120px_1fr_auto] md:items-center"
+                                                className="group relative grid gap-4 overflow-hidden rounded-token-card border border-border bg-surface-elevated p-4 pr-12 transition-all duration-token-normal ease-token-out hover:-translate-y-0.5 hover:border-accent-300 hover:bg-accent-50/40 hover:shadow-token-card-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:translate-y-0 md:grid-cols-[120px_1fr_auto] md:items-center md:pr-4"
                                             >
+                                                <span className="absolute inset-y-0 left-0 w-1 bg-accent opacity-0 transition-opacity duration-token-fast group-hover:opacity-100 group-focus-visible:opacity-100" />
                                                 <div className="flex items-center gap-2 font-mono text-xs text-subtle">
                                                     <CalendarDays className="h-4 w-4 text-subtle" />
                                                     {hasDate
@@ -95,6 +211,17 @@ export default function BlogPage() {
                                                         : 'UNTRACKED'}
                                                 </div>
                                                 <div className="min-w-0">
+                                                    <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-subtle">
+                                                        <span className="rounded-token-badge bg-accent-50 px-2 py-1 text-accent">
+                                                            {getArticleKindLabel(post.kind)}
+                                                        </span>
+                                                        {post.category ? <span>{post.category}</span> : null}
+                                                        <span className="inline-flex items-center gap-1">
+                                                            <Clock3 className="h-3.5 w-3.5" />
+                                                            {post.readingMinutes} 分钟
+                                                        </span>
+                                                        {post.updatedDate ? <span>修订 {post.updatedDate}</span> : null}
+                                                    </div>
                                                     <h3 className="text-base font-semibold text-fg transition-colors duration-token-fast group-hover:text-accent">
                                                         {post.title}
                                                     </h3>
@@ -103,8 +230,16 @@ export default function BlogPage() {
                                                             {post.description}
                                                         </p>
                                                     ) : null}
+                                                    {post.tags.length ? (
+                                                        <div className="mt-2 flex min-w-0 items-center gap-1 text-xs text-subtle">
+                                                            <Tag className="h-3.5 w-3.5 shrink-0" />
+                                                            <span className="truncate">{post.tags.slice(0, 4).join(', ')}</span>
+                                                        </div>
+                                                    ) : null}
                                                 </div>
-                                                <ArrowRight className="hidden h-4 w-4 text-subtle transition-all duration-token-fast group-hover:translate-x-1 group-hover:text-accent md:block" />
+                                                <span className="absolute right-4 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-token-button border border-border-soft bg-surface text-subtle transition-all duration-token-fast group-hover:translate-x-1 group-hover:border-accent-200 group-hover:text-accent md:static md:translate-y-0">
+                                                    <ArrowRight className="h-4 w-4" />
+                                                </span>
                                             </Link>
                                         );
                                     })}

@@ -1,10 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Info, Save, Settings } from 'lucide-react';
+import { Info, Save, Settings, UserRound } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import {
     createDefaultSiteSettings,
+    SITE_SETTING_KEYS,
     type SiteSettings,
 } from '@/lib/site-settings';
 import { CloudflareR2SettingsPanel } from './CloudflareR2SettingsPanel';
@@ -84,6 +85,16 @@ function validateSettings(settings: SiteSettings): string | null {
         ['heroTitleLineOne', '首页标题第一行'],
         ['heroTitleLineTwo', '首页标题第二行'],
         ['heroDescription', '首页描述'],
+        ['introCardEyebrow', '介绍卡片标签'],
+        ['introCardTitle', '介绍卡片标题'],
+        ['introCardDescription', '介绍卡片说明'],
+        ['introCardMetaOneLabel', '介绍卡片信息一标签'],
+        ['introCardMetaOneValue', '介绍卡片信息一内容'],
+        ['introCardMetaTwoLabel', '介绍卡片信息二标签'],
+        ['introCardMetaTwoValue', '介绍卡片信息二内容'],
+        ['introCardMetaThreeLabel', '介绍卡片信息三标签'],
+        ['introCardMetaThreeValue', '介绍卡片信息三内容'],
+        ['introCardStartLabel', '介绍卡片入口标签'],
     ];
 
     for (const [key, label] of entries) {
@@ -96,14 +107,13 @@ function validateSettings(settings: SiteSettings): string | null {
 }
 
 function trimSettings(settings: SiteSettings): SiteSettings {
-    return {
-        siteName: settings.siteName.trim(),
-        siteDescription: settings.siteDescription.trim(),
-        workspaceLabel: settings.workspaceLabel.trim(),
-        heroTitleLineOne: settings.heroTitleLineOne.trim(),
-        heroTitleLineTwo: settings.heroTitleLineTwo.trim(),
-        heroDescription: settings.heroDescription.trim(),
-    };
+    const nextSettings = {} as SiteSettings;
+
+    for (const key of SITE_SETTING_KEYS) {
+        nextSettings[key] = settings[key].trim();
+    }
+
+    return nextSettings;
 }
 
 export default function EditorSettingsPage() {
@@ -221,7 +231,7 @@ export default function EditorSettingsPage() {
     );
 
     return (
-        <EditorPage className="pb-20">
+        <EditorPage className="pb-12">
             <EditorTopBar
                 title="站点设置"
                 description="管理公开站点名称、描述和首页首屏文案"
@@ -243,7 +253,7 @@ export default function EditorSettingsPage() {
                 )}
             />
 
-            <EditorMain width="lg" className="space-y-6">
+            <EditorMain width="lg" className="space-y-4">
                 {message ? (
                     <StatusMessage tone={message.tone}>
                         {message.text}
@@ -251,14 +261,14 @@ export default function EditorSettingsPage() {
                 ) : null}
 
                 {isLoading ? (
-                    <EditorPanel className="p-6">
+                    <EditorPanel className="p-4">
                         <div className="animate-pulse text-sm text-subtle">加载站点设置...</div>
                     </EditorPanel>
                 ) : (
-                    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-                        <form id="site-settings-form" onSubmit={handleSubmit} className="space-y-6">
-                            <EditorPanel className="p-6">
-                                <div className="mb-6 flex items-start gap-3">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+                        <form id="site-settings-form" onSubmit={handleSubmit} className="space-y-4">
+                            <EditorPanel className="p-4">
+                                <div className="mb-4 flex items-start gap-3">
                                     <div className="rounded-token-card border border-accent-200 bg-accent-50 p-2 text-accent">
                                         <Settings className="h-5 w-5" />
                                     </div>
@@ -270,7 +280,7 @@ export default function EditorSettingsPage() {
                                     </div>
                                 </div>
 
-                                <div className="grid gap-5">
+                                <div className="grid gap-4">
                                     <SettingsField
                                         id="siteName"
                                         label="站点名称"
@@ -293,7 +303,7 @@ export default function EditorSettingsPage() {
                                         value={settings.workspaceLabel}
                                         onChange={updateField}
                                     />
-                                    <div className="grid gap-5 md:grid-cols-2">
+                                    <div className="grid gap-4 md:grid-cols-2">
                                         <SettingsField
                                             id="heroTitleLineOne"
                                             label="首页标题第一行"
@@ -319,15 +329,109 @@ export default function EditorSettingsPage() {
                                     />
                                 </div>
                             </EditorPanel>
+
+                            <EditorPanel className="p-4">
+                                <div className="mb-4 flex items-start gap-3">
+                                    <div className="rounded-token-card border border-accent-200 bg-accent-50 p-2 text-accent">
+                                        <UserRound className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-semibold text-fg">首页右侧介绍卡片</h2>
+                                        <p className="mt-1 text-sm leading-6 text-muted">
+                                            这些内容对应首页首屏右侧的介绍卡片。
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-4">
+                                    <SettingsField
+                                        id="introCardEyebrow"
+                                        label="卡片标签"
+                                        help="显示在卡片顶部的小型英文或短句。"
+                                        value={settings.introCardEyebrow}
+                                        onChange={updateField}
+                                    />
+                                    <SettingsField
+                                        id="introCardTitle"
+                                        label="卡片标题"
+                                        help="显示在头像图标旁的主标题。"
+                                        value={settings.introCardTitle}
+                                        onChange={updateField}
+                                    />
+                                    <SettingsField
+                                        id="introCardDescription"
+                                        label="卡片说明"
+                                        help="显示在标题下方的一段介绍。"
+                                        value={settings.introCardDescription}
+                                        onChange={updateField}
+                                        multiline
+                                    />
+                                    <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
+                                        <SettingsField
+                                            id="introCardMetaOneLabel"
+                                            label="信息一标签"
+                                            help="左侧短标签。"
+                                            value={settings.introCardMetaOneLabel}
+                                            onChange={updateField}
+                                        />
+                                        <SettingsField
+                                            id="introCardMetaOneValue"
+                                            label="信息一内容"
+                                            help="右侧说明内容。"
+                                            value={settings.introCardMetaOneValue}
+                                            onChange={updateField}
+                                        />
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
+                                        <SettingsField
+                                            id="introCardMetaTwoLabel"
+                                            label="信息二标签"
+                                            help="左侧短标签。"
+                                            value={settings.introCardMetaTwoLabel}
+                                            onChange={updateField}
+                                        />
+                                        <SettingsField
+                                            id="introCardMetaTwoValue"
+                                            label="信息二内容"
+                                            help="右侧说明内容。"
+                                            value={settings.introCardMetaTwoValue}
+                                            onChange={updateField}
+                                        />
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
+                                        <SettingsField
+                                            id="introCardMetaThreeLabel"
+                                            label="信息三标签"
+                                            help="左侧短标签。"
+                                            value={settings.introCardMetaThreeLabel}
+                                            onChange={updateField}
+                                        />
+                                        <SettingsField
+                                            id="introCardMetaThreeValue"
+                                            label="信息三内容"
+                                            help="右侧说明内容。"
+                                            value={settings.introCardMetaThreeValue}
+                                            onChange={updateField}
+                                        />
+                                    </div>
+                                    <SettingsField
+                                        id="introCardStartLabel"
+                                        label="入口标签"
+                                        help="显示在最新文章入口上方的小型文字。"
+                                        value={settings.introCardStartLabel}
+                                        onChange={updateField}
+                                    />
+                                </div>
+                            </EditorPanel>
                         </form>
 
-                        <aside className="space-y-6">
-                            <EditorPanel className="p-5">
+                        <aside className="space-y-4">
+                            <EditorPanel className="p-4">
                                 <div className="flex items-center gap-2 text-sm font-medium text-fg">
                                     <Info className="h-4 w-4 text-accent" />
                                     运行时存储
                                 </div>
-                                <dl className="mt-4 space-y-3 text-sm">
+                                <dl className="mt-3 space-y-3 text-sm">
                                     <div>
                                         <dt className="font-mono text-xs text-subtle">status</dt>
                                         <dd className="mt-1 text-muted">
@@ -343,7 +447,7 @@ export default function EditorSettingsPage() {
                                 </dl>
                             </EditorPanel>
 
-                            <EditorPanel className="p-5">
+                            <EditorPanel className="p-4">
                                 <p className="font-mono text-xs text-accent">backup scope</p>
                                 <h2 className="mt-1 text-base font-semibold text-fg">备份会包含设置</h2>
                                 <p className="mt-2 text-sm leading-6 text-muted">

@@ -18,6 +18,7 @@ import {
     writeArticlesToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
+import type { Article } from '@/app/types/article';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
 const tempDirectories: string[] = [];
@@ -34,7 +35,7 @@ function writeText(filePath: string, value: string): void {
     fs.writeFileSync(filePath, value, 'utf8');
 }
 
-function createArticle(id: string, title: string) {
+function createArticle(id: string, title: string): Article {
     const article = {
         id,
         title,
@@ -49,6 +50,11 @@ function createArticle(id: string, title: string) {
     return {
         ...article,
         slug: createArticleSlug(article),
+        kind: 'essay',
+        status: 'published',
+        featured: false,
+        sourceLinks: [],
+        revisionNotes: [],
     };
 }
 

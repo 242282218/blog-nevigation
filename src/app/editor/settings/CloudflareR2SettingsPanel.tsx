@@ -308,8 +308,8 @@ export function CloudflareR2SettingsPanel() {
             onSubmit={handleSubmit}
             className="lg:col-span-2"
         >
-            <EditorPanel className="p-6">
-                <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <EditorPanel className="p-4">
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="flex items-start gap-3">
                         <div className="rounded-token-card border border-accent-200 bg-accent-50 p-2 text-accent">
                             <Cloud className="h-5 w-5" />
@@ -345,12 +345,12 @@ export function CloudflareR2SettingsPanel() {
                 </div>
 
                 {message ? (
-                    <div className="mb-5">
+                    <div className="mb-4">
                         <StatusMessage tone={message.tone}>{message.text}</StatusMessage>
                     </div>
                 ) : null}
 
-                <div className="mb-5 grid grid-cols-2 gap-3 rounded-token-card border border-border-soft bg-background p-4 text-sm md:grid-cols-4">
+                <div className="mb-4 grid grid-cols-2 gap-3 rounded-token-card border border-border-soft bg-background p-3 text-sm md:grid-cols-4">
                     <div>
                         <p className="font-mono text-xs text-subtle">status</p>
                         <p className="mt-1 text-muted">
@@ -374,12 +374,12 @@ export function CloudflareR2SettingsPanel() {
                 </div>
 
                 {status?.message ? (
-                    <div className="mb-5">
+                    <div className="mb-4">
                         <StatusMessage tone="info">{status.message}</StatusMessage>
                     </div>
                 ) : null}
 
-                <div className="grid gap-5">
+                <div className="grid gap-4">
                     <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted">
                         <input
                             type="checkbox"
@@ -393,7 +393,7 @@ export function CloudflareR2SettingsPanel() {
                         </span>
                     </label>
 
-                    <div className="grid gap-5 md:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-2">
                         <TextField
                             id="r2-account-id"
                             label="Account ID"

@@ -3,7 +3,13 @@
 import { useCallback } from 'react';
 import type { Article, Frontmatter } from '@/app/types/article';
 import { useSyncedResource } from '@/app/hooks/useSyncedResource';
-import { createArticleSlug, filterArticlesData, parseArticlesData } from '@/lib/article-data';
+import {
+  createArticleSlug,
+  filterArticlesData,
+  normalizeStoredSlug,
+  parseArticlesData,
+} from '@/lib/article-data';
+import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
 import {
   parseMarkdownWithFrontmatter,
   serializeMarkdownWithFrontmatter,
@@ -172,14 +178,24 @@ export function useLocalArticles() {
     const newArticle: Article = {
       id: generateId(),
       title: frontmatter.title || 'Untitled',
+      slug: normalizeStoredSlug(frontmatter.slug) || undefined,
       date: frontmatter.date || getTodayString(),
+      updatedDate: frontmatter.updatedDate || undefined,
       description: frontmatter.description || '',
+      kind: normalizeArticleKind(frontmatter.kind),
+      status: normalizeArticleStatus(frontmatter.status, 'draft'),
+      category: frontmatter.category?.trim() || undefined,
+      series: frontmatter.series?.trim() || undefined,
+      featured: Boolean(frontmatter.featured),
       tags: frontmatter.tags || [],
       content,
       createdAt: now,
       updatedAt: now,
+      sourceLinks: frontmatter.sourceLinks || [],
+      revisionNotes: frontmatter.revisionNotes || [],
+      templateId: frontmatter.templateId,
     };
-    newArticle.slug = createArticleSlug(newArticle);
+    newArticle.slug = newArticle.slug || createArticleSlug(newArticle);
 
     setArticles((previous) => [newArticle, ...previous]);
     return newArticle;
@@ -211,10 +227,20 @@ export function useLocalArticles() {
     (id: string, frontmatter: Frontmatter, content: string): Article | null =>
       updateArticle(id, {
         title: frontmatter.title,
+        slug: normalizeStoredSlug(frontmatter.slug) || undefined,
         date: frontmatter.date,
+        updatedDate: frontmatter.updatedDate || undefined,
         description: frontmatter.description,
+        kind: normalizeArticleKind(frontmatter.kind),
+        status: normalizeArticleStatus(frontmatter.status, 'draft'),
+        category: frontmatter.category?.trim() || undefined,
+        series: frontmatter.series?.trim() || undefined,
+        featured: Boolean(frontmatter.featured),
         tags: frontmatter.tags,
         content,
+        sourceLinks: frontmatter.sourceLinks || [],
+        revisionNotes: frontmatter.revisionNotes || [],
+        templateId: frontmatter.templateId,
       }),
     [updateArticle]
   );
@@ -243,8 +269,18 @@ export function useLocalArticles() {
       serializeMarkdownWithFrontmatter({
         title: article.title,
         date: article.date,
+        updatedDate: article.updatedDate,
         description: article.description,
+        slug: article.slug,
+        kind: article.kind,
+        status: article.status,
+        category: article.category,
+        series: article.series,
+        featured: article.featured,
         tags: article.tags,
+        sourceLinks: article.sourceLinks,
+        revisionNotes: article.revisionNotes,
+        templateId: article.templateId,
         content: article.content,
       }),
     []
@@ -263,9 +299,19 @@ export function useLocalArticles() {
         return createArticle(
           {
             title: parsed.frontmatter.title || 'Imported Article',
+            slug: parsed.frontmatter.slug,
             date: parsed.frontmatter.date || getTodayString(),
+            updatedDate: parsed.frontmatter.updatedDate,
             description: parsed.frontmatter.description || '',
+            kind: parsed.frontmatter.kind,
+            status: parsed.frontmatter.status || 'draft',
+            category: parsed.frontmatter.category,
+            series: parsed.frontmatter.series,
+            featured: parsed.frontmatter.featured,
             tags: parsed.frontmatter.tags || [],
+            sourceLinks: parsed.frontmatter.sourceLinks || [],
+            revisionNotes: parsed.frontmatter.revisionNotes || [],
+            templateId: parsed.frontmatter.templateId,
           },
           parsed.content
         );

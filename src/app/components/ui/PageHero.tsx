@@ -25,27 +25,27 @@ export function PageHero({
   return (
     <section
       className={cn(
-        'grid gap-8 border-b border-border pb-10 md:pb-12',
+        'grid gap-5 border-b border-border pb-6 md:gap-6 md:pb-8',
         gridClass,
         className
       )}
     >
       <div className="min-w-0">
         {eyebrow ? (
-          <div className="mb-4 font-mono text-xs uppercase tracking-token-caps text-accent">
+          <div className="mb-3 font-mono text-xs uppercase tracking-token-caps text-accent">
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="max-w-4xl text-4xl font-semibold leading-tight tracking-token-normal text-fg md:text-5xl">
+        <h1 className="max-w-4xl text-3xl font-semibold leading-tight tracking-token-normal text-fg md:text-4xl">
           {title}
         </h1>
         {description ? (
-          <div className="mt-5 max-w-2xl text-base leading-relaxed text-muted md:text-lg">
+          <div className="mt-3 max-w-2xl text-sm leading-relaxed text-muted md:text-base">
             {description}
           </div>
         ) : null}
         {actions ? (
-          <div className="mt-8 flex flex-wrap gap-3">
+          <div className="mt-5 flex flex-wrap gap-2.5">
             {actions}
           </div>
         ) : null}

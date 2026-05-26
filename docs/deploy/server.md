@@ -8,17 +8,26 @@ This is the recommended production path for the project.
 GitHub main -> GitHub Actions -> GHCR image -> server Docker Compose
                                       |
                                       v
+                         git-deploy.sh updates deploy files
+                                      |
+                                      v
                          ./data mounted as /var/lib/blog-navigation
 ```
 
 Cloudflare can sit in front of the server for DNS, TLS, and CDN. Runtime data
 stays on the server filesystem and can be mirrored to R2.
 
+The server does not build the application image. It only keeps a managed Git
+checkout for deployment files and pulls the image built by GitHub Actions.
+
 ## First Deploy
 
 ```bash
 mkdir -p /opt/blog-nevigation && cd /opt/blog-nevigation
-curl -LO https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/compose.prod.yaml
+
+curl -fsSL https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/git-deploy.sh \
+  -o /opt/blog-nevigation/git-deploy.sh
+chmod +x /opt/blog-nevigation/git-deploy.sh
 
 EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
 
@@ -29,9 +38,7 @@ COOKIE_SECURE=true
 R2_BACKUP_ENABLED=false
 EOF
 
-mkdir -p data
-docker compose -f compose.prod.yaml pull
-docker compose -f compose.prod.yaml up -d
+DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
 ```
 
 If the first start is on a private HTTP-only host, set `COOKIE_SECURE=false`
@@ -55,15 +62,21 @@ trusting the public request Host header.
 ## Update
 
 ```bash
-cd /opt/blog-nevigation
-export DEPLOY_IMAGE=ghcr.io/242282218/blog-nevigation:main-<commit-sha>
-docker compose -f compose.prod.yaml pull
-docker compose -f compose.prod.yaml up -d
+DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
+```
+
+By default the script deploys the exact image tag for the current Git commit,
+for example `main-<7-char-sha>`. Use `IMAGE_TAG=main` only when you explicitly
+want the branch floating tag:
+
+```bash
+IMAGE_TAG=main DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh
 ```
 
 ## Health Check
 
 ```bash
+cd /opt/blog-nevigation
 docker compose -f compose.prod.yaml ps
 docker compose -f compose.prod.yaml logs --tail=100 app
 HEALTHCHECK_PORT=$(docker compose -f compose.prod.yaml port app 3000 | awk -F: 'END {print $NF}')
@@ -78,6 +91,7 @@ The deployment directory should contain:
 compose.prod.yaml
 .env
 data/
+repo/
 ```
 
 `data/` is the migration boundary. It contains article data, navigation data,
@@ -101,6 +115,12 @@ DEPLOY_PATH
 ```
 
 Manual deployment uses the `workflow_dispatch` trigger with `deploy=true`.
+
+Server-side Git deployment can also be run directly over SSH:
+
+```bash
+ssh root@your-server 'DEPLOY_PATH=/opt/blog-nevigation /opt/blog-nevigation/git-deploy.sh'
+```
 
 The deployment job refuses to start if the build did not publish an immutable
 image digest. After Docker Compose restarts the app, the workflow checks the

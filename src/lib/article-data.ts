@@ -1,4 +1,5 @@
-import type { Article } from '@/app/types/article';
+import type { Article, ArticleRevisionNote, ArticleSourceLink } from '@/app/types/article';
+import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -12,7 +13,19 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
-function normalizeSlugPart(value: string): string {
+function isOptionalString(value: unknown): value is string | undefined {
+    return value === undefined || typeof value === 'string';
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function normalizeOptionalBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
+export function normalizeSlugPart(value: string): string {
     return value
         .trim()
         .normalize('NFKD')
@@ -35,7 +48,7 @@ export function createArticleSlug(article: Pick<Article, 'id' | 'title'>): strin
     return `${base}-${normalizeIdSuffix(article.id)}`;
 }
 
-function normalizeStoredSlug(value: unknown): string | null {
+export function normalizeStoredSlug(value: unknown): string | null {
     if (typeof value !== 'string') {
         return null;
     }
@@ -58,8 +71,64 @@ export function isArticle(value: unknown): value is Article {
         typeof value.content === 'string' &&
         isFiniteNumber(value.createdAt) &&
         isFiniteNumber(value.updatedAt) &&
-        (value.slug === undefined || typeof value.slug === 'string')
+        isOptionalString(value.slug) &&
+        isOptionalString(value.kind) &&
+        isOptionalString(value.status) &&
+        isOptionalString(value.category) &&
+        isOptionalString(value.series) &&
+        isOptionalString(value.updatedDate) &&
+        isOptionalString(value.templateId) &&
+        (value.featured === undefined || typeof value.featured === 'boolean') &&
+        (value.sourceLinks === undefined || Array.isArray(value.sourceLinks)) &&
+        (value.revisionNotes === undefined || Array.isArray(value.revisionNotes))
     );
+}
+
+function normalizeSourceLinks(value: unknown): ArticleSourceLink[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((item) => {
+        if (
+            !isRecord(item) ||
+            typeof item.title !== 'string' ||
+            typeof item.url !== 'string' ||
+            !item.title.trim() ||
+            !item.url.trim()
+        ) {
+            return [];
+        }
+
+        return [{
+            title: item.title.trim(),
+            url: item.url.trim(),
+            ...(typeof item.note === 'string' && item.note.trim() ? { note: item.note.trim() } : {}),
+        }];
+    });
+}
+
+function normalizeRevisionNotes(value: unknown): ArticleRevisionNote[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((item) => {
+        if (
+            !isRecord(item) ||
+            typeof item.date !== 'string' ||
+            typeof item.note !== 'string' ||
+            !item.date.trim() ||
+            !item.note.trim()
+        ) {
+            return [];
+        }
+
+        return [{
+            date: item.date.trim(),
+            note: item.note.trim(),
+        }];
+    });
 }
 
 function normalizeArticle(value: unknown): Article | null {
@@ -70,6 +139,15 @@ function normalizeArticle(value: unknown): Article | null {
     return {
         ...value,
         slug: normalizeStoredSlug(value.slug) ?? createArticleSlug(value),
+        kind: normalizeArticleKind(value.kind),
+        status: normalizeArticleStatus(value.status),
+        featured: normalizeOptionalBoolean(value.featured) ?? false,
+        sourceLinks: normalizeSourceLinks(value.sourceLinks),
+        revisionNotes: normalizeRevisionNotes(value.revisionNotes),
+        ...(normalizeOptionalString(value.category) ? { category: normalizeOptionalString(value.category) } : {}),
+        ...(normalizeOptionalString(value.series) ? { series: normalizeOptionalString(value.series) } : {}),
+        ...(normalizeOptionalString(value.updatedDate) ? { updatedDate: normalizeOptionalString(value.updatedDate) } : {}),
+        ...(normalizeOptionalString(value.templateId) ? { templateId: normalizeOptionalString(value.templateId) } : {}),
     };
 }
 

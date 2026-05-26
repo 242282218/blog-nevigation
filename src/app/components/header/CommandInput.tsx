@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Compass, FileText, Lock, Search, Settings } from 'lucide-react';
+import { Compass, FileText, KeyRound, Lock, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
     isSearchQueryAllowed,
@@ -27,6 +27,13 @@ interface CommandInputProps {
     compact?: boolean;
     className?: string;
 }
+
+type EditorAuthStatus = {
+    configured: boolean;
+    authenticated: boolean;
+    setupEnabled: boolean;
+    setupTokenRequired: boolean;
+};
 
 const placeholders = [
     '搜索 React 优化...',
@@ -103,6 +110,9 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
     const [charIndex, setCharIndex] = useState(0);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showAdminMenu, setShowAdminMenu] = useState(false);
+    const [editorAuthStatus, setEditorAuthStatus] = useState<EditorAuthStatus | null>(null);
+    const [isEditorAuthStatusLoading, setIsEditorAuthStatusLoading] = useState(false);
+    const [editorAuthStatusError, setEditorAuthStatusError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const hasSearchableQuery = isSearchQueryAllowed(normalizeSearchQuery(query));
@@ -111,6 +121,8 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
         setIsOpen(false);
         setQuery('');
         setShowAdminMenu(false);
+        setEditorAuthStatus(null);
+        setEditorAuthStatusError(null);
     }, []);
 
     useEffect(() => {
@@ -222,6 +234,59 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
     }, [query]);
 
     useEffect(() => {
+        if (!showAdminMenu) {
+            return;
+        }
+
+        let isMounted = true;
+
+        async function loadEditorAuthStatus() {
+            setIsEditorAuthStatusLoading(true);
+            setEditorAuthStatusError(null);
+
+            try {
+                const response = await fetch('/api/editor-auth', {
+                    credentials: 'include',
+                    cache: 'no-store',
+                });
+                const payload = (await response.json().catch(() => null)) as Partial<EditorAuthStatus> & {
+                    message?: string;
+                } | null;
+
+                if (!response.ok) {
+                    throw new Error(payload?.message || '编辑区状态加载失败');
+                }
+
+                if (isMounted) {
+                    setEditorAuthStatus({
+                        configured: Boolean(payload?.configured),
+                        authenticated: Boolean(payload?.authenticated),
+                        setupEnabled: Boolean(payload?.setupEnabled),
+                        setupTokenRequired: Boolean(payload?.setupTokenRequired),
+                    });
+                }
+            } catch (error) {
+                if (isMounted) {
+                    setEditorAuthStatus(null);
+                    setEditorAuthStatusError(
+                        error instanceof Error ? error.message : '编辑区状态加载失败'
+                    );
+                }
+            } finally {
+                if (isMounted) {
+                    setIsEditorAuthStatusLoading(false);
+                }
+            }
+        }
+
+        loadEditorAuthStatus();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [showAdminMenu]);
+
+    useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
                 closeSearch();
@@ -329,50 +394,81 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                     <span>受保护编辑区</span>
                                 </div>
                             </div>
-                            <div className="p-2 space-y-1">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeSearch();
-                                        router.push('/editor/blog');
-                                    }}
-                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
-                                >
-                                    <FileText className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
-                                    <div className="text-left">
-                                        <div className="text-sm font-medium text-fg">写文章</div>
-                                        <div className="text-xs text-subtle">创建新的博客文章</div>
-                                    </div>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeSearch();
-                                        router.push('/editor/navigation');
-                                    }}
-                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
-                                >
-                                    <Compass className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
-                                    <div className="text-left">
-                                        <div className="text-sm font-medium text-fg">编辑导航</div>
-                                        <div className="text-xs text-subtle">管理导航链接和分类</div>
-                                    </div>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeSearch();
-                                        router.push('/editor/settings');
-                                    }}
-                                    className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
-                                >
-                                    <Settings className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
-                                    <div className="text-left">
-                                        <div className="text-sm font-medium text-fg">站点设置</div>
-                                        <div className="text-xs text-subtle">管理公开站点信息</div>
-                                    </div>
-                                </button>
-                            </div>
+                            {isEditorAuthStatusLoading ? (
+                                <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
+                                    <span className="animate-pulse">检查编辑区状态...</span>
+                                </div>
+                            ) : editorAuthStatusError ? (
+                                <div className="px-4 py-6 text-sm leading-6 text-danger">
+                                    {editorAuthStatusError}
+                                </div>
+                            ) : editorAuthStatus && !editorAuthStatus.configured ? (
+                                <div className="p-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            closeSearch();
+                                            router.push('/editor/login');
+                                        }}
+                                        className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
+                                    >
+                                        <KeyRound className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
+                                        <div className="text-left">
+                                            <div className="text-sm font-medium text-fg">初次使用初始化引导</div>
+                                            <div className="text-xs leading-5 text-subtle">
+                                                {editorAuthStatus.setupEnabled
+                                                    ? '设置编辑口令后进入后台'
+                                                    : '服务器需先开启首次初始化'}
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="p-2 space-y-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            closeSearch();
+                                            router.push('/editor/blog');
+                                        }}
+                                        className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
+                                    >
+                                        <FileText className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
+                                        <div className="text-left">
+                                            <div className="text-sm font-medium text-fg">写文章</div>
+                                            <div className="text-xs text-subtle">创建新的博客文章</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            closeSearch();
+                                            router.push('/editor/navigation');
+                                        }}
+                                        className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
+                                    >
+                                        <Compass className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
+                                        <div className="text-left">
+                                            <div className="text-sm font-medium text-fg">编辑导航</div>
+                                            <div className="text-xs text-subtle">管理导航链接和分类</div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            closeSearch();
+                                            router.push('/editor/settings');
+                                        }}
+                                        className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
+                                    >
+                                        <Settings className="w-4 h-4 text-subtle mt-0.5 shrink-0" />
+                                        <div className="text-left">
+                                            <div className="text-sm font-medium text-fg">站点设置</div>
+                                            <div className="text-xs text-subtle">管理公开站点信息</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

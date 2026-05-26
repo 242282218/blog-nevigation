@@ -218,7 +218,7 @@ export default function NavigationEditorPage() {
   }
 
   return (
-    <EditorPage className="pb-20">
+    <EditorPage className="pb-12">
       <EditorTopBar
         title="导航编辑器"
         description={`${data.length} 个分类，${data.reduce((acc, cat) => acc + cat.tools.length, 0)} 个工具`}
@@ -258,7 +258,7 @@ export default function NavigationEditorPage() {
         )}
       />
 
-      <EditorMain className="space-y-6">
+      <EditorMain className="space-y-4">
         {lastConflictAt ? (
           <StatusMessage tone="warning">
             服务器上的导航数据更新较新，已载入服务器版本；请确认当前内容后继续编辑。
@@ -284,9 +284,9 @@ export default function NavigationEditorPage() {
         ) : null}
 
         {showAddCategory && (
-          <EditorPanel className="p-6">
-            <h3 className="mb-4 text-lg font-medium text-fg">添加分类</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <EditorPanel className="p-4">
+            <h3 className="mb-3 text-base font-medium text-fg">添加分类</h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               <label>
                 <span className={editorFieldLabelClassName()}>分类名称</span>
                 <input
@@ -321,7 +321,7 @@ export default function NavigationEditorPage() {
             {categoryFormError ? (
               <p className="mt-3 text-sm text-error-600">{categoryFormError}</p>
             ) : null}
-            <div className="mt-4 flex gap-2">
+            <div className="mt-3 flex gap-2">
               <EditorButton
                 onClick={handleAddCategory}
                 variant="primary"
@@ -354,10 +354,10 @@ export default function NavigationEditorPage() {
             )}
           />
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-4">
             {data.map((category, categoryIndex) => (
               <EditorPanel key={categoryIndex} className="overflow-hidden">
-                <div className="flex flex-col gap-4 border-b border-border bg-background/70 px-4 py-4 sm:px-6 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-3 border-b border-border bg-background/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
                   {editingCategory === categoryIndex ? (
                     <label className="flex-1">
                       <span className={editorFieldLabelClassName()}>分类名称</span>
@@ -423,8 +423,8 @@ export default function NavigationEditorPage() {
                 </div>
 
                 {showAddTool === categoryIndex && (
-                  <div className="border-b border-border bg-accent-50/60 p-4">
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="border-b border-border bg-accent-50/60 p-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <label>
                         <span className={editorFieldLabelClassName()}>工具名称</span>
                         <input
@@ -474,7 +474,7 @@ export default function NavigationEditorPage() {
                     {toolFormError ? (
                       <p className="mt-3 text-sm text-error-600">{toolFormError}</p>
                     ) : null}
-                    <div className="mt-4 flex gap-2">
+                    <div className="mt-3 flex gap-2">
                       <EditorButton
                         onClick={() => handleAddTool(categoryIndex)}
                         variant="primary"
@@ -557,8 +557,8 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, isDeleting, onSave, onCan
 
   if (isEditing) {
     return (
-      <div className="bg-accent-50/60 p-4">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="bg-accent-50/60 p-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <label>
             <span className={editorFieldLabelClassName()}>工具名称</span>
             <input
@@ -599,7 +599,7 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, isDeleting, onSave, onCan
         {errorMessage ? (
           <p className="mt-3 text-sm text-error-600">{errorMessage}</p>
         ) : null}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-3 flex gap-2">
           <EditorButton
             onClick={handleSave}
             className="min-h-8 px-3 py-1.5"
@@ -622,7 +622,7 @@ function ToolItem({ tool, onEdit, onDelete, isEditing, isDeleting, onSave, onCan
   }
 
   return (
-    <div className="group grid gap-3 px-4 py-3 transition-colors hover:bg-background/70 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6">
+    <div className="group grid gap-3 px-4 py-2.5 transition-colors hover:bg-background/70 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="flex min-w-0 items-start gap-3">
         <Link2 className="mt-1 h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0">

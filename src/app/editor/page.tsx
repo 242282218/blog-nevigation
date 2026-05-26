@@ -240,14 +240,14 @@ export default function EditorHomePage() {
         )}
       />
 
-      <EditorMain className="space-y-6">
+      <EditorMain className="space-y-4">
         {message ? (
           <StatusMessage tone={message.tone}>
             {message.text}
           </StatusMessage>
         ) : null}
 
-        <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <EditorActionCard
             href="/editor/blog"
             icon={FileText}
@@ -273,7 +273,7 @@ export default function EditorHomePage() {
           />
         </section>
 
-        <EditorPanel className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <EditorPanel className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div>
             <p className="font-mono text-xs text-accent">portable data</p>
             <h2 className="mt-1 text-lg font-semibold text-fg">运行时数据边界</h2>

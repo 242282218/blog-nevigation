@@ -45,6 +45,10 @@ function getCodeText(children: ReactNode): string {
     return '';
 }
 
+function createHeadingId(children: ReactNode): string {
+    return encodeURIComponent(getCodeText(children).trim());
+}
+
 function CopyCodeButton({ code }: { code: string }) {
     const [copied, setCopied] = useState(false);
 
@@ -86,6 +90,15 @@ function CopyCodeButton({ code }: { code: string }) {
 }
 
 const markdownComponents: Components = {
+    h2({ children }) {
+        return <h2 id={createHeadingId(children)}>{children}</h2>;
+    },
+    h3({ children }) {
+        return <h3 id={createHeadingId(children)}>{children}</h3>;
+    },
+    h4({ children }) {
+        return <h4 id={createHeadingId(children)}>{children}</h4>;
+    },
     pre({ children }) {
         const codeElement = Array.isArray(children) ? children.find(isValidElement) : children;
         const className = isValidElement<{ className?: string }>(codeElement)

@@ -49,6 +49,11 @@ const settings = {
 const normalizedArticle = {
   ...article,
   slug: createArticleSlug(article),
+  kind: 'essay',
+  status: 'published',
+  featured: false,
+  sourceLinks: [],
+  revisionNotes: [],
 };
 
 function createTempDataRoot(): string {

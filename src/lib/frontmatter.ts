@@ -1,4 +1,7 @@
+import matter from 'gray-matter';
 import type { Frontmatter } from '@/app/types/article';
+import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
+import { isRecord } from '@/lib/article-data';
 
 interface ParsedFrontmatterResult {
     content: string;
@@ -6,116 +9,121 @@ interface ParsedFrontmatterResult {
     hasFrontmatter: boolean;
 }
 
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
-
-function stripWrappingQuotes(value: string): string {
-    const trimmed = value.trim();
-
-    if (
-        (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-        (trimmed.startsWith("'") && trimmed.endsWith("'"))
-    ) {
-        return trimmed
-            .slice(1, -1)
-            .replace(/\\n/g, '\n')
-            .replace(/\\"/g, '"')
-            .replace(/\\\\/g, '\\');
-    }
-
-    return trimmed;
+function asString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
 }
 
-function parseTagList(value: string): string[] {
-    const trimmed = value.trim();
-
-    if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) {
-        return [];
+function asDateString(value: unknown): string | undefined {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().split('T')[0];
     }
 
-    const inner = trimmed.slice(1, -1).trim();
+    return asString(value);
+}
 
-    if (!inner) {
-        return [];
+function asBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
     }
 
-    return inner
-        .split(',')
-        .map((tag) => stripWrappingQuotes(tag))
+    return value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
         .filter(Boolean);
 }
 
-function escapeYamlString(value: string): string {
-    return `"${value
-        .replace(/\\/g, '\\\\')
-        .replace(/"/g, '\\"')
-        .replace(/\r\n/g, '\n')
-        .replace(/\n/g, '\\n')}"`;
+function normalizeFrontmatterData(data: Record<string, unknown>): Partial<Frontmatter> {
+    const frontmatter: Partial<Frontmatter> = {};
+    const tags = asStringArray(data.tags);
+
+    frontmatter.title = asString(data.title);
+    frontmatter.slug = asString(data.slug);
+    frontmatter.date = asDateString(data.date);
+    frontmatter.updatedDate = asDateString(data.updatedDate);
+    frontmatter.description = asString(data.description);
+    frontmatter.category = asString(data.category);
+    frontmatter.series = asString(data.series);
+    frontmatter.featured = asBoolean(data.featured);
+    frontmatter.templateId = asString(data.templateId);
+
+    if (typeof data.kind === 'string') {
+        frontmatter.kind = normalizeArticleKind(data.kind);
+    }
+
+    if (typeof data.status === 'string') {
+        frontmatter.status = normalizeArticleStatus(data.status, 'draft');
+    }
+
+    if (tags) {
+        frontmatter.tags = tags;
+    }
+
+    if (Array.isArray(data.sourceLinks)) {
+        frontmatter.sourceLinks = data.sourceLinks.flatMap((item) => {
+            if (!isRecord(item) || typeof item.title !== 'string' || typeof item.url !== 'string') {
+                return [];
+            }
+
+            return [{
+                title: item.title,
+                url: item.url,
+                ...(typeof item.note === 'string' ? { note: item.note } : {}),
+            }];
+        });
+    }
+
+    if (Array.isArray(data.revisionNotes)) {
+        frontmatter.revisionNotes = data.revisionNotes.flatMap((item) => {
+            if (!isRecord(item) || typeof item.date !== 'string' || typeof item.note !== 'string') {
+                return [];
+            }
+
+            return [{
+                date: item.date,
+                note: item.note,
+            }];
+        });
+    }
+
+    return frontmatter;
 }
 
-export function parseMarkdownWithFrontmatter(markdown: string): ParsedFrontmatterResult {
-    const match = markdown.match(FRONTMATTER_PATTERN);
-
-    if (!match) {
-        return {
-            content: markdown,
-            frontmatter: {},
-            hasFrontmatter: false,
-        };
-    }
-
-    const [, rawFrontmatter, content] = match;
-    const parsed: Partial<Frontmatter> = {};
-
-    for (const line of rawFrontmatter.split(/\r?\n/)) {
-        const separatorIndex = line.indexOf(':');
-
-        if (separatorIndex === -1) {
-            continue;
-        }
-
-        const key = line.slice(0, separatorIndex).trim();
-        const rawValue = line.slice(separatorIndex + 1).trim();
-
-        switch (key) {
-            case 'title':
-                parsed.title = stripWrappingQuotes(rawValue);
-                break;
-            case 'date':
-                parsed.date = stripWrappingQuotes(rawValue);
-                break;
-            case 'description':
-                parsed.description = stripWrappingQuotes(rawValue);
-                break;
-            case 'tags':
-                parsed.tags = parseTagList(rawValue);
-                break;
-            default:
-                break;
-        }
-    }
-
+function createOrderedFrontmatter(article: Frontmatter): Record<string, unknown> {
     return {
-        content,
-        frontmatter: parsed,
-        hasFrontmatter: true,
+        title: article.title,
+        ...(article.slug ? { slug: article.slug } : {}),
+        date: article.date,
+        ...(article.updatedDate ? { updatedDate: article.updatedDate } : {}),
+        description: article.description,
+        ...(article.kind ? { kind: article.kind } : {}),
+        ...(article.status ? { status: article.status } : {}),
+        ...(article.category ? { category: article.category } : {}),
+        ...(article.series ? { series: article.series } : {}),
+        ...(article.featured ? { featured: article.featured } : {}),
+        tags: article.tags,
+        ...(article.sourceLinks?.length ? { sourceLinks: article.sourceLinks } : {}),
+        ...(article.revisionNotes?.length ? { revisionNotes: article.revisionNotes } : {}),
+        ...(article.templateId ? { templateId: article.templateId } : {}),
     };
 }
 
-export function serializeMarkdownWithFrontmatter(
-    article: Pick<Frontmatter, 'title' | 'date' | 'description' | 'tags'> & {
-        content: string;
-    }
-): string {
-    const lines = [
-        '---',
-        `title: ${escapeYamlString(article.title)}`,
-        `date: ${escapeYamlString(article.date)}`,
-        `description: ${escapeYamlString(article.description)}`,
-        `tags: [${article.tags.map(escapeYamlString).join(', ')}]`,
-        '---',
-        '',
-        article.content,
-    ];
+export function parseMarkdownWithFrontmatter(markdown: string): ParsedFrontmatterResult {
+    const hasFrontmatter = /^---\r?\n/.test(markdown);
+    const parsed = matter(markdown);
 
-    return lines.join('\n');
+    return {
+        content: parsed.content,
+        frontmatter: normalizeFrontmatterData(parsed.data),
+        hasFrontmatter,
+    };
+}
+
+export function serializeMarkdownWithFrontmatter(article: Frontmatter & { content: string }): string {
+    const frontmatter = createOrderedFrontmatter(article);
+
+    return matter.stringify(article.content, frontmatter).replace(/\n*$/, '\n');
 }
