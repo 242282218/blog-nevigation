@@ -63,5 +63,4 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 
-content/posts/.vitepress
 content/posts/public

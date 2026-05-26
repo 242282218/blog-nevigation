@@ -41,13 +41,6 @@ coverage/
 __pycache__/
 *.py[cod]
 
-# VitePress
-docs/.vitepress/dist/
-docs/.vitepress/cache/
-content/posts/.vitepress/.temp/
-content/posts/.vitepress/cache/
-content/posts/.vitepress/dist/
-
 # Codex (local development files)
 .codex/
 .claude/
