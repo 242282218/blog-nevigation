@@ -99,6 +99,10 @@ function assertCurrentManifestForRestore(expected: EditorDataManifest): void {
     }
 }
 
+export function assertEditorBackupRestoreCurrentManifest(expected: EditorDataManifest): void {
+    return assertCurrentManifestForRestore(expected);
+}
+
 export function createEditorBackupPayload(
     data: EditorBackupData,
     source: EditorBackupSource = 'local'
@@ -113,7 +117,7 @@ export function createEditorBackupPayload(
         data,
     };
 }
-export function createCurrentEditorBackupPayload(): EditorBackupPayload {
+export async function createCurrentEditorBackupPayload(): Promise<EditorBackupPayload> {
     if (!isEditorDataRootConfigured()) {
         return createEditorBackupPayload(readCurrentEditorBackupData());
     }
@@ -145,22 +149,22 @@ export function parseEditorBackupData(value: unknown): EditorBackupData | null {
     };
 }
 
-export function restoreEditorBackupPayload(
+export async function restoreEditorBackupPayload(
     value: unknown,
     options: RestoreBackupOptions = {}
-): RestoreBackupResult | null {
+): Promise<RestoreBackupResult | null> {
     const data = parseEditorBackupData(value);
 
     if (!data) {
         return null;
     }
 
-    return withEditorDataRootLock(() => {
+    return withEditorDataRootLock(async () => {
         if (options.currentManifest) {
             assertCurrentManifestForRestore(options.currentManifest);
         }
 
-        restoreEditorDataRootAtomically(data);
+        await restoreEditorDataRootAtomically(data);
 
         return {
             articles: data.articles.length,

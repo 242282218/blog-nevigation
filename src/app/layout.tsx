@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { JetBrains_Mono, IBM_Plex_Sans, Source_Serif_4 } from 'next/font/google';
 import './globals.css';
 import { AppShell } from './components/layout';
-import { readSiteSettingsFromDisk } from '@/lib/editor-data-storage';
+import { readSiteSettingsFromDiskAsync } from '@/lib/editor-data-storage';
 
 const jetbrains = JetBrains_Mono({
     subsets: ['latin'],
@@ -21,11 +21,14 @@ const sourceSerif = Source_Serif_4({
     variable: '--font-source-serif',
 });
 
-export function generateMetadata(): Metadata {
-    const settings = readSiteSettingsFromDisk();
+export async function generateMetadata(): Promise<Metadata> {
+    const settings = await readSiteSettingsFromDiskAsync();
 
     return {
-        title: settings.siteName,
+        title: {
+            template: `%s | ${settings.siteName}`,
+            default: settings.siteName,
+        },
         description: settings.siteDescription,
     };
 }

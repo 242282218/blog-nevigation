@@ -1,38 +1,13 @@
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { config, middleware } from '@/middleware';
-import {
-  EDITOR_SESSION_COOKIE,
-  SESSION_NAMESPACE,
-} from '@/lib/editor-auth';
-import { restoreEnv } from '../helpers/api-route';
+import { EDITOR_SESSION_COOKIE } from '@/lib/editor-auth';
 
-const ORIGINAL_ENV = {
-  EDITOR_AUTH_INTERNAL_ORIGIN: process.env.EDITOR_AUTH_INTERNAL_ORIGIN,
-  EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
-  NODE_ENV: process.env.NODE_ENV,
-};
-
-function resetEnv(): void {
-  restoreEnv(ORIGINAL_ENV);
-}
-
-async function createLegacyEditorSessionValue(secret: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(`${SESSION_NAMESPACE}:${secret.trim()}`)
-  );
-
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function createEditorRequest(path: string, secret?: string): Promise<NextRequest> {
+function createEditorRequest(path: string, session?: string): NextRequest {
   const headers = new Headers();
 
-  if (secret) {
-    headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${await createLegacyEditorSessionValue(secret)}`);
+  if (session) {
+    headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${session}`);
   }
 
   return new NextRequest(`http://localhost${path}`, {
@@ -41,167 +16,73 @@ async function createEditorRequest(path: string, secret?: string): Promise<NextR
 }
 
 afterEach(() => {
-  resetEnv();
-  vi.useRealTimers();
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
 });
 
 describe('editor middleware', () => {
-  it('is scoped to editor routes only', () => {
-    expect(config.matcher).toEqual(['/editor/:path*']);
+  it('applies to document routes while excluding API and static assets', () => {
+    expect(config.matcher).toEqual([
+      expect.objectContaining({
+        source: expect.stringContaining('api'),
+      }),
+    ]);
   });
 
-  it('allows the editor login page without a session', async () => {
-    process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
-
-    const response = await middleware(await createEditorRequest('/editor/login'));
+  it('allows the editor login page without a session', () => {
+    const response = middleware(createEditorRequest('/editor/login'));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
+    expect(response.headers.get('Content-Security-Policy')).toContain("'strict-dynamic'");
   });
 
-  it('redirects unauthenticated editor requests to login with a safe next path', async () => {
-    process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
-
-    const response = await middleware(await createEditorRequest('/editor/settings?tab=r2'));
+  it('redirects unauthenticated editor requests to login with a safe next path', () => {
+    const response = middleware(createEditorRequest('/editor/settings?tab=r2'));
     const location = response.headers.get('location');
 
     expect(response.status).toBe(307);
     expect(location).toBe('http://localhost/editor/login?next=%2Feditor%2Fsettings%3Ftab%3Dr2');
+    expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
   });
 
-  it('allows editor requests when the internal auth status accepts the session', async () => {
-    process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ authenticated: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
-
-    vi.stubGlobal('fetch', fetchMock);
-
-    const response = await middleware(await createEditorRequest('/editor/navigation', 'editor-secret'));
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL('/api/editor-auth', 'http://localhost'),
-      expect.objectContaining({
-        headers: {
-          Cookie: expect.stringContaining(`${EDITOR_SESSION_COOKIE}=`),
-        },
-      })
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get('location')).toBeNull();
-  });
-
-  it('rejects legacy deterministic editor cookies when the auth status does not accept them', async () => {
-    process.env.EDITOR_ACCESS_TOKEN = 'editor-secret';
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ authenticated: false }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
-
-    vi.stubGlobal('fetch', fetchMock);
-
-    const response = await middleware(await createEditorRequest('/editor/navigation', 'editor-secret'));
-
-    expect(fetchMock).toHaveBeenCalled();
-    expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('http://localhost/editor/login?next=%2Feditor%2Fnavigation');
-  });
-
-  it('does not trust the request host for runtime auth checks in production', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    delete process.env.EDITOR_ACCESS_TOKEN;
-    delete process.env.EDITOR_AUTH_INTERNAL_ORIGIN;
+  it('allows editor requests with a session cookie without internal HTTP calls', () => {
     const fetchMock = vi.fn();
 
     vi.stubGlobal('fetch', fetchMock);
 
-    const response = await middleware(
-      new NextRequest('https://attacker.example/editor/navigation', {
-        headers: {
-          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
-        },
-      })
-    );
+    const response = middleware(createEditorRequest('/editor/navigation', 'opaque-session'));
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://attacker.example/editor/login?next=%2Feditor%2Fnavigation');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+    expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
   });
 
-  it('uses the configured internal origin for runtime auth checks', async () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    process.env.EDITOR_AUTH_INTERNAL_ORIGIN = 'http://127.0.0.1:3000';
-    delete process.env.EDITOR_ACCESS_TOKEN;
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ authenticated: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      })
-    );
+  it('redirects editor requests with an empty session cookie to login', () => {
+    const response = middleware(createEditorRequest('/editor/blog', ''));
 
-    vi.stubGlobal('fetch', fetchMock);
+    expect(response.status).toBe(307);
+    const location = response.headers.get('location');
 
-    const response = await middleware(
-      new NextRequest('https://public.example/editor/navigation', {
-        headers: {
-          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
-        },
-      })
-    );
+    expect(location).toContain('/editor/login');
+  });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL('/api/editor-auth', 'http://127.0.0.1:3000'),
-      expect.objectContaining({
-        headers: {
-          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
-        },
-      })
-    );
+  it('allows editor requests with any non-empty session cookie (validation deferred to API routes)', () => {
+    const response = middleware(createEditorRequest('/editor/blog', 'tampered-value'));
+
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
   });
 
-  it('aborts stalled runtime auth checks and redirects to login', async () => {
-    vi.useFakeTimers();
-    vi.stubEnv('NODE_ENV', 'production');
-    process.env.EDITOR_AUTH_INTERNAL_ORIGIN = 'http://127.0.0.1:3000';
-    delete process.env.EDITOR_ACCESS_TOKEN;
-    const fetchMock = vi.fn((url: URL | RequestInfo, init?: RequestInit) =>
-      new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => {
-          reject(new DOMException('Aborted', 'AbortError'));
-        });
-      })
-    );
+  it('attaches CSP nonce headers to non-editor document routes', () => {
+    const response = middleware(createEditorRequest('/blog'));
+    const csp = response.headers.get('Content-Security-Policy');
 
-    vi.stubGlobal('fetch', fetchMock);
-
-    const responsePromise = middleware(
-      new NextRequest('https://public.example/editor/settings', {
-        headers: {
-          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
-        },
-      })
-    );
-
-    await vi.advanceTimersByTimeAsync(1500);
-    const response = await responsePromise;
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      new URL('/api/editor-auth', 'http://127.0.0.1:3000'),
-      expect.objectContaining({
-        headers: {
-          Cookie: `${EDITOR_SESSION_COOKIE}=runtime-session`,
-        },
-        signal: expect.any(AbortSignal),
-      })
-    );
-    expect((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal?.aborted).toBe(true);
-    expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://public.example/editor/login?next=%2Feditor%2Fsettings');
+    expect(response.status).toBe(200);
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).toContain("style-src 'self' 'unsafe-inline'");
   });
 });

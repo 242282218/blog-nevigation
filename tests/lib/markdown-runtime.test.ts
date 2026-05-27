@@ -24,6 +24,19 @@ function createTempDataRoot(articles?: Article[]): string {
   return root;
 }
 
+function createArticle(id: string, title: string): Article {
+  return {
+    id,
+    title,
+    date: '2026-03-09',
+    description: `${title} description`,
+    tags: ['runtime'],
+    content: `# ${title}`,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+}
+
 async function importMarkdownModule() {
   vi.resetModules();
   return import('@/lib/markdown');
@@ -79,6 +92,35 @@ describe('markdown runtime article source', () => {
     expect(posts.some((p) => p.title === '从这里开始读这本公开笔记')).toBe(true);
   });
 
+  it('does not fall back to seed posts when runtime articles are valid but empty', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([]);
+
+    const { getPostBySlugArray, getPosts } = await importMarkdownModule();
+
+    expect(getPosts()).toEqual([]);
+    expect(getPostBySlugArray(['2026-05-25-getting-started'])).toBeNull();
+  });
+
+  it('invalidates seed post cache after runtime writes create article data', async () => {
+    const dataRoot = createTempDataRoot();
+    process.env.BLOG_DATA_ROOT = dataRoot;
+
+    const { getPosts } = await importMarkdownModule();
+    const { writeArticlesToDisk } = await import('@/lib/editor-data-storage');
+
+    expect(getPosts().some((post) => post.title === 'Runtime After Seed Cache')).toBe(false);
+
+    await writeArticlesToDisk([
+      createArticle('runtime-after-seed-cache', 'Runtime After Seed Cache'),
+    ]);
+
+    expect(getPosts()).toEqual([
+      expect.objectContaining({
+        title: 'Runtime After Seed Cache',
+      }),
+    ]);
+  });
+
   it('loads article detail content from BLOG_DATA_ROOT article data', async () => {
     process.env.BLOG_DATA_ROOT = createTempDataRoot([
       {
@@ -125,9 +167,17 @@ describe('markdown runtime article source', () => {
 
     const { getPostBySlugArray, getPosts } = await importMarkdownModule();
 
-    expect(getPosts()).toEqual(expect.arrayContaining([]));
+    expect(getPosts()).toEqual([]);
     expect(getPosts().some((post) => post.title === 'Draft Article')).toBe(false);
     expect(getPostBySlugArray(['draft-article'])).toBeNull();
+  });
+
+  it('does not fall back to seed posts when runtime article data is intentionally empty', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([]);
+
+    const { getPosts } = await importMarkdownModule();
+
+    expect(getPosts()).toEqual([]);
   });
 
   it('uses stored runtime article slugs instead of deriving URLs from mutable titles', async () => {
@@ -152,6 +202,37 @@ describe('markdown runtime article source', () => {
     expect(getPostBySlugArray(['stable-runtime-url'])).toEqual(
       expect.objectContaining({
         content: '## Stable content',
+      })
+    );
+  });
+
+  it('loads runtime posts and details through asynchronous public helpers', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([
+      {
+        id: 'runtime-article-async',
+        slug: 'async-runtime-url',
+        title: 'Async Runtime Post',
+        date: '2026-03-07',
+        description: 'Public async URL should stay stable',
+        tags: ['runtime'],
+        content: '## Async content',
+        createdAt: 5,
+        updatedAt: 6,
+      },
+    ]);
+
+    const { getPostBySlugArrayAsync, getPostsAsync } = await importMarkdownModule();
+    const posts = await getPostsAsync();
+
+    expect(posts).toEqual([
+      expect.objectContaining({
+        slug: 'async-runtime-url',
+        title: 'Async Runtime Post',
+      }),
+    ]);
+    await expect(getPostBySlugArrayAsync(['async-runtime-url'])).resolves.toEqual(
+      expect.objectContaining({
+        content: '## Async content',
       })
     );
   });

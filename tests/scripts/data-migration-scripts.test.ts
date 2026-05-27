@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+﻿import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -87,7 +87,7 @@ describe('runtime data migration scripts', () => {
     writeJson(path.join(sourceRoot, 'settings', 'site.json'), settings);
     writeJson(path.join(sourceRoot, 'settings', 'cloudflare-r2.json'), {
       enabled: true,
-      accountId: 'account-id',
+      accountId: '0123456789abcdef0123456789abcdef',
       bucket: 'blog-data',
       accessKeyId: 'access-key',
       secretAccessKey: 'source-secret-key',
@@ -97,7 +97,7 @@ describe('runtime data migration scripts', () => {
     });
     writeJson(path.join(targetRoot, 'settings', 'cloudflare-r2.json'), {
       enabled: true,
-      accountId: 'target-account-id',
+      accountId: '22222222222222222222222222222222',
       bucket: 'target-blog-data',
       accessKeyId: 'target-access-key',
       secretAccessKey: 'target-secret-key',
@@ -165,7 +165,7 @@ describe('runtime data migration scripts', () => {
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'cloudflare-r2.json'), 'utf8'))).toEqual(
       expect.objectContaining({
-        accountId: 'target-account-id',
+        accountId: '22222222222222222222222222222222',
         secretAccessKey: 'target-secret-key',
       })
     );

@@ -1,23 +1,31 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/search/route';
-import { readNavigationFromDisk } from '@/lib/editor-data-storage';
-import { getPosts } from '@/lib/markdown';
+import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
+import { getPostsAsync } from '@/lib/markdown';
+import { resetSearchRateLimitForTests } from '@/lib/search-rate-limit';
 import type { PostMeta } from '@/lib/markdown';
 
 vi.mock('@/lib/markdown', () => ({
-  getPosts: vi.fn(),
+  getPostsAsync: vi.fn(),
 }));
 
 vi.mock('@/lib/editor-data-storage', () => ({
-  readNavigationFromDisk: vi.fn(),
+  readNavigationFromDiskAsync: vi.fn(),
 }));
 
-const mockedGetPosts = vi.mocked(getPosts);
-const mockedReadNavigationFromDisk = vi.mocked(readNavigationFromDisk);
+const mockedGetPostsAsync = vi.mocked(getPostsAsync);
+const mockedReadNavigationFromDiskAsync = vi.mocked(readNavigationFromDiskAsync);
+const ORIGINAL_ENV = {
+  NODE_ENV: process.env.NODE_ENV,
+  TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
+  SKIP_IP_VALIDATION: process.env.SKIP_IP_VALIDATION,
+};
 
-function createRequest(query: string): NextRequest {
-  return new NextRequest(`http://localhost/api/search?q=${encodeURIComponent(query)}`);
+function createRequest(query: string, headers?: HeadersInit): NextRequest {
+  return new NextRequest(`http://localhost/api/search?q=${encodeURIComponent(query)}`, {
+    headers,
+  });
 }
 
 function createPost(partial: Partial<PostMeta> & Pick<PostMeta, 'slug' | 'slugArray' | 'title'>): PostMeta {
@@ -36,8 +44,19 @@ function createPost(partial: Partial<PostMeta> & Pick<PostMeta, 'slug' | 'slugAr
 }
 
 beforeEach(() => {
-  mockedGetPosts.mockReset();
-  mockedReadNavigationFromDisk.mockReset();
+  for (const name of Object.keys(ORIGINAL_ENV) as Array<Exclude<keyof typeof ORIGINAL_ENV, 'NODE_ENV'>>) {
+    const value = ORIGINAL_ENV[name];
+
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+
+  resetSearchRateLimitForTests();
+  mockedGetPostsAsync.mockReset();
+  mockedReadNavigationFromDiskAsync.mockReset();
 });
 
 describe('search API', () => {
@@ -47,12 +66,12 @@ describe('search API', () => {
 
     expect(await emptyResponse.json()).toEqual([]);
     expect(await shortResponse.json()).toEqual([]);
-    expect(mockedGetPosts).not.toHaveBeenCalled();
-    expect(mockedReadNavigationFromDisk).not.toHaveBeenCalled();
+    expect(mockedGetPostsAsync).not.toHaveBeenCalled();
+    expect(mockedReadNavigationFromDiskAsync).not.toHaveBeenCalled();
   });
 
   it('normalizes case and whitespace when matching post results', async () => {
-    mockedGetPosts.mockReturnValue([
+    mockedGetPostsAsync.mockResolvedValue([
       createPost({
         slug: 'next-runtime-data',
         slugArray: ['next-runtime-data'],
@@ -68,7 +87,7 @@ describe('search API', () => {
         description: 'Filtered system page',
       }),
     ]);
-    mockedReadNavigationFromDisk.mockReturnValue([]);
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([]);
 
     const response = await GET(createRequest('  NEXT   runtime  '));
     const payload = await response.json();
@@ -85,7 +104,7 @@ describe('search API', () => {
   });
 
   it('returns tool matches and caps the combined result count', async () => {
-    mockedGetPosts.mockReturnValue(
+    mockedGetPostsAsync.mockResolvedValue(
       Array.from({ length: 6 }, (_, index) => createPost({
         slug: `search-post-${index}`,
         slugArray: [`search-post-${index}`],
@@ -94,7 +113,7 @@ describe('search API', () => {
         description: 'Search result',
       }))
     );
-    mockedReadNavigationFromDisk.mockReturnValue([
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([
       {
         name: 'Search Tools',
         icon: 'search',
@@ -123,5 +142,64 @@ describe('search API', () => {
         meta: 'Search Tools',
       })
     );
+  });
+
+  it('rate limits search scans per client IP', async () => {
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+    mockedGetPostsAsync.mockResolvedValue([
+      createPost({
+        slug: 'search-post',
+        slugArray: ['search-post'],
+        title: 'Search Post',
+      }),
+    ]);
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([]);
+
+    for (let index = 0; index < 30; index += 1) {
+      const response = await GET(createRequest('search', {
+        'X-Forwarded-For': '198.51.100.10, 203.0.113.1',
+      }));
+      expect(response.status).toBe(200);
+    }
+
+    const blockedResponse = await GET(createRequest('search', {
+      'X-Forwarded-For': '198.51.100.10, 203.0.113.1',
+    }));
+    const otherClientResponse = await GET(createRequest('search', {
+      'X-Forwarded-For': '198.51.100.200, 203.0.113.1',
+    }));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(await blockedResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('搜索请求过于频繁'),
+      })
+    );
+    expect(otherClientResponse.status).toBe(200);
+  });
+
+  it('requires trusted proxy configuration for search rate limiting in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    delete process.env.TRUSTED_PROXY_IPS;
+    delete process.env.SKIP_IP_VALIDATION;
+    mockedGetPostsAsync.mockResolvedValue([
+      createPost({
+        slug: 'search-post',
+        slugArray: ['search-post'],
+        title: 'Search Post',
+      }),
+    ]);
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([]);
+
+    const response = await GET(createRequest('search'));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('TRUSTED_PROXY_IPS'),
+      })
+    );
+    expect(mockedGetPostsAsync).not.toHaveBeenCalled();
+    expect(mockedReadNavigationFromDiskAsync).not.toHaveBeenCalled();
   });
 });

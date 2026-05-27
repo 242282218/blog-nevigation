@@ -1,11 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET as getArticles, PUT as putArticles } from '@/app/api/data/articles/route';
 import { GET as getNavigation, PUT as putNavigation } from '@/app/api/data/navigation/route';
 import { GET as getSettings, PUT as putSettings } from '@/app/api/data/settings/route';
-import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { EDITOR_JSON_BODY_LIMIT_BYTES } from '@/lib/api-json-body';
+import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
+import { EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -14,10 +17,10 @@ import {
 } from '../helpers/api-route';
 
 vi.mock('@/lib/editor-remote-backup', () => ({
-  syncCurrentBackupToRemote: vi.fn(),
+  queueCurrentBackupToRemote: vi.fn(),
 }));
 
-const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
+const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
@@ -76,7 +79,8 @@ function seedRuntimeData(dataRoot: string): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockedSyncCurrentBackupToRemote.mockResolvedValue({
+  mockedQueueCurrentBackupToRemote.mockReturnValue({
+    queued: false,
     enabled: false,
     success: false,
     message: 'R2 backup is disabled.',
@@ -89,6 +93,70 @@ afterEach(() => {
 });
 
 describe('editor data write APIs', () => {
+  it('rejects authenticated writes without a CSRF header', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const current = await (await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'))).json();
+    const authedRequest = await createAuthedEditorRequest('http://localhost/api/data/articles');
+    const headers = new Headers({
+      Cookie: authedRequest.headers.get('cookie') ?? '',
+      Origin: 'http://localhost',
+      'Content-Type': 'application/json',
+    });
+    const response = await putArticles(new NextRequest('http://localhost/api/data/articles', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: current.revision,
+        articles: [createArticle('article-2', 'Rejected Article')],
+      }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('校验失败'),
+      })
+    );
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects authenticated writes from a different origin', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const current = await (await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'))).json();
+    const authedRequest = await createAuthedEditorRequest('http://localhost/api/data/articles');
+    const headers = new Headers(authedRequest.headers);
+
+    headers.set('Origin', 'https://attacker.example');
+    headers.set('Content-Type', 'application/json');
+
+    const response = await putArticles(new NextRequest('http://localhost/api/data/articles', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: current.revision,
+        articles: [createArticle('article-2', 'Rejected Article')],
+      }),
+    }));
+
+    expect(response.status).toBe(403);
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('adds a CSRF header to authenticated test write requests', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+
+    const request = await createAuthedEditorRequest('http://localhost/api/data/articles');
+
+    expect(request.headers.get(EDITOR_CSRF_HEADER)).toBeTruthy();
+    expect(request.headers.get('origin')).toBe('http://localhost');
+  });
+
   it('reports corrupt article files without returning empty editor data', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
@@ -162,13 +230,44 @@ describe('editor data write APIs', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(
       expect.objectContaining({
-        message: '文章数据格式无效。',
+        code: 'invalid_json',
       })
     );
     expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8')).toBe(
       existingArticles
     );
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized article write bodies before parsing or remote sync', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const existingArticles = fs.readFileSync(
+      path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'),
+      'utf8'
+    );
+    const response = await putArticles(
+      await createAuthedEditorRequest('http://localhost/api/data/articles', {
+        method: 'PUT',
+        headers: {
+          'Content-Length': String(EDITOR_JSON_BODY_LIMIT_BYTES + 1),
+        },
+        body: '{}',
+      })
+    );
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: '请求体过大，请缩小数据后重试。',
+      })
+    );
+    expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8')).toBe(
+      existingArticles
+    );
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('requires the current revision before writing articles', async () => {
@@ -186,7 +285,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(409);
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
     expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8'))).toEqual([
       expect.objectContaining({
         id: 'article-1',
@@ -211,7 +310,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'articles-write',
     });
   });
@@ -222,7 +321,7 @@ describe('editor data write APIs', () => {
     seedRuntimeData(process.env.BLOG_DATA_ROOT);
 
     const current = await (await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'))).json();
-    writeArticlesToDisk([createArticle('article-newer', 'Newer Article')]);
+    await writeArticlesToDisk([createArticle('article-newer', 'Newer Article')]);
 
     const response = await putArticles(
       await createAuthedEditorRequest('http://localhost/api/data/articles', {
@@ -252,7 +351,7 @@ describe('editor data write APIs', () => {
         id: 'article-newer',
       }),
     ]);
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('rejects invalid navigation payloads without writing or remote sync', async () => {
@@ -299,7 +398,7 @@ describe('editor data write APIs', () => {
     expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'navigation', 'tools.json'), 'utf8')).toBe(
       existingNavigation
     );
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('requires the current revision before writing navigation', async () => {
@@ -324,7 +423,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(409);
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
     expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'navigation', 'tools.json'), 'utf8'))).toEqual([]);
   });
 
@@ -352,7 +451,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'navigation-write',
     });
   });
@@ -388,7 +487,7 @@ describe('editor data write APIs', () => {
     expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'settings', 'site.json'), 'utf8')).toBe(
       existingSettings
     );
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('requires the current revision before writing settings', async () => {
@@ -406,7 +505,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(409);
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
     expect(JSON.parse(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'settings', 'site.json'), 'utf8'))).toEqual(
       expect.objectContaining({
         siteName: 'Original Site',
@@ -431,7 +530,7 @@ describe('editor data write APIs', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'settings-write',
     });
   });

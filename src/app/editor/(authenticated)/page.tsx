@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
-import { LogoutButton } from './components/LogoutButton';
-import { createRestoreActionMessage } from './backup-action-message';
-import { loadCurrentBackupManifest } from './backup-current-manifest';
+import { LogoutButton } from '../components/LogoutButton';
+import { createRestoreActionMessage } from '../backup-action-message';
+import { loadCurrentBackupManifest } from '../backup-current-manifest';
+import { createEditorCsrfHeaders } from '../editor-csrf';
 import {
   EditorActionCard,
   EditorButton,
@@ -13,7 +14,7 @@ import {
   EditorPage,
   EditorPanel,
   EditorTopBar,
-} from './components/EditorShell';
+} from '../components/EditorShell';
 
 type BackupPayload = {
   version?: number;
@@ -128,13 +129,12 @@ export default function EditorHomePage() {
     setMessage({ tone: 'loading', text: '正在同步云端备份...' });
 
     try {
-      const response = await fetch('/api/data/backup/remote', {
+      const response = await fetch('/api/data/backup/remote/sync', {
         method: 'POST',
         credentials: 'include',
-        headers: {
+        headers: createEditorCsrfHeaders({
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'sync' }),
+        }),
       });
 
       if (!response.ok) {
@@ -160,13 +160,13 @@ export default function EditorHomePage() {
 
     try {
       const currentManifest = await loadCurrentBackupManifest();
-      const response = await fetch('/api/data/backup/remote', {
+      const response = await fetch('/api/data/backup/remote/restore', {
         method: 'POST',
         credentials: 'include',
-        headers: {
+        headers: createEditorCsrfHeaders({
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'restore', currentManifest }),
+        }),
+        body: JSON.stringify({ currentManifest }),
       });
 
       if (!response.ok) {
@@ -207,9 +207,9 @@ export default function EditorHomePage() {
       const response = await fetch('/api/data/backup', {
         method: 'POST',
         credentials: 'include',
-        headers: {
+        headers: createEditorCsrfHeaders({
           'Content-Type': 'application/json',
-        },
+        }),
         body: JSON.stringify({ ...backupPayload, currentManifest }),
       });
 
@@ -331,7 +331,8 @@ export default function EditorHomePage() {
               ref={restoreInputRef}
               type="file"
               accept=".json"
-              className="hidden"
+              className="sr-only"
+              aria-label="选择本地备份 JSON"
               onChange={handleRestore}
             />
           </div>

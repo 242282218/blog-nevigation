@@ -29,7 +29,7 @@
 git clone https://github.com/242282218/blog-nevigation.git
 cd blog-nevigation
 nvm use
-npm ci --legacy-peer-deps
+npm ci
 ```
 
 创建 `.env.local`：
@@ -79,10 +79,10 @@ BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=local-dev-only-secret npm run
 | `EDITOR_ACCESS_TOKEN` | 编辑器访问口令；配置后优先使用环境变量认证 | — |
 | `EDITOR_RUNTIME_AUTH_SETUP_TOKEN` | 未配置固定口令时，用于首次初始化运行时口令 | — |
 | `EDITOR_ALLOW_RUNTIME_AUTH_SETUP` | 是否允许无初始化密钥的首次运行时初始化；生产不建议开启 | `false` |
-| `EDITOR_AUTH_INTERNAL_ORIGIN` | 生产 middleware 校验运行时会话时使用的可信内部地址 | Docker 默认 `http://127.0.0.1:3000` |
 | `BLOG_DATA_ROOT` | 运行时文章、导航、设置数据目录 | 未配置时只使用种子数据 |
 | `APP_PORT` | Docker 生产宿主机端口 | `3000` |
 | `COOKIE_SECURE` | 是否只通过 HTTPS 发送编辑器会话 Cookie | Docker 生产默认 `true` |
+| `TRUSTED_PROXY_IPS` | 可信反向代理 IP，逗号分隔；配置后登录和搜索限流按真实客户端 IP 分桶 | — |
 | `R2_BACKUP_ENABLED` | 是否启用 Cloudflare R2 远端备份 | `false` |
 | `R2_ACCOUNT_ID` | Cloudflare Account ID | — |
 | `R2_BUCKET` | R2 Bucket 名称 | — |
@@ -91,6 +91,8 @@ BASE_URL=http://127.0.0.1:3000 EDITOR_LOGIN_SECRET=local-dev-only-secret npm run
 | `R2_PREFIX` | R2 对象前缀 | `blog-navigation` |
 | `R2_ENDPOINT` | 自定义 S3 endpoint | — |
 | `R2_SNAPSHOT_ON_WRITE` | 每次编辑保存都写入时间快照 | `false` |
+| `R2_BACKUP_ENCRYPTION_KEY` | R2 备份加密密钥，32 字节 base64 或 hex；启用 R2 时默认必填，远端备份写入 AES-256-GCM 密文 | — |
+| `R2_ALLOW_PLAINTEXT_BACKUP` | 显式允许 R2 明文备份；仅用于兼容旧备份或临时迁移 | `false` |
 
 ## Docker 和生产部署
 
@@ -150,6 +152,7 @@ cat > .env <<EOF
 EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
 APP_PORT=3000
 COOKIE_SECURE=true
+TRUSTED_PROXY_IPS=
 R2_BACKUP_ENABLED=false
 EOF
 
@@ -197,6 +200,7 @@ Cloudflare R2 备份以服务器本地 `BLOG_DATA_ROOT` 为主数据源。启用
 - 每次编辑保存会同步 `latest/backup.json` 到 R2。
 - 在编辑中心点击“同步云端”会额外写入时间快照。
 - `/editor/settings` 中的 `data/settings/cloudflare-r2.json` 一旦存在，会完整优先于 `.env` 中的 R2 变量。
+- 启用 R2 时默认必须配置 `R2_BACKUP_ENCRYPTION_KEY`；只有显式设置 `R2_ALLOW_PLAINTEXT_BACKUP=true` 才会写入明文备份。
 
 R2 对象结构：
 

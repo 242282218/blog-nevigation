@@ -1,14 +1,22 @@
-import { readNavigationFromDisk } from '@/lib/editor-data-storage';
+import type { Metadata } from 'next';
+import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
 import { NavigationDirectory } from './NavigationDirectory';
 
 export const dynamic = 'force-dynamic';
 
-function getNavigationData() {
-    return readNavigationFromDisk();
+export async function generateMetadata(): Promise<Metadata> {
+    return {
+        title: '常用链接导航',
+        description: '开发文档、写作资料和高频工具入口集中检索。',
+    };
 }
 
-export default function NavigationPage() {
-    const navData = getNavigationData();
+async function getNavigationData() {
+    return readNavigationFromDiskAsync();
+}
+
+export default async function NavigationPage() {
+    const navData = await getNavigationData();
     const linkCount = navData.reduce((total, category) => total + category.tools.length, 0);
 
     return (

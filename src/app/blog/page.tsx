@@ -1,4 +1,5 @@
-import { getPosts } from '@/lib/markdown';
+import type { Metadata } from 'next';
+import { getPostsAsync } from '@/lib/markdown';
 import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
@@ -7,6 +8,13 @@ import { EmptyState, PageHero } from '@/app/components/ui';
 import { ARTICLE_KIND_OPTIONS, getArticleKindLabel } from '@/lib/article-metadata';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata(): Promise<Metadata> {
+    return {
+        title: '文章归档',
+        description: '按时间收起这些工程笔记、项目复盘和资料整理。',
+    };
+}
 
 function getSearchParamValue(value: string | string[] | undefined): string {
     return Array.isArray(value) ? value[0] || '' : value || '';
@@ -30,7 +38,7 @@ function createFilterHref(filters: { kind?: string; category?: string }): string
 
 function cnFilter(active: boolean): string {
     return [
-        'rounded-token-button border px-3 py-1.5 text-sm font-medium transition',
+        'inline-flex min-h-[44px] items-center rounded-token-button border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-0',
         active
             ? 'border-accent-300 bg-accent-50 text-accent'
             : 'border-border bg-background text-muted hover:border-accent-200 hover:text-accent',
@@ -45,7 +53,7 @@ export default async function BlogPage({
     const resolvedSearchParams = await searchParams;
     const selectedKind = getSearchParamValue(resolvedSearchParams?.kind);
     const selectedCategory = getSearchParamValue(resolvedSearchParams?.category);
-    const allArticlePosts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
+    const allArticlePosts = (await getPostsAsync()).filter((post) => !post.slugArray.includes('navigation'));
     const articlePosts = allArticlePosts.filter((post) => (
         (!selectedKind || post.kind === selectedKind) &&
         (!selectedCategory || post.category === selectedCategory)
@@ -126,6 +134,7 @@ export default async function BlogPage({
                     <Link
                         href={createFilterHref({ category: selectedCategory })}
                         className={cnFilter(!selectedKind)}
+                        aria-current={!selectedKind ? 'page' : undefined}
                     >
                         全部类型
                     </Link>
@@ -134,6 +143,7 @@ export default async function BlogPage({
                             key={option.value}
                             href={createFilterHref({ kind: option.value, category: selectedCategory })}
                             className={cnFilter(selectedKind === option.value)}
+                            aria-current={selectedKind === option.value ? 'page' : undefined}
                         >
                             {option.label}
                         </Link>
@@ -144,6 +154,7 @@ export default async function BlogPage({
                         <Link
                             href={createFilterHref({ kind: selectedKind })}
                             className={cnFilter(!selectedCategory)}
+                            aria-current={!selectedCategory ? 'page' : undefined}
                         >
                             全部分类
                         </Link>
@@ -152,6 +163,7 @@ export default async function BlogPage({
                                 key={category}
                                 href={createFilterHref({ kind: selectedKind, category })}
                                 className={cnFilter(selectedCategory === category)}
+                                aria-current={selectedCategory === category ? 'page' : undefined}
                             >
                                 {category}
                             </Link>

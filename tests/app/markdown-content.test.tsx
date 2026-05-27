@@ -47,6 +47,7 @@ describe('MarkdownContent', () => {
     const copyButton = container.querySelector('button[aria-label="复制代码"]');
 
     expect(copyButton).toBeInstanceOf(HTMLButtonElement);
+    expect(copyButton?.className).toBe('markdown-code-block__copy');
 
     await act(async () => {
       copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -71,5 +72,51 @@ describe('MarkdownContent', () => {
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
     expect(unsafeLink?.getAttribute('href')).toBeNull();
+  });
+
+  it('uses the shared heading id format for markdown links and inline code', () => {
+    act(() => {
+      root.render(
+        <MarkdownContent content={'## [MDN Docs](https://developer.mozilla.org) and `fetch`'} />
+      );
+    });
+
+    expect(container.querySelector('h2')?.id).toBe('MDN%20Docs%20and%20fetch');
+  });
+
+  it('renders duplicate heading ids with the same suffixes as the outline parser', () => {
+    act(() => {
+      root.render(
+        <MarkdownContent content={'# Intro\n\n## Review\n\n### Review\n\n## Review'} />
+      );
+    });
+
+    expect(Array.from(container.querySelectorAll('h1, h2, h3')).map((heading) => heading.id)).toEqual([
+      'Intro',
+      'Review',
+      'Review-2',
+      'Review-3',
+    ]);
+  });
+
+  it('skips the first h1 when it duplicates the page title', () => {
+    act(() => {
+      root.render(
+        <MarkdownContent content={'\n# Article Title\n\n## Section'} skipDuplicateTitle="Article Title" />
+      );
+    });
+
+    expect(container.querySelector('h1')).toBeNull();
+    expect(container.querySelector('h2')?.textContent).toBe('Section');
+  });
+
+  it('keeps h1 content when it is not the first duplicate page title', () => {
+    act(() => {
+      root.render(
+        <MarkdownContent content={'## Lead\n\n# Article Title'} skipDuplicateTitle="Article Title" />
+      );
+    });
+
+    expect(container.querySelector('h1')?.textContent).toBe('Article Title');
   });
 });

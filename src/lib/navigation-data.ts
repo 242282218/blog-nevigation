@@ -1,4 +1,5 @@
 import type { Category, Tool } from '@/app/types/navigation';
+import { isSafeExternalUrl } from '@/lib/url-safety';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -17,12 +18,7 @@ function createSlug(value: string): string {
 }
 
 export function isValidNavigationUrl(value: string): boolean {
-    try {
-        const url = new URL(value.trim());
-        return url.protocol === 'https:';
-    } catch {
-        return false;
-    }
+    return isSafeExternalUrl(value);
 }
 
 function normalizeTags(value: unknown): string[] {

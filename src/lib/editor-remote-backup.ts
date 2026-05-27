@@ -15,7 +15,7 @@ export type RemoteBackupResult =
     | {
         enabled: true;
         success: true;
-        latestKey: string;
+        latestKey: string | null;
         snapshotKey: string | null;
     }
     | {
@@ -25,14 +25,129 @@ export type RemoteBackupResult =
         invalidConfiguration?: boolean;
     };
 
-function getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : 'Remote backup failed.';
-}
+export type QueuedRemoteBackupResult =
+    | {
+        queued: false;
+        enabled: false;
+        success: false;
+        message: string;
+    }
+    | {
+        queued: true;
+        enabled: true;
+        success: null;
+        message: string;
+    }
+    | {
+        queued: false;
+        enabled: true;
+        success: false;
+        message: string;
+        invalidConfiguration?: boolean;
+    };
 
-export async function syncCurrentBackupToRemote(options: {
+type RemoteBackupOptions = {
     reason: string;
     writeSnapshot?: boolean;
-}): Promise<RemoteBackupResult> {
+    writeLatest?: boolean;
+};
+
+let activeRemoteBackup: Promise<RemoteBackupResult> | null = null;
+let pendingRemoteBackupOptions: RemoteBackupOptions | null = null;
+
+function getErrorMessage(error: unknown): string {
+    if (error instanceof R2BackupSettingsInvalidError) {
+        return 'Cloudflare R2 配置文件损坏，请修复或删除后重试。';
+    }
+
+    return error instanceof Error && error.message ? error.message : 'Remote backup failed.';
+}
+
+function createQueuedResult(): QueuedRemoteBackupResult {
+    return {
+        queued: true,
+        enabled: true,
+        success: null,
+        message: 'R2 backup sync has been queued.',
+    };
+}
+
+export function queueCurrentBackupToRemote(options: {
+    reason: string;
+    writeSnapshot?: boolean;
+    writeLatest?: boolean;
+}): QueuedRemoteBackupResult {
+    try {
+        const config = getR2BackupConfig();
+        const status = getR2BackupStatus();
+
+        if (!status.enabled) {
+            return {
+                queued: false,
+                enabled: false,
+                success: false,
+                message: 'R2 backup is disabled.',
+            };
+        }
+
+        if (!config) {
+            return {
+                queued: false,
+                enabled: true,
+                success: false,
+                message: status.message ?? 'R2 backup is not configured.',
+            };
+        }
+
+        enqueueRemoteBackup({
+            reason: options.reason,
+            writeSnapshot: options.writeSnapshot ?? config.snapshotOnWrite,
+            writeLatest: options.writeLatest,
+        });
+
+        return createQueuedResult();
+    } catch (error) {
+        if (error instanceof R2BackupSettingsInvalidError) {
+            return {
+                queued: false,
+                enabled: true,
+                success: false,
+                invalidConfiguration: true,
+                message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+            };
+        }
+
+        throw error;
+    }
+}
+
+function enqueueRemoteBackup(options: RemoteBackupOptions): void {
+    pendingRemoteBackupOptions = options;
+
+    if (activeRemoteBackup) {
+        return;
+    }
+
+    void drainRemoteBackupQueue();
+}
+
+async function drainRemoteBackupQueue(): Promise<void> {
+    while (pendingRemoteBackupOptions) {
+        const options = pendingRemoteBackupOptions;
+        pendingRemoteBackupOptions = null;
+        activeRemoteBackup = syncCurrentBackupToRemote(options);
+
+        try {
+            await activeRemoteBackup;
+        } catch (error) {
+            console.error('[editor-remote-backup] Queued backup failed:', error);
+        } finally {
+            activeRemoteBackup = null;
+        }
+    }
+}
+
+export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): Promise<RemoteBackupResult> {
     let config;
     let status;
 
@@ -69,10 +184,11 @@ export async function syncCurrentBackupToRemote(options: {
     }
 
     try {
-        const payload = createCurrentEditorBackupPayload();
+        const payload = await createCurrentEditorBackupPayload();
         const result = await uploadBackupPayloadToR2(payload, {
             reason: options.reason,
             writeSnapshot: options.writeSnapshot ?? config.snapshotOnWrite,
+            writeLatest: options.writeLatest,
         });
 
         return {
@@ -89,5 +205,17 @@ export async function syncCurrentBackupToRemote(options: {
             success: false,
             message: getErrorMessage(error),
         };
+    }
+}
+
+export function resetRemoteBackupQueueForTests(): void {
+    activeRemoteBackup = null;
+    pendingRemoteBackupOptions = null;
+}
+
+export async function waitForRemoteBackupQueueIdleForTests(): Promise<void> {
+    while (activeRemoteBackup || pendingRemoteBackupOptions) {
+        await activeRemoteBackup?.catch(() => undefined);
+        await Promise.resolve();
     }
 }

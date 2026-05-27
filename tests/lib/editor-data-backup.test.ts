@@ -156,11 +156,11 @@ describe('editor backup payload', () => {
     ).toBeNull();
   });
 
-  it('restores valid backup payloads into BLOG_DATA_ROOT', () => {
+  it('restores valid backup payloads into BLOG_DATA_ROOT', async () => {
     const dataRoot = createTempDataRoot();
     process.env.BLOG_DATA_ROOT = dataRoot;
 
-    const result = restoreEditorBackupPayload(
+    const result = await restoreEditorBackupPayload(
       createEditorBackupPayload({
         articles: [article],
         navigation,
@@ -198,7 +198,7 @@ describe('editor backup payload', () => {
     expect(fs.readdirSync(dataRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
   });
 
-  it('rolls back existing files when restore replacement fails midway', () => {
+  it('rolls back existing files when restore replacement fails midway', async () => {
     const dataRoot = createTempDataRoot();
     process.env.BLOG_DATA_ROOT = dataRoot;
     const existingPayload = createEditorBackupPayload({
@@ -207,7 +207,7 @@ describe('editor backup payload', () => {
       settings,
     });
 
-    expect(restoreEditorBackupPayload(existingPayload)).toEqual({
+    await expect(restoreEditorBackupPayload(existingPayload)).resolves.toEqual({
       articles: 1,
       categories: 1,
       settings: true,
@@ -239,7 +239,7 @@ describe('editor backup payload', () => {
       return renameSync(oldPath, newPath);
     });
 
-    expect(() => {
+    await expect(
       restoreEditorBackupPayload(
         createEditorBackupPayload({
           articles: [replacementArticle],
@@ -249,8 +249,8 @@ describe('editor backup payload', () => {
             siteName: 'Replacement Site',
           },
         })
-      );
-    }).toThrow('Simulated replacement failure.');
+      )
+    ).rejects.toThrow('Simulated replacement failure.');
 
     expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
     expect(fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8')).toBe(existingNavigation);

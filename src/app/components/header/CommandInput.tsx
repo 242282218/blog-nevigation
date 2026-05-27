@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Compass, FileText, KeyRound, Lock, Search, Settings } from 'lucide-react';
+import { Compass, FileText, KeyRound, Lock, Search, Settings, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
     isSearchQueryAllowed,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/search-query';
 
 const ADMIN_SHORTCUT = ':admin';
+const COMMAND_SEARCH_PANEL_ID = 'command-search-panel';
 
 interface SearchResult {
     type: 'post' | 'tool';
@@ -123,6 +124,16 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
         setShowAdminMenu(false);
         setEditorAuthStatus(null);
         setEditorAuthStatusError(null);
+    }, []);
+
+    const clearQuery = useCallback(() => {
+        setQuery('');
+        setResults([]);
+        setErrorMessage(null);
+        setShowAdminMenu(false);
+        setEditorAuthStatus(null);
+        setEditorAuthStatusError(null);
+        setTimeout(() => inputRef.current?.focus(), 0);
     }, []);
 
     useEffect(() => {
@@ -306,9 +317,12 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                     setTimeout(() => inputRef.current?.focus(), 0);
                 }}
                 aria-label="搜索文章和链接"
+                aria-haspopup="dialog"
+                aria-expanded={isOpen}
+                aria-controls={isOpen ? COMMAND_SEARCH_PANEL_ID : undefined}
                 className={cn(
-                    'flex min-h-9 items-center gap-2 rounded-token-input border border-border bg-surface text-xs font-mono text-subtle transition-colors duration-token-fast hover:border-border-focus hover:bg-surface-elevated',
-                    compact ? 'h-9 w-9 justify-center p-0' : 'min-w-[260px] px-3 py-1.5'
+                    'flex min-h-[44px] items-center gap-2 rounded-token-input border border-border bg-surface text-xs font-mono text-subtle transition-colors duration-token-fast hover:border-border-focus hover:bg-surface-elevated',
+                    compact ? 'h-[44px] w-[44px] justify-center p-0' : 'min-w-[260px] px-3 py-2'
                 )}
             >
                 {compact ? (
@@ -328,6 +342,9 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
 
             {isOpen && (
                 <div
+                    id={COMMAND_SEARCH_PANEL_ID}
+                    role="dialog"
+                    aria-label="全站搜索"
                     className={cn(
                         'z-token-dropdown overflow-hidden rounded-token-card border border-border bg-surface-elevated shadow-token-lg',
                         compact
@@ -347,17 +364,27 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                             className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
                             autoFocus
                         />
+                        {query ? (
+                            <button
+                                type="button"
+                                onClick={clearQuery}
+                                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card text-subtle transition hover:bg-background hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-8 sm:min-w-8"
+                                aria-label="清空命令搜索"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        ) : null}
                         <kbd className="text-[10px] font-mono text-subtle bg-surface px-1.5 py-0.5 rounded-token-badge border border-border-soft">ESC</kbd>
                     </div>
 
                     {isLoading && (
-                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
+                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle" aria-live="polite">
                             <span className="animate-pulse">搜索中...</span>
                         </div>
                     )}
 
                     {!isLoading && results.length > 0 && (
-                        <div className="max-h-72 overflow-y-auto">
+                        <div className="max-h-72 overflow-y-auto" aria-live="polite">
                             {results.map((result) => (
                                 <SearchResultItem
                                     key={`${result.type}-${result.href}-${result.title}`}
@@ -369,13 +396,13 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                     )}
 
                     {!isLoading && errorMessage && (
-                        <div className="px-4 py-6 text-center text-sm font-mono text-danger">
+                        <div className="px-4 py-6 text-center text-sm font-mono text-danger" role="alert">
                             <span className="text-danger">!</span> {errorMessage}
                         </div>
                     )}
 
                     {!isLoading && !errorMessage && hasSearchableQuery && !showAdminMenu && results.length === 0 && (
-                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle">
+                        <div className="px-4 py-6 text-center text-sm font-mono text-subtle" aria-live="polite">
                             <span className="text-accent">!</span> 未找到匹配的文章或链接
                         </div>
                     )}

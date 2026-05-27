@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { randomBytes } from 'node:crypto';
 import {
+    createJsonBodyParseErrorResponse,
+    createJsonBodyTooLargeResponse,
+    EDITOR_AUTH_JSON_BODY_LIMIT_BYTES,
+    JsonBodyParseError,
+    JsonBodyTooLargeError,
+    readJsonBodyWithLimit,
+} from '@/lib/api-json-body';
+import {
+    EDITOR_CSRF_COOKIE,
     EDITOR_SESSION_COOKIE,
     getEditorAccessToken,
+    getEditorCsrfCookieOptions,
     getEditorCookieOptions,
 } from '@/lib/editor-auth';
-import { createEditorAuthConfigInvalidResponse } from '@/lib/editor-api-auth';
+import {
+    createEditorAuthConfigInvalidResponse,
+    ensureEditorWriteRequest,
+} from '@/lib/editor-api-auth';
 import {
     RuntimeEditorAuthAlreadyConfiguredError,
     RuntimeEditorAuthInvalidSecretError,
     createRuntimeEditorSession,
+    getRuntimeEditorAuthSetupConfigurationError,
     initializeRuntimeEditorAuth,
     isRuntimeEditorAuthConfigured,
     isRuntimeEditorAuthSetupEnabled,
@@ -25,13 +40,31 @@ import {
     recordEditorAuthFailure,
 } from '@/lib/editor-auth-rate-limit';
 
+const EDITOR_RUNTIME_AUTH_SETUP_CONFIG_ERROR_MESSAGE =
+    '生产环境开启运行时编辑口令初始化时，必须配置 EDITOR_RUNTIME_AUTH_SETUP_TOKEN。';
+
+function createRuntimeAuthSetupConfigurationErrorResponse(): NextResponse {
+    return NextResponse.json(
+        {
+            message: EDITOR_RUNTIME_AUTH_SETUP_CONFIG_ERROR_MESSAGE,
+        },
+        { status: 500 }
+    );
+}
+
 function createSessionResponse(sessionValue: string): NextResponse {
+    const csrfToken = randomBytes(32).toString('hex');
     const response = NextResponse.json({ success: true });
 
     response.cookies.set(
         EDITOR_SESSION_COOKIE,
         sessionValue,
         getEditorCookieOptions()
+    );
+    response.cookies.set(
+        EDITOR_CSRF_COOKIE,
+        csrfToken,
+        getEditorCsrfCookieOptions()
     );
 
     return response;
@@ -42,12 +75,22 @@ function clearSessionCookie(response: NextResponse): NextResponse {
         ...getEditorCookieOptions(),
         maxAge: 0,
     });
+    response.cookies.set(EDITOR_CSRF_COOKIE, '', {
+        ...getEditorCsrfCookieOptions(),
+        maxAge: 0,
+    });
 
     return response;
 }
 
 export async function GET(request: NextRequest) {
     try {
+        const setupConfigurationError = getRuntimeEditorAuthSetupConfigurationError();
+
+        if (setupConfigurationError) {
+            return createRuntimeAuthSetupConfigurationErrorResponse();
+        }
+
         const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
 
         return NextResponse.json({
@@ -84,7 +127,29 @@ export async function POST(request: NextRequest) {
             return rateLimitResponse;
         }
 
-        const body = await request.json().catch(() => null);
+        const body = await readJsonBodyWithLimit<{ secret?: unknown }>(
+            request,
+            EDITOR_AUTH_JSON_BODY_LIMIT_BYTES
+        ).catch((error: unknown) => {
+            if (error instanceof JsonBodyTooLargeError) {
+                return error;
+            }
+
+            if (error instanceof JsonBodyParseError) {
+                return error;
+            }
+
+            throw error;
+        });
+
+        if (body instanceof JsonBodyTooLargeError) {
+            return createJsonBodyTooLargeResponse();
+        }
+
+        if (body instanceof JsonBodyParseError) {
+            return createJsonBodyParseErrorResponse();
+        }
+
         const secret = typeof body?.secret === 'string' ? body.secret : '';
 
         if (!(await isValidRuntimeEditorSecret(secret))) {
@@ -123,6 +188,12 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
     try {
+        const setupConfigurationError = getRuntimeEditorAuthSetupConfigurationError();
+
+        if (setupConfigurationError) {
+            return createRuntimeAuthSetupConfigurationErrorResponse();
+        }
+
         if (!getEditorAccessToken()) {
             readRuntimeEditorAuthConfig();
         }
@@ -136,15 +207,33 @@ export async function PUT(request: NextRequest) {
         throw error;
     }
 
-    const body = await request.json().catch(() => null);
+    const body = await readJsonBodyWithLimit<{
+        secret?: unknown;
+        confirmSecret?: unknown;
+        setupToken?: unknown;
+    }>(request, EDITOR_AUTH_JSON_BODY_LIMIT_BYTES).catch((error: unknown) => {
+        if (error instanceof JsonBodyTooLargeError) {
+            return error;
+        }
+
+        if (error instanceof JsonBodyParseError) {
+            return error;
+        }
+
+        throw error;
+    });
+
+    if (body instanceof JsonBodyTooLargeError) {
+        return createJsonBodyTooLargeResponse();
+    }
+
+    if (body instanceof JsonBodyParseError) {
+        return createJsonBodyParseErrorResponse();
+    }
+
     const secret = typeof body?.secret === 'string' ? body.secret : '';
     const confirmSecret = typeof body?.confirmSecret === 'string' ? body.confirmSecret : '';
     const setupToken = typeof body?.setupToken === 'string' ? body.setupToken : '';
-    const rateLimitResponse = getEditorAuthRateLimitResponse(request, 'setup');
-
-    if (rateLimitResponse) {
-        return rateLimitResponse;
-    }
 
     if (!isRuntimeEditorAuthSetupEnabled()) {
         return NextResponse.json(
@@ -153,6 +242,12 @@ export async function PUT(request: NextRequest) {
             },
             { status: 403 }
         );
+    }
+
+    const rateLimitResponse = getEditorAuthRateLimitResponse(request, 'setup');
+
+    if (rateLimitResponse) {
+        return rateLimitResponse;
     }
 
     if (!isValidRuntimeEditorAuthSetupToken(setupToken)) {
@@ -199,7 +294,7 @@ export async function PUT(request: NextRequest) {
             recordEditorAuthFailure(request, 'setup');
             return NextResponse.json(
                 {
-                    message: '编辑口令至少需要 8 个字符。',
+                    message: '编辑口令至少需要 12 个字符。',
                 },
                 { status: 400 }
             );
@@ -215,7 +310,13 @@ export async function PUT(request: NextRequest) {
     }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
+    const authError = await ensureEditorWriteRequest(request);
+
+    if (authError) {
+        return authError;
+    }
+
     try {
         revokeRuntimeEditorSession();
     } catch (error) {

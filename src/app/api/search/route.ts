@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readNavigationFromDisk } from '@/lib/editor-data-storage';
-import { getPosts } from '@/lib/markdown';
+import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
+import { getPostsAsync } from '@/lib/markdown';
+import { getSearchRateLimitResponse } from '@/lib/search-rate-limit';
 import {
     isSearchQueryAllowed,
     normalizeSearchQuery,
 } from '@/lib/search-query';
+
+export const dynamic = 'force-dynamic';
 
 function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
@@ -17,7 +20,18 @@ export async function GET(request: NextRequest) {
         return NextResponse.json([]);
     }
 
-    const postResults = getPosts()
+    const rateLimitResponse = getSearchRateLimitResponse(request);
+
+    if (rateLimitResponse) {
+        return rateLimitResponse;
+    }
+
+    const [posts, navigation] = await Promise.all([
+        getPostsAsync(),
+        readNavigationFromDiskAsync(),
+    ]);
+
+    const postResults = posts
         .filter((post) => !post.slugArray.includes('navigation'))
         .filter((post) => includesQuery([post.title, post.description ?? '', post.slug], query))
         .slice(0, 5)
@@ -31,7 +45,7 @@ export async function GET(request: NextRequest) {
             external: false,
         }));
 
-    const toolResults = readNavigationFromDisk()
+    const toolResults = navigation
         .flatMap((category) =>
             category.tools.map((tool) => ({
                 categoryName: category.name,

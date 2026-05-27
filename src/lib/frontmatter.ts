@@ -1,7 +1,9 @@
 import matter from 'gray-matter';
 import type { Frontmatter } from '@/app/types/article';
+import type { ArticleRevisionNote, ArticleSourceLink } from '@/app/types/article';
 import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
 import { isRecord } from '@/lib/article-data';
+import { normalizeSafeExternalUrl } from '@/lib/url-safety';
 
 interface ParsedFrontmatterResult {
     content: string;
@@ -36,6 +38,55 @@ function asStringArray(value: unknown): string[] | undefined {
         .filter(Boolean);
 }
 
+export function normalizeSourceLinks(value: unknown): ArticleSourceLink[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((item) => {
+        if (!isRecord(item) || typeof item.title !== 'string' || typeof item.url !== 'string') {
+            return [];
+        }
+
+        const url = normalizeSafeExternalUrl(item.url);
+        const title = item.title.trim();
+
+        if (!title || !url) {
+            return [];
+        }
+
+        return [{
+            title,
+            url,
+            ...(typeof item.note === 'string' && item.note.trim() ? { note: item.note.trim() } : {}),
+        }];
+    });
+}
+
+export function normalizeRevisionNotes(value: unknown): ArticleRevisionNote[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((item) => {
+        if (!isRecord(item) || typeof item.date !== 'string' || typeof item.note !== 'string') {
+            return [];
+        }
+
+        const date = item.date.trim();
+        const note = item.note.trim();
+
+        if (!date || !note) {
+            return [];
+        }
+
+        return [{
+            date,
+            note,
+        }];
+    });
+}
+
 function normalizeFrontmatterData(data: Record<string, unknown>): Partial<Frontmatter> {
     const frontmatter: Partial<Frontmatter> = {};
     const tags = asStringArray(data.tags);
@@ -62,32 +113,8 @@ function normalizeFrontmatterData(data: Record<string, unknown>): Partial<Frontm
         frontmatter.tags = tags;
     }
 
-    if (Array.isArray(data.sourceLinks)) {
-        frontmatter.sourceLinks = data.sourceLinks.flatMap((item) => {
-            if (!isRecord(item) || typeof item.title !== 'string' || typeof item.url !== 'string') {
-                return [];
-            }
-
-            return [{
-                title: item.title,
-                url: item.url,
-                ...(typeof item.note === 'string' ? { note: item.note } : {}),
-            }];
-        });
-    }
-
-    if (Array.isArray(data.revisionNotes)) {
-        frontmatter.revisionNotes = data.revisionNotes.flatMap((item) => {
-            if (!isRecord(item) || typeof item.date !== 'string' || typeof item.note !== 'string') {
-                return [];
-            }
-
-            return [{
-                date: item.date,
-                note: item.note,
-            }];
-        });
-    }
+    frontmatter.sourceLinks = normalizeSourceLinks(data.sourceLinks);
+    frontmatter.revisionNotes = normalizeRevisionNotes(data.revisionNotes);
 
     return frontmatter;
 }

@@ -4,13 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       BLOG_DATA_ROOT: /var/lib/blog-navigation
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
-      EDITOR_AUTH_INTERNAL_ORIGIN: ${EDITOR_AUTH_INTERNAL_ORIGIN:-http://127.0.0.1:3000}
-      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       R2_BACKUP_ENABLED: ${R2_BACKUP_ENABLED:-false}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_BUCKET: ${R2_BUCKET:-}
@@ -19,6 +19,8 @@ services:
       R2_PREFIX: ${R2_PREFIX:-blog-navigation}
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_SNAPSHOT_ON_WRITE: ${R2_SNAPSHOT_ON_WRITE:-false}
+      R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}
+      R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}
     volumes:
       - ./data:/var/lib/blog-navigation
     restart: unless-stopped

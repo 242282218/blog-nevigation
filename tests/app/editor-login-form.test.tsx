@@ -35,6 +35,10 @@ describe('EditorLoginForm', () => {
 
   beforeEach(() => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
     replaceMock.mockReset();
     refreshMock.mockReset();
 
@@ -155,6 +159,83 @@ describe('EditorLoginForm', () => {
     expect(refreshMock).toHaveBeenCalled();
   });
 
+  it('marks and focuses the setup secret when the first-use password is too short', async () => {
+    act(() => {
+      root.render(
+        <EditorLoginForm
+          authConfigured={false}
+          setupEnabled
+          setupTokenRequired={false}
+          nextPath="/editor"
+        />
+      );
+    });
+
+    const setupInput = container.querySelector<HTMLInputElement>('#editor-setup-secret');
+    const confirmInput = container.querySelector<HTMLInputElement>('#editor-setup-confirm-secret');
+    const form = container.querySelector('form');
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+
+    await act(async () => {
+      valueSetter?.call(setupInput, 'short');
+      setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
+      valueSetter?.call(confirmInput, 'short');
+      confirmInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(setupInput).toBe(document.activeElement);
+    expect(setupInput?.getAttribute('aria-invalid')).toBe('true');
+    expect(setupInput?.getAttribute('aria-describedby')).toBe('editor-setup-error');
+    expect(container.textContent).toContain('编辑口令至少需要 8 个字符。');
+
+    await act(async () => {
+      valueSetter?.call(setupInput, 'long-enough');
+      setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(setupInput?.getAttribute('aria-invalid')).toBe('false');
+    expect(setupInput?.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('marks and focuses the setup token when an initialization key is required', async () => {
+    act(() => {
+      root.render(
+        <EditorLoginForm
+          authConfigured={false}
+          setupEnabled
+          setupTokenRequired
+          nextPath="/editor"
+        />
+      );
+    });
+
+    const setupTokenInput = container.querySelector<HTMLInputElement>('#editor-setup-token');
+    const setupInput = container.querySelector<HTMLInputElement>('#editor-setup-secret');
+    const confirmInput = container.querySelector<HTMLInputElement>('#editor-setup-confirm-secret');
+    const form = container.querySelector('form');
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+
+    await act(async () => {
+      valueSetter?.call(setupInput, 'new-secret');
+      setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
+      valueSetter?.call(confirmInput, 'new-secret');
+      confirmInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(setupTokenInput).toBe(document.activeElement);
+    expect(setupTokenInput?.getAttribute('aria-invalid')).toBe('true');
+    expect(setupTokenInput?.getAttribute('aria-describedby')).toBe('editor-setup-error');
+    expect(container.textContent).toContain('请输入初始化密钥。');
+  });
+
   it('keeps the normal login form focused when editor auth is configured', () => {
     act(() => {
       root.render(
@@ -171,6 +252,25 @@ describe('EditorLoginForm', () => {
 
     expect(container.textContent).not.toContain('初次使用初始化引导');
     expect(input?.disabled).toBe(false);
+  });
+
+  it('keeps the home link touch friendly on mobile', () => {
+    act(() => {
+      root.render(
+        <EditorLoginForm
+          authConfigured
+          setupEnabled={false}
+          setupTokenRequired={false}
+          nextPath="/editor"
+        />
+      );
+    });
+
+    const homeLink = container.querySelector<HTMLAnchorElement>('a[href="/"]');
+
+    expect(homeLink?.textContent).toBe('返回首页');
+    expect(homeLink?.className).toContain('min-h-11');
+    expect(homeLink?.className).toContain('min-w-11');
   });
 
   it('shows a read-only error when runtime auth config is invalid', () => {

@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import EditorHomePage from '@/app/editor/page';
+import EditorHomePage from '@/app/editor/(authenticated)/page';
 
 vi.mock('@/app/editor/components/LogoutButton', () => ({
   LogoutButton: () => <button type="button">logout</button>,
@@ -122,6 +122,64 @@ describe('EditorHomePage', () => {
     expect(getButtonByText(container, '云端恢复').disabled).toBe(false);
   });
 
+  it('keeps local restore available through an accessible file input', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse({
+        enabled: false,
+        configured: false,
+      })
+    );
+
+    await act(async () => {
+      root.render(<EditorHomePage />);
+    });
+    await flushPromises();
+
+    const restoreInput = container.querySelector<HTMLInputElement>('input[type="file"][aria-label="选择本地备份 JSON"]');
+
+    expect(restoreInput).toBeInstanceOf(HTMLInputElement);
+    expect(restoreInput?.accept).toBe('.json');
+    expect(restoreInput?.className).toContain('sr-only');
+    expect(restoreInput?.className).not.toContain('hidden');
+  });
+
+  it('syncs remote backups through the resource endpoint', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          enabled: true,
+          configured: true,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          remoteBackup: {
+            enabled: true,
+            success: true,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorHomePage />);
+    });
+    await flushPromises();
+
+    await act(async () => {
+      getButtonByText(container, '同步云端').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/data/backup/remote/sync',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+    expect(container.textContent).toContain('云端备份已同步。');
+  });
+
   it('warns when remote restore succeeds but the follow-up snapshot sync fails', async () => {
     const confirmMock = vi.fn().mockReturnValue(true);
 
@@ -161,10 +219,10 @@ describe('EditorHomePage', () => {
 
     expect(confirmMock).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/data/backup/remote',
+      '/api/data/backup/remote/restore',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ action: 'restore', currentManifest }),
+        body: JSON.stringify({ currentManifest }),
       })
     );
     expect(container.textContent).toContain('恢复成功，但云端快照同步失败：R2 upload failed.');

@@ -56,6 +56,29 @@ Body`);
     }));
   });
 
+  it('filters unsafe source links from imported frontmatter', () => {
+    const parsed = parseMarkdownWithFrontmatter(`---
+title: Research
+date: "2026-05-25"
+description: Research summary
+tags: []
+sourceLinks:
+  - title: Safe
+    url: https://example.com/reference
+  - title: Script
+    url: javascript:alert(1)
+  - title: Data
+    url: data:text/html,<script>alert(1)</script>
+  - title: Plain HTTP
+    url: http://example.com/reference
+---
+Body`);
+
+    expect(parsed.frontmatter.sourceLinks).toEqual([
+      { title: 'Safe', url: 'https://example.com/reference' },
+    ]);
+  });
+
   it('keeps YAML timestamp dates as yyyy-mm-dd strings', () => {
     const parsed = parseMarkdownWithFrontmatter(`---
 title: Date Post

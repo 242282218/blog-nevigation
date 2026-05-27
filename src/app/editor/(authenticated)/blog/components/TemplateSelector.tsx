@@ -96,6 +96,12 @@ export function TemplateSelector({ onSelect, selectedId, compact = false }: Temp
                         {template.output}
                       </p>
                     ) : null}
+                    {template.bestFor?.length ? (
+                      <p className="mt-2 line-clamp-1 text-xs text-subtle">
+                        <span className="font-medium text-muted">适合：</span>
+                        {template.bestFor.slice(0, 3).join(' / ')}
+                      </p>
+                    ) : null}
                     {template.highlights?.length ? (
                       <div className="mt-3 flex flex-wrap gap-1.5">
                         {template.highlights.slice(0, 3).map((highlight) => (

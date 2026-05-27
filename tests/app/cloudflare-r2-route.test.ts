@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -153,7 +153,7 @@ describe('Cloudflare R2 settings API', () => {
         body: JSON.stringify({
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
             accessKeyId: '',
             secretAccessKey: '',
@@ -180,7 +180,7 @@ describe('Cloudflare R2 settings API', () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
     process.env.R2_BACKUP_ENABLED = 'true';
-    process.env.R2_ACCOUNT_ID = 'env-account-id';
+    process.env.R2_ACCOUNT_ID = '33333333333333333333333333333333';
     process.env.R2_BUCKET = 'env-bucket';
     process.env.R2_ACCESS_KEY_ID = 'env-access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'env-secret-key';
@@ -209,7 +209,7 @@ describe('Cloudflare R2 settings API', () => {
         body: JSON.stringify({
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: '',
@@ -243,7 +243,7 @@ describe('Cloudflare R2 settings API', () => {
         body: JSON.stringify({
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: 'replacement-secret',
@@ -283,7 +283,7 @@ describe('Cloudflare R2 settings API', () => {
         body: JSON.stringify({
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: 'secret-key',
@@ -316,7 +316,7 @@ describe('Cloudflare R2 settings API', () => {
         body: JSON.stringify({
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
             accessKeyId: 'next-access-key',
             secretAccessKey: '',

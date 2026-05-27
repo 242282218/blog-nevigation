@@ -4,13 +4,18 @@ import {
     S3Client,
     S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isRecord } from '@/lib/article-data';
 import type { EditorBackupPayload } from '@/lib/editor-data-backup';
 
 const DEFAULT_R2_PREFIX = 'blog-navigation';
 const LATEST_BACKUP_FILE_NAME = 'backup.json';
 const R2_SETTINGS_FILE_NAME = 'cloudflare-r2.json';
+const R2_BACKUP_ENCRYPTION_VERSION = 1;
+const R2_BACKUP_ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+const R2_BACKUP_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
 
 export interface R2BackupConfig {
     bucket: string;
@@ -30,8 +35,11 @@ export interface R2BackupStatus {
     snapshotOnWrite: boolean;
     hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
+    hasEncryptionKey: boolean;
+    allowsPlaintextBackup: boolean;
     source: 'file' | 'env' | 'default';
     message: string | null;
+    securityWarning: string | null;
 }
 
 export interface EditableR2BackupSettings {
@@ -45,12 +53,22 @@ export interface EditableR2BackupSettings {
     snapshotOnWrite: boolean;
 }
 
-export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey'> {
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId'> {
     hasSecretAccessKey: boolean;
+    hasAccessKeyId: boolean;
+}
+
+interface EncryptedR2BackupPayload {
+    version: typeof R2_BACKUP_ENCRYPTION_VERSION;
+    encrypted: true;
+    algorithm: typeof R2_BACKUP_ENCRYPTION_ALGORITHM;
+    iv: string;
+    authTag: string;
+    ciphertext: string;
 }
 
 export interface R2UploadResult {
-    latestKey: string;
+    latestKey: string | null;
     snapshotKey: string | null;
 }
 
@@ -68,18 +86,25 @@ export class R2BackupSettingsInvalidError extends Error {
     }
 }
 
+export class R2BackupPayloadTooLargeError extends Error {
+    constructor(public readonly limitBytes = R2_BACKUP_BODY_LIMIT_BYTES) {
+        super(`R2 backup payload exceeds ${limitBytes} bytes.`);
+        this.name = 'R2BackupPayloadTooLargeError';
+    }
+}
+
 function getEnv(name: string): string {
     return process.env[name]?.trim() ?? '';
+}
+
+function isPlaintextBackupAllowed(): boolean {
+    return getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true';
 }
 
 function getR2SettingsFilePath(): string | null {
     const root = process.env.BLOG_DATA_ROOT?.trim();
 
     return root ? path.join(root, 'settings', R2_SETTINGS_FILE_NAME) : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseStoredR2BackupSettings(value: unknown, filePath: string): EditableR2BackupSettings {
@@ -170,8 +195,48 @@ function joinR2Key(...parts: string[]): string {
         .join('/');
 }
 
+function isValidR2AccountId(accountId: string): boolean {
+    return /^[a-f0-9]{32}$/i.test(accountId.trim());
+}
+
 function createR2Endpoint(accountId: string): string {
     return `https://${accountId}.r2.cloudflarestorage.com`;
+}
+
+function resolveR2Endpoint(endpoint: string, accountId: string): string | null {
+    const normalizedAccountId = accountId.trim().toLowerCase();
+
+    if (!isValidR2AccountId(normalizedAccountId)) {
+        return null;
+    }
+
+    const expectedHostname = `${normalizedAccountId}.r2.cloudflarestorage.com`;
+    const expectedEndpoint = createR2Endpoint(normalizedAccountId);
+    const trimmedEndpoint = endpoint.trim();
+
+    if (!trimmedEndpoint) {
+        return expectedEndpoint;
+    }
+
+    try {
+        const url = new URL(trimmedEndpoint);
+
+        if (
+            url.protocol !== 'https:' ||
+            url.username ||
+            url.password ||
+            url.pathname !== '/' ||
+            url.search ||
+            url.hash ||
+            url.hostname !== expectedHostname
+        ) {
+            return null;
+        }
+
+        return url.toString().replace(/\/$/, '');
+    } catch {
+        return null;
+    }
 }
 
 export function getEditableR2BackupSettings(): SafeR2BackupSettings {
@@ -182,7 +247,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
             enabled: stored.enabled,
             accountId: stored.accountId,
             bucket: stored.bucket,
-            accessKeyId: stored.accessKeyId,
+            hasAccessKeyId: Boolean(stored.accessKeyId),
             hasSecretAccessKey: Boolean(stored.secretAccessKey),
             prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
             endpoint: stored.endpoint,
@@ -199,7 +264,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
         enabled,
         accountId,
         bucket: getEnv('R2_BUCKET'),
-        accessKeyId: getEnv('R2_ACCESS_KEY_ID'),
+        hasAccessKeyId: Boolean(getEnv('R2_ACCESS_KEY_ID')),
         hasSecretAccessKey: Boolean(secretAccessKey),
         prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         endpoint,
@@ -248,6 +313,10 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         throw new Error('启用 R2 备份时必须填写 Account ID、Bucket、Access Key ID 和 Secret Access Key。');
     }
 
+    if (nextSettings.enabled && !resolveR2Endpoint(nextSettings.endpoint, nextSettings.accountId)) {
+        throw new Error('Cloudflare R2 Endpoint 必须是当前 Account ID 对应的 HTTPS R2 地址。');
+    }
+
     writeJsonAtomically(filePath, nextSettings);
 
     return getEditableR2BackupSettings();
@@ -265,9 +334,13 @@ export function getR2BackupConfig(): R2BackupConfig | null {
     const bucket = stored ? stored.bucket : getEnv('R2_BUCKET');
     const accessKeyId = stored ? stored.accessKeyId : getEnv('R2_ACCESS_KEY_ID');
     const secretAccessKey = stored ? stored.secretAccessKey : getEnv('R2_SECRET_ACCESS_KEY');
-    const endpoint = (stored ? stored.endpoint : getEnv('R2_ENDPOINT')) || (accountId ? createR2Endpoint(accountId) : '');
+    const endpoint = resolveR2Endpoint(stored ? stored.endpoint : getEnv('R2_ENDPOINT'), accountId);
 
     if (!accountId || !bucket || !accessKeyId || !secretAccessKey || !endpoint) {
+        return null;
+    }
+
+    if (!getR2BackupEncryptionKey() && !isPlaintextBackupAllowed()) {
         return null;
     }
 
@@ -288,6 +361,20 @@ export function getR2BackupStatus(): R2BackupStatus {
     const enabled = stored ? stored.enabled : getEnv('R2_BACKUP_ENABLED') === 'true';
     const config = getR2BackupConfig();
     const settings = getEditableR2BackupSettings();
+    const hasEncryptionKey = Boolean(getR2BackupEncryptionKey());
+    const allowsPlaintextBackup = isPlaintextBackupAllowed();
+    const hasRequiredConnectionSettings = Boolean(
+        settings.accountId &&
+        settings.bucket &&
+        settings.hasAccessKeyId &&
+        settings.hasSecretAccessKey &&
+        resolveR2Endpoint(settings.endpoint, settings.accountId)
+    );
+
+    let securityWarning: string | null = null;
+    if (enabled && config && !hasEncryptionKey && allowsPlaintextBackup) {
+        securityWarning = 'R2 backup plaintext mode is explicitly enabled. Backup data will be stored without application-level encryption.';
+    }
 
     return {
         enabled,
@@ -296,15 +383,32 @@ export function getR2BackupStatus(): R2BackupStatus {
         prefix: config?.prefix ?? settings.prefix,
         endpoint: config?.endpoint ?? (settings.endpoint || null),
         snapshotOnWrite: settings.snapshotOnWrite,
-        hasAccessKeyId: Boolean(settings.accessKeyId),
+        hasAccessKeyId: settings.hasAccessKeyId,
         hasSecretAccessKey: settings.hasSecretAccessKey,
+        hasEncryptionKey,
+        allowsPlaintextBackup,
         source: stored ? 'file' : (enabled || settings.bucket || settings.accountId ? 'env' : 'default'),
-        message: enabled && !config ? 'R2 backup is enabled but required variables are missing.' : null,
+        message: enabled && !config
+            ? (hasRequiredConnectionSettings && !hasEncryptionKey && !allowsPlaintextBackup
+                ? 'R2 backup encryption key is required unless R2_ALLOW_PLAINTEXT_BACKUP=true is explicitly set.'
+                : 'R2 backup is enabled but required variables are missing.')
+            : null,
+        securityWarning,
     };
 }
 
+let cachedR2Client: S3Client | null = null;
+let cachedR2ClientKey: string | null = null;
+
 function createR2Client(config: R2BackupConfig): S3Client {
-    return new S3Client({
+    const secretHash = createHash('sha256').update(config.secretAccessKey).digest('hex').slice(0, 16);
+    const cacheKey = `${config.endpoint}|${config.accessKeyId}|${secretHash}`;
+
+    if (cachedR2Client && cachedR2ClientKey === cacheKey) {
+        return cachedR2Client;
+    }
+
+    cachedR2Client = new S3Client({
         region: 'auto',
         endpoint: config.endpoint,
         forcePathStyle: true,
@@ -313,6 +417,9 @@ function createR2Client(config: R2BackupConfig): S3Client {
             secretAccessKey: config.secretAccessKey,
         },
     });
+    cachedR2ClientKey = cacheKey;
+
+    return cachedR2Client;
 }
 
 function createLatestBackupKey(config: R2BackupConfig): string {
@@ -345,34 +452,154 @@ function createSnapshotBackupKey(config: R2BackupConfig, payload: EditorBackupPa
     );
 }
 
+function assertR2BackupBodySize(byteLength: number): void {
+    if (byteLength > R2_BACKUP_BODY_LIMIT_BYTES) {
+        throw new R2BackupPayloadTooLargeError();
+    }
+}
+
+function assertR2BackupBodyTextSize(value: string): void {
+    assertR2BackupBodySize(Buffer.byteLength(value, 'utf8'));
+}
+
 async function bodyToString(body: unknown): Promise<string> {
     if (!body) {
         return '';
     }
 
     if (typeof body === 'string') {
+        assertR2BackupBodyTextSize(body);
         return body;
     }
 
     if (body instanceof Uint8Array) {
+        assertR2BackupBodySize(body.byteLength);
         return Buffer.from(body).toString('utf8');
     }
 
     if (typeof body === 'object' && 'transformToString' in body) {
-        return (body as { transformToString: () => Promise<string> }).transformToString();
+        const value = await (body as { transformToString: () => Promise<string> }).transformToString();
+        assertR2BackupBodyTextSize(value);
+        return value;
     }
 
     if (Symbol.asyncIterator in Object(body)) {
         const chunks: Buffer[] = [];
+        let receivedBytes = 0;
 
         for await (const chunk of body as AsyncIterable<Buffer | Uint8Array | string>) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            receivedBytes += buffer.byteLength;
+            assertR2BackupBodySize(receivedBytes);
+            chunks.push(buffer);
         }
 
         return Buffer.concat(chunks).toString('utf8');
     }
 
-    return String(body);
+    const value = String(body);
+    assertR2BackupBodyTextSize(value);
+    return value;
+}
+
+function getR2BackupEncryptionKey(): Buffer | null {
+    const rawKey = getEnv('R2_BACKUP_ENCRYPTION_KEY');
+
+    if (!rawKey) {
+        return null;
+    }
+
+    const base64Key = Buffer.from(rawKey, 'base64');
+
+    if (base64Key.length === 32) {
+        return base64Key;
+    }
+
+    const hexKey = Buffer.from(rawKey, 'hex');
+
+    if (hexKey.length === 32) {
+        return hexKey;
+    }
+
+    throw new Error('R2_BACKUP_ENCRYPTION_KEY must be a 32-byte base64 or hex value.');
+}
+
+function encryptBackupBody(body: string, key: Buffer): string {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv(R2_BACKUP_ENCRYPTION_ALGORITHM, key, iv);
+    const ciphertext = Buffer.concat([
+        cipher.update(body, 'utf8'),
+        cipher.final(),
+    ]);
+    const envelope: EncryptedR2BackupPayload = {
+        version: R2_BACKUP_ENCRYPTION_VERSION,
+        encrypted: true,
+        algorithm: R2_BACKUP_ENCRYPTION_ALGORITHM,
+        iv: iv.toString('base64'),
+        authTag: cipher.getAuthTag().toString('base64'),
+        ciphertext: ciphertext.toString('base64'),
+    };
+
+    return JSON.stringify(envelope, null, 2);
+}
+
+function isEncryptedR2BackupPayload(value: unknown): value is EncryptedR2BackupPayload {
+    return (
+        isRecord(value) &&
+        value.version === R2_BACKUP_ENCRYPTION_VERSION &&
+        value.encrypted === true &&
+        value.algorithm === R2_BACKUP_ENCRYPTION_ALGORITHM &&
+        typeof value.iv === 'string' &&
+        typeof value.authTag === 'string' &&
+        typeof value.ciphertext === 'string'
+    );
+}
+
+function decryptBackupBody(envelope: EncryptedR2BackupPayload, key: Buffer): string {
+    const decipher = createDecipheriv(
+        R2_BACKUP_ENCRYPTION_ALGORITHM,
+        key,
+        Buffer.from(envelope.iv, 'base64')
+    );
+
+    decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
+
+    return Buffer.concat([
+        decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+        decipher.final(),
+    ]).toString('utf8');
+}
+
+function createR2BackupBody(payload: EditorBackupPayload): string {
+    const body = JSON.stringify(payload, null, 2);
+    const key = getR2BackupEncryptionKey();
+    assertR2BackupBodyTextSize(body);
+
+    if (key) {
+        return encryptBackupBody(body, key);
+    }
+
+    if (isPlaintextBackupAllowed()) {
+        return body;
+    }
+
+    throw new Error('R2_BACKUP_ENCRYPTION_KEY is required unless R2_ALLOW_PLAINTEXT_BACKUP=true is explicitly set.');
+}
+
+function parseR2BackupBody(content: string): unknown {
+    const parsed = JSON.parse(content) as unknown;
+
+    if (!isEncryptedR2BackupPayload(parsed)) {
+        return parsed;
+    }
+
+    const key = getR2BackupEncryptionKey();
+
+    if (!key) {
+        throw new Error('Latest R2 backup is encrypted but R2_BACKUP_ENCRYPTION_KEY is not configured.');
+    }
+
+    return JSON.parse(decryptBackupBody(parsed, key));
 }
 
 export async function uploadBackupPayloadToR2(
@@ -380,6 +607,7 @@ export async function uploadBackupPayloadToR2(
     options: {
         reason: string;
         writeSnapshot: boolean;
+        writeLatest?: boolean;
     }
 ): Promise<R2UploadResult> {
     const config = getR2BackupConfig();
@@ -389,20 +617,16 @@ export async function uploadBackupPayloadToR2(
     }
 
     const client = createR2Client(config);
-    const body = JSON.stringify(payload, null, 2);
+    const body = createR2BackupBody(payload);
     const latestKey = createLatestBackupKey(config);
     const snapshotKey = options.writeSnapshot
         ? createSnapshotBackupKey(config, payload, options.reason)
         : null;
+    const writeLatest = options.writeLatest ?? true;
 
-    await client.send(
-        new PutObjectCommand({
-            Bucket: config.bucket,
-            Key: latestKey,
-            Body: body,
-            ContentType: 'application/json; charset=utf-8',
-        })
-    );
+    if (!writeLatest && !snapshotKey) {
+        throw new Error('R2 backup upload must write latest or a snapshot.');
+    }
 
     if (snapshotKey) {
         await client.send(
@@ -415,8 +639,19 @@ export async function uploadBackupPayloadToR2(
         );
     }
 
+    if (writeLatest) {
+        await client.send(
+            new PutObjectCommand({
+                Bucket: config.bucket,
+                Key: latestKey,
+                Body: body,
+                ContentType: 'application/json; charset=utf-8',
+            })
+        );
+    }
+
     return {
-        latestKey,
+        latestKey: writeLatest ? latestKey : null,
         snapshotKey,
     };
 }
@@ -438,9 +673,14 @@ export async function downloadLatestBackupPayloadFromR2(): Promise<unknown> {
                 Key: latestKey,
             })
         );
+
+        if (typeof response.ContentLength === 'number') {
+            assertR2BackupBodySize(response.ContentLength);
+        }
+
         const content = await bodyToString(response.Body);
 
-        return JSON.parse(content);
+        return parseR2BackupBody(content);
     } catch (error) {
         if (error instanceof SyntaxError) {
             throw new Error('Latest R2 backup is not valid JSON.');

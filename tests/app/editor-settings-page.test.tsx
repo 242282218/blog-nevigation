@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import EditorSettingsPage from '@/app/editor/settings/page';
+import EditorSettingsPage from '@/app/editor/(authenticated)/settings/page';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 
 vi.mock('@/app/editor/components/LogoutButton', () => ({
@@ -81,6 +81,10 @@ describe('EditorSettingsPage', () => {
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    });
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -109,9 +113,9 @@ describe('EditorSettingsPage', () => {
           persistent: true,
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
-            accessKeyId: 'access-key',
+            hasAccessKeyId: true,
             hasSecretAccessKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
@@ -122,7 +126,7 @@ describe('EditorSettingsPage', () => {
             configured: true,
             bucket: 'blog-data',
             prefix: 'blog-navigation',
-            endpoint: 'https://account-id.r2.cloudflarestorage.com',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
@@ -141,9 +145,9 @@ describe('EditorSettingsPage', () => {
           success: true,
           settings: {
             enabled: true,
-            accountId: 'next-account-id',
+            accountId: '11111111111111111111111111111111',
             bucket: 'blog-data',
-            accessKeyId: 'access-key',
+            hasAccessKeyId: true,
             hasSecretAccessKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
@@ -154,7 +158,7 @@ describe('EditorSettingsPage', () => {
             configured: true,
             bucket: 'blog-data',
             prefix: 'blog-navigation',
-            endpoint: 'https://next-account-id.r2.cloudflarestorage.com',
+            endpoint: 'https://11111111111111111111111111111111.r2.cloudflarestorage.com',
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
@@ -174,15 +178,20 @@ describe('EditorSettingsPage', () => {
     expect(container.textContent).toContain('已保存');
 
     const accountInput = container.querySelector<HTMLInputElement>('#r2-account-id');
+    const accessKeyInput = container.querySelector<HTMLInputElement>('#r2-access-key-id');
     const secretInput = container.querySelector<HTMLInputElement>('#r2-secret-access-key');
     const form = container.querySelector<HTMLFormElement>('#cloudflare-r2-form');
 
-    expect(accountInput?.value).toBe('account-id');
+    expect(accountInput?.value).toBe('0123456789abcdef0123456789abcdef');
+    expect(accessKeyInput?.value).toBe('');
     expect(secretInput?.value).toBe('');
 
     await act(async () => {
       if (accountInput) {
-        setInputValue(accountInput, 'next-account-id');
+        setInputValue(accountInput, '11111111111111111111111111111111');
+      }
+      if (accessKeyInput) {
+        setInputValue(accessKeyInput, 'access-key');
       }
     });
     await act(async () => {
@@ -202,7 +211,7 @@ describe('EditorSettingsPage', () => {
     expect(body.settings).toEqual(
       expect.objectContaining({
         enabled: true,
-        accountId: 'next-account-id',
+        accountId: '11111111111111111111111111111111',
         bucket: 'blog-data',
         accessKeyId: 'access-key',
         secretAccessKey: '',
@@ -257,6 +266,131 @@ describe('EditorSettingsPage', () => {
     expect(getButtonByText(container, '云端恢复').disabled).toBe(true);
   });
 
+  it('keeps visible focus affordance on R2 checkbox rows', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            accessKeyId: '',
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'default',
+            message: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+
+    expect(checkboxes).toHaveLength(2);
+
+    for (const checkbox of checkboxes) {
+      const label = checkbox.closest('label');
+
+      expect(checkbox.className).toContain('h-5');
+      expect(checkbox.className).toContain('w-5');
+      expect(checkbox.className).toContain('shrink-0');
+      expect(label?.className).toContain('focus-within:ring-2');
+      expect(label?.className).toContain('focus-within:border-link');
+    }
+  });
+
+  it('marks and focuses the first missing R2 settings field on submit', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '',
+            bucket: '',
+            accessKeyId: '',
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'file',
+            message: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const accountInput = container.querySelector<HTMLInputElement>('#r2-account-id');
+    const form = container.querySelector<HTMLFormElement>('#cloudflare-r2-form');
+
+    expect(accountInput).toBeInstanceOf(HTMLInputElement);
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(accountInput).toBe(document.activeElement);
+    expect(accountInput?.getAttribute('aria-invalid')).toBe('true');
+    expect(accountInput?.getAttribute('aria-describedby')).toBe('r2-account-id-description');
+    expect(container.querySelector('#r2-account-id-description')?.textContent).toBe('请填写 Cloudflare Account ID。');
+    expect(container.textContent).toContain('请填写 Cloudflare Account ID。');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      if (accountInput) {
+        setInputValue(accountInput, '0123456789abcdef0123456789abcdef');
+      }
+    });
+
+    expect(accountInput?.getAttribute('aria-invalid')).toBe('false');
+    expect(container.querySelector('#r2-account-id-description')?.textContent).toBe('Cloudflare 账户 ID，用于生成默认 R2 endpoint。');
+  });
+
   it('disables site settings save when BLOG_DATA_ROOT is not configured', async () => {
     fetchMock
       .mockResolvedValueOnce(
@@ -300,7 +434,77 @@ describe('EditorSettingsPage', () => {
     await flushPromises();
 
     expect(container.textContent).toContain('未配置持久化目录');
-    expect(getButtonByText(container, '保存设置').disabled).toBe(true);
+    const saveButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))
+      .filter((button) => button.textContent?.includes('保存设置'));
+
+    expect(saveButtons).toHaveLength(2);
+    expect(saveButtons.every((button) => button.disabled)).toBe(true);
+    expect(container.textContent).toContain('未配置持久化目录，当前无法保存。');
+  });
+
+  it('syncs remote backups from settings through the resource endpoint', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: false,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          remoteBackup: {
+            enabled: true,
+            success: true,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    await act(async () => {
+      getButtonByText(container, '同步云端').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/data/backup/remote/sync',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+    expect(container.textContent).toContain('云端备份已同步。');
   });
 
   it('submits edited homepage intro card settings', async () => {
@@ -357,10 +561,15 @@ describe('EditorSettingsPage', () => {
     await flushPromises();
 
     expect(container.textContent).toContain('首页右侧介绍卡片');
+    expect(container.textContent).toContain('保存后刷新公开页面生效。');
 
     const titleInput = container.querySelector<HTMLInputElement>('#settings-introCardTitle');
     const descriptionInput = container.querySelector<HTMLTextAreaElement>('#settings-introCardDescription');
-    const form = container.querySelector<HTMLFormElement>('#site-settings-form');
+    const saveButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))
+      .filter((button) => button.textContent?.includes('保存设置'));
+
+    expect(saveButtons).toHaveLength(2);
+    expect(saveButtons.every((button) => !button.disabled)).toBe(true);
 
     await act(async () => {
       if (titleInput) {
@@ -372,7 +581,7 @@ describe('EditorSettingsPage', () => {
       }
     });
     await act(async () => {
-      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      saveButtons.at(-1)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(fetchMock).toHaveBeenLastCalledWith(
@@ -397,6 +606,76 @@ describe('EditorSettingsPage', () => {
     );
   });
 
+  it('marks and focuses the first missing site settings field on submit', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: {
+            ...DEFAULT_SITE_SETTINGS,
+            siteName: '',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            accessKeyId: '',
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'default',
+            message: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const siteNameInput = container.querySelector<HTMLInputElement>('#settings-siteName');
+    const form = container.querySelector<HTMLFormElement>('#site-settings-form');
+
+    expect(siteNameInput).toBeInstanceOf(HTMLInputElement);
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(siteNameInput).toBe(document.activeElement);
+    expect(siteNameInput?.getAttribute('aria-invalid')).toBe('true');
+    expect(siteNameInput?.getAttribute('aria-describedby')).toBe('settings-siteName-description');
+    expect(container.querySelector('#settings-siteName-description')?.textContent).toBe('请填写站点名称。');
+    expect(container.textContent).toContain('请填写站点名称。');
+
+    await act(async () => {
+      if (siteNameInput) {
+        setInputValue(siteNameInput, 'Restored Site Name');
+      }
+    });
+
+    expect(siteNameInput?.getAttribute('aria-invalid')).toBe('false');
+    expect(container.querySelector('#settings-siteName-description')?.textContent).toBe('用于浏览器标题和后台识别。');
+  });
+
   it('warns when settings page remote restore succeeds but the follow-up snapshot sync fails', async () => {
     const confirmMock = vi.fn().mockReturnValue(true);
 
@@ -414,9 +693,9 @@ describe('EditorSettingsPage', () => {
           persistent: true,
           settings: {
             enabled: true,
-            accountId: 'account-id',
+            accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
-            accessKeyId: 'access-key',
+            hasAccessKeyId: true,
             hasSecretAccessKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
@@ -427,7 +706,7 @@ describe('EditorSettingsPage', () => {
             configured: true,
             bucket: 'blog-data',
             prefix: 'blog-navigation',
-            endpoint: 'https://account-id.r2.cloudflarestorage.com',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
@@ -464,10 +743,10 @@ describe('EditorSettingsPage', () => {
 
     expect(confirmMock).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/data/backup/remote',
+      '/api/data/backup/remote/restore',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ action: 'restore', currentManifest }),
+        body: JSON.stringify({ currentManifest }),
       })
     );
     expect(container.textContent).toContain('恢复成功，但云端快照同步失败：R2 upload failed.');

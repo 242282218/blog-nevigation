@@ -21,7 +21,6 @@ def verify_page(browser, viewport, screenshot_name: str) -> None:
     page = context.new_page()
     page.set_default_timeout(60000)
     page.goto(f"{BASE_URL}/editor", wait_until="domcontentloaded")
-    page.wait_for_load_state("networkidle")
 
     expect(page.get_by_role("heading", name="编辑中心")).to_be_visible()
     expect(page.get_by_role("link", name="博客编辑器 使用 Markdown 编写文章，保留实时预览、模板和本地优先保存。 开始写作")).to_be_visible()

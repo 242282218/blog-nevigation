@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createJsonBodyParseErrorResponse,
+    createJsonBodyTooLargeResponse,
+    EDITOR_JSON_BODY_LIMIT_BYTES,
+    JsonBodyParseError,
+    JsonBodyTooLargeError,
+    readJsonBodyWithLimit,
+} from '@/lib/api-json-body';
+import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
+    ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
@@ -11,7 +20,7 @@ import {
     readNavigationFromDisk,
     writeNavigationToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
-import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { parseNavigationData } from '@/lib/navigation-data';
 
 type NavigationRequestBody = {
@@ -47,7 +56,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-    const authError = await ensureEditorSession(request);
+    const authError = await ensureEditorWriteRequest(request);
 
     if (authError) {
         return authError;
@@ -57,7 +66,22 @@ export async function PUT(request: NextRequest) {
         return createEditorDataRootRequiredResponse();
     }
 
-    const body = (await request.json().catch(() => null)) as NavigationRequestBody | null;
+    let body: NavigationRequestBody | null;
+
+    try {
+        body = await readJsonBodyWithLimit<NavigationRequestBody>(request, EDITOR_JSON_BODY_LIMIT_BYTES);
+    } catch (error) {
+        if (error instanceof JsonBodyTooLargeError) {
+            return createJsonBodyTooLargeResponse();
+        }
+
+        if (error instanceof JsonBodyParseError) {
+            return createJsonBodyParseErrorResponse();
+        }
+
+        throw error;
+    }
+
     const parsed = parseNavigationData(body?.categories);
 
     if (!parsed) {
@@ -73,7 +97,7 @@ export async function PUT(request: NextRequest) {
     let writeResult;
 
     try {
-        writeResult = writeNavigationToDiskIfRevisionMatches(parsed, expectedRevision);
+        writeResult = await writeNavigationToDiskIfRevisionMatches(parsed, expectedRevision);
     } catch (error) {
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
@@ -101,7 +125,7 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    const remoteBackup = await syncCurrentBackupToRemote({
+    const remoteBackup = queueCurrentBackupToRemote({
         reason: 'navigation-write',
     });
 

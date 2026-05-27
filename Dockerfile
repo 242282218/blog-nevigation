@@ -6,7 +6,7 @@ RUN apk add --no-cache libc6-compat
 
 COPY package.json package-lock.json* ./
 
-RUN npm ci --legacy-peer-deps --prefer-offline --no-audit && \
+RUN npm ci --prefer-offline --no-audit && \
     npm cache clean --force && \
     rm -rf /root/.npm /tmp/*
 
@@ -15,15 +15,19 @@ FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json package-lock.json next.config.mjs tsconfig.json postcss.config.mjs tailwind.config.ts ./
+COPY package.json package-lock.json next.config.mjs tsconfig.json postcss.config.mjs tailwind.config.ts vitest.config.ts eslint.config.mjs ./
 COPY src ./src
 COPY public ./public
 COPY content ./content
+COPY tests ./tests
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-RUN npm run build && \
+# Docker builds keep the same quality gates as CI so image artifacts cannot bypass them.
+RUN npm run lint && \
+    npm run typecheck && \
+    npm run build && \
     rm -rf node_modules/.cache /tmp/*
 
 FROM node:24-alpine AS runner

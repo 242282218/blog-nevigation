@@ -3,6 +3,8 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/data/backup/remote/route';
+import { POST as POST_RESTORE } from '@/app/api/data/backup/remote/restore/route';
+import { POST as POST_SYNC } from '@/app/api/data/backup/remote/sync/route';
 import {
   downloadLatestBackupPayloadFromR2,
   getR2BackupStatus,
@@ -89,8 +91,11 @@ beforeEach(() => {
     snapshotOnWrite: false,
     hasAccessKeyId: false,
     hasSecretAccessKey: false,
+    hasEncryptionKey: false,
+    allowsPlaintextBackup: false,
     source: 'default',
     message: null,
+    securityWarning: null,
   });
 });
 
@@ -196,7 +201,7 @@ describe('remote backup API', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(
       expect.objectContaining({
-        message: '远端备份操作无效。',
+        code: 'invalid_json',
       })
     );
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
@@ -229,6 +234,38 @@ describe('remote backup API', () => {
         }),
       })
     );
+  });
+
+  it('syncs through the resource remote sync endpoint', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: true,
+      latestKey: 'blog-navigation/latest/backup.json',
+      snapshotKey: 'blog-navigation/snapshots/backup.json',
+    });
+
+    const response = await POST_SYNC(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/sync', {
+        method: 'POST',
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        remoteBackup: expect.objectContaining({
+          success: true,
+        }),
+      })
+    );
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+      reason: 'manual-sync',
+      writeSnapshot: true,
+    });
   });
 
   it('reports corrupt R2 settings during manual sync', async () => {
@@ -306,6 +343,154 @@ describe('remote backup API', () => {
     expect(response.status).toBe(400);
     expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('restores through the resource remote restore endpoint', async () => {
+    const dataRoot = createTempDataRoot();
+    const remoteArticle = {
+      id: 'remote-article-1',
+      title: 'Remote Article',
+      date: '2026-05-24',
+      description: 'Remote data',
+      tags: [],
+      content: '# Remote',
+      slug: 'remote-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [remoteArticle],
+        navigation: [],
+      },
+    });
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: true,
+      latestKey: 'blog-navigation/latest/backup.json',
+      snapshotKey: 'blog-navigation/snapshots/backup.json',
+    });
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        counts: expect.objectContaining({
+          articles: 1,
+        }),
+      })
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'remote-article-1',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenNthCalledWith(1, {
+      reason: 'pre-remote-restore',
+      writeSnapshot: true,
+      writeLatest: false,
+    });
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenNthCalledWith(2, {
+      reason: 'remote-restore',
+      writeSnapshot: true,
+    });
+  });
+
+  it('does not restore remote data when the pre-restore snapshot fails', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-article-1',
+      title: 'Existing Article',
+      date: '2026-05-24',
+      description: 'Existing data',
+      tags: [],
+      content: '# Existing',
+      slug: 'existing-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const remoteArticle = {
+      id: 'remote-article-1',
+      title: 'Remote Article',
+      date: '2026-05-24',
+      description: 'Remote data',
+      tags: [],
+      content: '# Remote',
+      slug: 'remote-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [remoteArticle],
+        navigation: [],
+      },
+    });
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: false,
+      message: 'R2 backup sync failed.',
+    });
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        remoteBackup: expect.objectContaining({
+          success: false,
+        }),
+      })
+    );
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'existing-article-1',
+      }),
+    ]);
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledTimes(1);
   });
 
   it('reports corrupt R2 settings before restoring remote data', async () => {
@@ -437,7 +622,7 @@ describe('remote backup API', () => {
       heroDescription: 'Existing data.',
     });
     const currentManifest = await readCurrentManifest();
-    writeArticlesToDisk([newerArticle]);
+    await writeArticlesToDisk([newerArticle]);
     mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
       version: 1,
       data: {

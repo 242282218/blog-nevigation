@@ -43,12 +43,13 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
         <div className="space-y-4">
             <section className="rounded-token-card border border-border bg-surface-elevated p-2.5 md:p-3">
                 <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_180px] lg:items-stretch">
-                    <label className="flex min-h-10 items-center gap-2.5 rounded-token-input border border-border bg-bg px-3 py-2 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
+                    <label className="flex min-h-[44px] items-center gap-2.5 rounded-token-input border border-border bg-bg px-3 py-0 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
                         <Search className="h-4 w-4 text-accent" />
                         <input
                             value={query}
                             onChange={(event) => setQuery(event.target.value)}
                             placeholder="搜索工具、标签或域名"
+                            aria-label="搜索导航链接"
                             className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
                         />
                         <span className="hidden font-mono text-[0.68rem] text-subtle sm:inline">title/tag/url</span>
@@ -56,7 +57,7 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
                             <button
                                 type="button"
                                 onClick={() => setQuery('')}
-                                className="rounded-token-full p-1.5 text-subtle transition-colors duration-token-fast hover:bg-warm-100 hover:text-fg"
+                                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-token-full text-subtle transition-colors duration-token-fast hover:bg-warm-100 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                                 aria-label="清空搜索"
                             >
                                 <X className="h-4 w-4" />
@@ -64,7 +65,7 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
                         ) : null}
                     </label>
 
-                    <div className="flex min-h-10 items-center justify-between gap-3 rounded-token-card border border-warm-700 bg-warm-900 px-3 py-2 text-white">
+                    <div className="flex min-h-[44px] items-center justify-between gap-3 rounded-token-card border border-warm-700 bg-warm-900 px-3 py-2 text-white">
                         <div className="flex min-w-0 items-center gap-2">
                             <Grid2X2 className="h-4 w-4 text-accent-200" />
                             <span className="truncate text-xs text-white/68">{activeLabel}</span>
@@ -78,31 +79,37 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
                     </div>
                 </div>
 
-                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="导航分类">
-                    <button
-                        type="button"
-                        onClick={() => setActiveSlug('all')}
-                        aria-pressed={activeSlug === 'all'}
-                        className={activeSlug === 'all'
-                            ? 'min-h-8 shrink-0 rounded-token-full bg-fg px-3 py-1.5 text-xs font-medium text-surface shadow-token-md'
-                            : 'min-h-8 shrink-0 rounded-token-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
-                    >
-                        全部
-                    </button>
-                    {categories.map((category) => (
+                <div className="relative mt-2">
+                    <div className="flex gap-2 overflow-x-auto pb-1 pr-9 [scrollbar-width:thin] sm:pr-2" aria-label="导航分类">
                         <button
-                            key={category.slug}
                             type="button"
-                            onClick={() => setActiveSlug(category.slug)}
-                            aria-pressed={activeSlug === category.slug}
-                            className={activeSlug === category.slug
-                                ? 'min-h-8 shrink-0 rounded-token-full bg-fg px-3 py-1.5 text-xs font-medium text-surface shadow-token-md'
-                                : 'min-h-8 shrink-0 rounded-token-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg'}
+                            onClick={() => setActiveSlug('all')}
+                            aria-pressed={activeSlug === 'all'}
+                            className={activeSlug === 'all'
+                                ? 'min-h-[44px] shrink-0 rounded-token-full bg-fg px-4 py-2 text-xs font-medium text-surface shadow-token-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'
+                                : 'min-h-[44px] shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'}
                         >
-                            {category.name}
-                            <span className="ml-1.5 font-mono text-[0.68rem] opacity-60">{category.tools.length}</span>
+                            全部
                         </button>
-                    ))}
+                        {categories.map((category) => (
+                            <button
+                                key={category.slug}
+                                type="button"
+                                onClick={() => setActiveSlug(category.slug)}
+                                aria-pressed={activeSlug === category.slug}
+                                className={activeSlug === category.slug
+                                    ? 'min-h-[44px] shrink-0 rounded-token-full bg-fg px-4 py-2 text-xs font-medium text-surface shadow-token-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'
+                                    : 'min-h-[44px] shrink-0 rounded-token-full border border-border bg-surface px-4 py-2 text-xs font-medium text-muted transition-colors duration-token-fast hover:border-accent-200 hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus'}
+                            >
+                                {category.name}
+                                <span className="ml-1.5 font-mono text-[0.68rem] opacity-60">{category.tools.length}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-y-0 right-0 w-9 bg-gradient-to-l from-surface-elevated via-surface-elevated/85 to-transparent sm:hidden"
+                    />
                 </div>
             </section>
 
@@ -110,6 +117,28 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
                 <EmptyState
                     title="没有匹配的链接"
                     description="换一个关键词，或切换到全部分类再试。"
+                    action={(
+                        <div className="flex flex-wrap justify-center gap-2">
+                            {query ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setQuery('')}
+                                    className="inline-flex min-h-[44px] items-center rounded-token-button border border-border bg-surface px-4 py-2 text-sm font-medium text-fg transition hover:border-accent-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                                >
+                                    清空搜索并显示全部
+                                </button>
+                            ) : null}
+                            {activeSlug !== 'all' ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveSlug('all')}
+                                    className="inline-flex min-h-[44px] items-center rounded-token-button bg-fg px-4 py-2 text-sm font-medium text-surface transition hover:bg-warm-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                                >
+                                    查看全部分类
+                                </button>
+                            ) : null}
+                        </div>
+                    )}
                 />
             ) : (
                 <div className="space-y-6">

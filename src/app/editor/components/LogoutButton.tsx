@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogOut } from 'lucide-react';
 import { EditorButton } from './EditorShell';
+import { createEditorCsrfHeaders } from '../editor-csrf';
 
 export function LogoutButton() {
     const router = useRouter();
@@ -15,6 +16,8 @@ export function LogoutButton() {
         try {
             await fetch('/api/editor-auth', {
                 method: 'DELETE',
+                credentials: 'include',
+                headers: createEditorCsrfHeaders(),
             });
         } finally {
             router.replace('/editor/login');

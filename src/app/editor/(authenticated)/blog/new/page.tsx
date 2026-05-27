@@ -2,7 +2,7 @@
 
 import { Suspense } from 'react';
 import { NewArticleContent } from './NewArticleContent';
-import { EditorPage } from '../../components/EditorShell';
+import { EditorPage } from '../../../components/EditorShell';
 
 export default function NewArticlePage() {
   return (

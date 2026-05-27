@@ -5,7 +5,7 @@ import Home from '@/app/page';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 
 vi.mock('@/lib/markdown', () => ({
-  getPosts: () => [
+  getPostsAsync: async () => [
     {
       title: 'Latest Note',
       description: 'Latest description',
@@ -17,8 +17,8 @@ vi.mock('@/lib/markdown', () => ({
 }));
 
 vi.mock('@/lib/editor-data-storage', () => ({
-  readNavigationFromDisk: () => [],
-  readSiteSettingsFromDisk: () => ({
+  readNavigationFromDiskAsync: async () => [],
+  readSiteSettingsFromDiskAsync: async () => ({
     ...DEFAULT_SITE_SETTINGS,
     introCardEyebrow: 'editable intro',
     introCardTitle: 'Editable desk title',
@@ -52,8 +52,8 @@ describe('Home page', () => {
     vi.clearAllMocks();
   });
 
-  it('renders homepage intro card text from site settings', () => {
-    const html = renderToStaticMarkup(<Home />);
+  it('renders homepage intro card text from site settings', async () => {
+    const html = renderToStaticMarkup(await Home());
 
     expect(html).toContain('editable intro');
     expect(html).toContain('Editable desk title');

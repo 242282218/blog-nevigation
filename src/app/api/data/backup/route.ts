@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createJsonBodyParseErrorResponse,
+    createJsonBodyTooLargeResponse,
+    EDITOR_JSON_BODY_LIMIT_BYTES,
+    JsonBodyParseError,
+    JsonBodyTooLargeError,
+    readJsonBodyWithLimit,
+} from '@/lib/api-json-body';
+import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
     createEditorDataRootRequiredResponse,
+    ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
@@ -39,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        return NextResponse.json(createCurrentEditorBackupPayload());
+        return NextResponse.json(await createCurrentEditorBackupPayload());
     } catch (error) {
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
@@ -58,7 +67,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-    const authError = await ensureEditorSession(request);
+    const authError = await ensureEditorWriteRequest(request);
 
     if (authError) {
         return authError;
@@ -68,7 +77,22 @@ export async function POST(request: NextRequest) {
         return createEditorDataRootRequiredResponse();
     }
 
-    const body = (await request.json().catch(() => null)) as BackupRequestBody | null;
+    let body: BackupRequestBody | null;
+
+    try {
+        body = await readJsonBodyWithLimit<BackupRequestBody>(request, EDITOR_JSON_BODY_LIMIT_BYTES);
+    } catch (error) {
+        if (error instanceof JsonBodyTooLargeError) {
+            return createJsonBodyTooLargeResponse();
+        }
+
+        if (error instanceof JsonBodyParseError) {
+            return createJsonBodyParseErrorResponse();
+        }
+
+        throw error;
+    }
+
     const currentManifest = parseRestoreCurrentManifest(body?.currentManifest);
 
     if (!currentManifest) {
@@ -78,7 +102,7 @@ export async function POST(request: NextRequest) {
     let result;
 
     try {
-        result = restoreEditorBackupPayload(body, { currentManifest });
+        result = await restoreEditorBackupPayload(body, { currentManifest });
     } catch (error) {
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 

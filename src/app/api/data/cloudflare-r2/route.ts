@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    createJsonBodyParseErrorResponse,
+    createJsonBodyTooLargeResponse,
+    EDITOR_SETTINGS_JSON_BODY_LIMIT_BYTES,
+    JsonBodyParseError,
+    JsonBodyTooLargeError,
+    readJsonBodyWithLimit,
+} from '@/lib/api-json-body';
+import {
     createEditorDataRootRequiredResponse,
+    ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
@@ -75,7 +84,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-    const authError = await ensureEditorSession(request);
+    const authError = await ensureEditorWriteRequest(request);
 
     if (authError) {
         return authError;
@@ -85,7 +94,22 @@ export async function PUT(request: NextRequest) {
         return createEditorDataRootRequiredResponse();
     }
 
-    const body = (await request.json().catch(() => null)) as CloudflareR2RequestBody | null;
+    let body: CloudflareR2RequestBody | null;
+
+    try {
+        body = await readJsonBodyWithLimit<CloudflareR2RequestBody>(request, EDITOR_SETTINGS_JSON_BODY_LIMIT_BYTES);
+    } catch (error) {
+        if (error instanceof JsonBodyTooLargeError) {
+            return createJsonBodyTooLargeResponse();
+        }
+
+        if (error instanceof JsonBodyParseError) {
+            return createJsonBodyParseErrorResponse();
+        }
+
+        throw error;
+    }
+
     const settings = parseSettings(body?.settings);
 
     if (!settings) {
@@ -112,10 +136,16 @@ export async function PUT(request: NextRequest) {
             return invalidResponse;
         }
 
+        const knownPrefixes = [
+            '启用 R2 备份时必须填写',
+            'Cloudflare R2 Endpoint',
+        ];
+        const message = error instanceof Error && knownPrefixes.some((prefix) => error.message.startsWith(prefix))
+            ? error.message
+            : 'Cloudflare R2 配置保存失败，请检查配置格式。';
+
         return NextResponse.json(
-            {
-                message: error instanceof Error ? error.message : 'Cloudflare R2 配置保存失败。',
-            },
+            { message },
             { status: 400 }
         );
     }

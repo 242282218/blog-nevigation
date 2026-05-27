@@ -9,7 +9,8 @@ import {
     type SiteSettings,
 } from '@/lib/site-settings';
 import { CloudflareR2SettingsPanel } from './CloudflareR2SettingsPanel';
-import { LogoutButton } from '../components/LogoutButton';
+import { createEditorCsrfHeaders } from '../../editor-csrf';
+import { LogoutButton } from '../../components/LogoutButton';
 import {
     EditorButton,
     EditorMain,
@@ -17,7 +18,7 @@ import {
     EditorPanel,
     EditorTopBar,
     editorInputClassName,
-} from '../components/EditorShell';
+} from '../../components/EditorShell';
 
 type SettingsMessage = {
     tone: 'success' | 'danger' | 'loading' | 'info';
@@ -37,8 +38,33 @@ interface FieldProps {
     help: string;
     value: string;
     onChange: (id: keyof SiteSettings, value: string) => void;
+    error?: string;
     multiline?: boolean;
 }
+
+type SettingsValidationError = {
+    field: keyof SiteSettings;
+    message: string;
+};
+
+const REQUIRED_SETTING_ENTRIES: Array<[keyof SiteSettings, string]> = [
+    ['siteName', '站点名称'],
+    ['siteDescription', '站点描述'],
+    ['workspaceLabel', '工作台标签'],
+    ['heroTitleLineOne', '首页标题第一行'],
+    ['heroTitleLineTwo', '首页标题第二行'],
+    ['heroDescription', '首页描述'],
+    ['introCardEyebrow', '介绍卡片标签'],
+    ['introCardTitle', '介绍卡片标题'],
+    ['introCardDescription', '介绍卡片说明'],
+    ['introCardMetaOneLabel', '介绍卡片信息一标签'],
+    ['introCardMetaOneValue', '介绍卡片信息一内容'],
+    ['introCardMetaTwoLabel', '介绍卡片信息二标签'],
+    ['introCardMetaTwoValue', '介绍卡片信息二内容'],
+    ['introCardMetaThreeLabel', '介绍卡片信息三标签'],
+    ['introCardMetaThreeValue', '介绍卡片信息三内容'],
+    ['introCardStartLabel', '介绍卡片入口标签'],
+];
 
 function SettingsField({
     id,
@@ -46,9 +72,11 @@ function SettingsField({
     help,
     value,
     onChange,
+    error,
     multiline = false,
 }: FieldProps) {
     const inputId = `settings-${id}`;
+    const descriptionId = `${inputId}-description`;
 
     return (
         <div>
@@ -61,6 +89,8 @@ function SettingsField({
                     value={value}
                     onChange={(event) => onChange(id, event.target.value)}
                     rows={4}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={descriptionId}
                     className={`${editorInputClassName} mt-2 resize-y leading-6`}
                 />
             ) : (
@@ -69,37 +99,29 @@ function SettingsField({
                     type="text"
                     value={value}
                     onChange={(event) => onChange(id, event.target.value)}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={descriptionId}
                     className={`${editorInputClassName} mt-2`}
                 />
             )}
-            <p className="mt-1.5 text-xs leading-5 text-subtle">{help}</p>
+            <p
+                id={descriptionId}
+                className={`mt-1.5 text-xs leading-5 ${error ? 'text-error-600' : 'text-subtle'}`}
+                role={error ? 'alert' : undefined}
+            >
+                {error || help}
+            </p>
         </div>
     );
 }
 
-function validateSettings(settings: SiteSettings): string | null {
-    const entries: Array<[keyof SiteSettings, string]> = [
-        ['siteName', '站点名称'],
-        ['siteDescription', '站点描述'],
-        ['workspaceLabel', '工作台标签'],
-        ['heroTitleLineOne', '首页标题第一行'],
-        ['heroTitleLineTwo', '首页标题第二行'],
-        ['heroDescription', '首页描述'],
-        ['introCardEyebrow', '介绍卡片标签'],
-        ['introCardTitle', '介绍卡片标题'],
-        ['introCardDescription', '介绍卡片说明'],
-        ['introCardMetaOneLabel', '介绍卡片信息一标签'],
-        ['introCardMetaOneValue', '介绍卡片信息一内容'],
-        ['introCardMetaTwoLabel', '介绍卡片信息二标签'],
-        ['introCardMetaTwoValue', '介绍卡片信息二内容'],
-        ['introCardMetaThreeLabel', '介绍卡片信息三标签'],
-        ['introCardMetaThreeValue', '介绍卡片信息三内容'],
-        ['introCardStartLabel', '介绍卡片入口标签'],
-    ];
-
-    for (const [key, label] of entries) {
+function validateSettings(settings: SiteSettings): SettingsValidationError | null {
+    for (const [key, label] of REQUIRED_SETTING_ENTRIES) {
         if (!settings[key].trim()) {
-            return `请填写${label}。`;
+            return {
+                field: key,
+                message: `请填写${label}。`,
+            };
         }
     }
 
@@ -123,6 +145,9 @@ export default function EditorSettingsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<SettingsMessage | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SiteSettings, string>>>({});
+    const canSaveSiteSettings = persistent && !isLoading && !isSaving;
+    const saveSettingsLabel = isSaving ? '保存中...' : '保存设置';
 
     useEffect(() => {
         let isMounted = true;
@@ -171,6 +196,15 @@ export default function EditorSettingsPage() {
             ...current,
             [id]: value,
         }));
+        setFieldErrors((current) => {
+            if (!current[id]) {
+                return current;
+            }
+
+            const nextErrors = { ...current };
+            delete nextErrors[id];
+            return nextErrors;
+        });
     }, []);
 
     const handleSubmit = useCallback(
@@ -180,9 +214,15 @@ export default function EditorSettingsPage() {
             const validationError = validateSettings(settings);
 
             if (validationError) {
-                setMessage({ tone: 'danger', text: validationError });
+                setFieldErrors({ [validationError.field]: validationError.message });
+                setMessage({ tone: 'danger', text: validationError.message });
+                window.requestAnimationFrame(() => {
+                    document.getElementById(`settings-${validationError.field}`)?.focus();
+                });
                 return;
             }
+
+            setFieldErrors({});
 
             if (!persistent) {
                 setMessage({ tone: 'danger', text: '未配置 BLOG_DATA_ROOT，站点设置无法保存到服务器。' });
@@ -197,9 +237,9 @@ export default function EditorSettingsPage() {
                 const response = await fetch('/api/data/settings', {
                     method: 'PUT',
                     credentials: 'include',
-                    headers: {
+                    headers: createEditorCsrfHeaders({
                         'Content-Type': 'application/json',
-                    },
+                    }),
                     body: JSON.stringify({ settings: nextSettings, revision }),
                 });
                 const payload = (await response.json().catch(() => null)) as SettingsResponse | null;
@@ -244,10 +284,10 @@ export default function EditorSettingsPage() {
                             type="submit"
                             form="site-settings-form"
                             variant="primary"
-                            disabled={!persistent || isLoading || isSaving}
+                            disabled={!canSaveSiteSettings}
                         >
                             <Save className="h-4 w-4" />
-                            {isSaving ? '保存中...' : '保存设置'}
+                            {saveSettingsLabel}
                         </EditorButton>
                     </>
                 )}
@@ -287,6 +327,7 @@ export default function EditorSettingsPage() {
                                         help="用于浏览器标题和后台识别。"
                                         value={settings.siteName}
                                         onChange={updateField}
+                                        error={fieldErrors.siteName}
                                     />
                                     <SettingsField
                                         id="siteDescription"
@@ -294,6 +335,7 @@ export default function EditorSettingsPage() {
                                         help="用于浏览器元信息和站点摘要。"
                                         value={settings.siteDescription}
                                         onChange={updateField}
+                                        error={fieldErrors.siteDescription}
                                         multiline
                                     />
                                     <SettingsField
@@ -302,6 +344,7 @@ export default function EditorSettingsPage() {
                                         help="显示在首页首屏的小型标识文字。"
                                         value={settings.workspaceLabel}
                                         onChange={updateField}
+                                        error={fieldErrors.workspaceLabel}
                                     />
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <SettingsField
@@ -310,6 +353,7 @@ export default function EditorSettingsPage() {
                                             help="建议短句，避免换行拥挤。"
                                             value={settings.heroTitleLineOne}
                                             onChange={updateField}
+                                            error={fieldErrors.heroTitleLineOne}
                                         />
                                         <SettingsField
                                             id="heroTitleLineTwo"
@@ -317,6 +361,7 @@ export default function EditorSettingsPage() {
                                             help="和第一行组成首页主标题。"
                                             value={settings.heroTitleLineTwo}
                                             onChange={updateField}
+                                            error={fieldErrors.heroTitleLineTwo}
                                         />
                                     </div>
                                     <SettingsField
@@ -325,6 +370,7 @@ export default function EditorSettingsPage() {
                                         help="显示在首页标题下方，说明站点用途。"
                                         value={settings.heroDescription}
                                         onChange={updateField}
+                                        error={fieldErrors.heroDescription}
                                         multiline
                                     />
                                 </div>
@@ -350,6 +396,7 @@ export default function EditorSettingsPage() {
                                         help="显示在卡片顶部的小型英文或短句。"
                                         value={settings.introCardEyebrow}
                                         onChange={updateField}
+                                        error={fieldErrors.introCardEyebrow}
                                     />
                                     <SettingsField
                                         id="introCardTitle"
@@ -357,6 +404,7 @@ export default function EditorSettingsPage() {
                                         help="显示在头像图标旁的主标题。"
                                         value={settings.introCardTitle}
                                         onChange={updateField}
+                                        error={fieldErrors.introCardTitle}
                                     />
                                     <SettingsField
                                         id="introCardDescription"
@@ -364,6 +412,7 @@ export default function EditorSettingsPage() {
                                         help="显示在标题下方的一段介绍。"
                                         value={settings.introCardDescription}
                                         onChange={updateField}
+                                        error={fieldErrors.introCardDescription}
                                         multiline
                                     />
                                     <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
@@ -373,6 +422,7 @@ export default function EditorSettingsPage() {
                                             help="左侧短标签。"
                                             value={settings.introCardMetaOneLabel}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaOneLabel}
                                         />
                                         <SettingsField
                                             id="introCardMetaOneValue"
@@ -380,6 +430,7 @@ export default function EditorSettingsPage() {
                                             help="右侧说明内容。"
                                             value={settings.introCardMetaOneValue}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaOneValue}
                                         />
                                     </div>
                                     <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
@@ -389,6 +440,7 @@ export default function EditorSettingsPage() {
                                             help="左侧短标签。"
                                             value={settings.introCardMetaTwoLabel}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaTwoLabel}
                                         />
                                         <SettingsField
                                             id="introCardMetaTwoValue"
@@ -396,6 +448,7 @@ export default function EditorSettingsPage() {
                                             help="右侧说明内容。"
                                             value={settings.introCardMetaTwoValue}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaTwoValue}
                                         />
                                     </div>
                                     <div className="grid gap-4 md:grid-cols-[minmax(0,180px)_1fr]">
@@ -405,6 +458,7 @@ export default function EditorSettingsPage() {
                                             help="左侧短标签。"
                                             value={settings.introCardMetaThreeLabel}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaThreeLabel}
                                         />
                                         <SettingsField
                                             id="introCardMetaThreeValue"
@@ -412,6 +466,7 @@ export default function EditorSettingsPage() {
                                             help="右侧说明内容。"
                                             value={settings.introCardMetaThreeValue}
                                             onChange={updateField}
+                                            error={fieldErrors.introCardMetaThreeValue}
                                         />
                                     </div>
                                     <SettingsField
@@ -420,7 +475,28 @@ export default function EditorSettingsPage() {
                                         help="显示在最新文章入口上方的小型文字。"
                                         value={settings.introCardStartLabel}
                                         onChange={updateField}
+                                        error={fieldErrors.introCardStartLabel}
                                     />
+                                </div>
+                            </EditorPanel>
+
+                            <EditorPanel className="p-3">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-medium text-fg">站点设置</p>
+                                        <p className="mt-1 text-xs leading-5 text-subtle">
+                                            {persistent ? '保存后刷新公开页面生效。' : '未配置持久化目录，当前无法保存。'}
+                                        </p>
+                                    </div>
+                                    <EditorButton
+                                        type="submit"
+                                        variant="primary"
+                                        disabled={!canSaveSiteSettings}
+                                        className="w-full sm:w-auto"
+                                    >
+                                        <Save className="h-4 w-4" />
+                                        {saveSettingsLabel}
+                                    </EditorButton>
                                 </div>
                             </EditorPanel>
                         </form>

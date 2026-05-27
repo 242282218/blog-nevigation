@@ -7,24 +7,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
-  Clock3,
-  Columns2,
   Download,
-  Edit3,
-  Eye,
-  FileText,
-  Hash,
-  ListTree,
   Loader2,
   Save,
-  ShieldCheck,
 } from 'lucide-react';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { PreviewPane } from '../components/PreviewPane';
@@ -34,23 +24,36 @@ import { getDefaultTemplate, getTemplateById } from '@/lib/templates';
 import { Frontmatter } from '@/app/types/article';
 import { StatusMessage } from '@/app/components/ui';
 import { cn } from '@/lib/utils';
-import { getArticleKindLabel, getArticleStatusLabel, QUALITY_SEVERITY_LABELS } from '@/lib/article-metadata';
+import { getArticleKindLabel, getArticleStatusLabel } from '@/lib/article-metadata';
 import {
   countMarkdownWords,
+  getArticleSaveBlockingChecks,
+  getArticleQualityField,
+  getFrontmatterFieldQualityChecks,
   getArticleQualityChecks,
   getMarkdownHeadings,
   type ArticleQualityCheck,
+  type ArticleQualityField,
   type MarkdownHeading,
 } from '@/lib/article-quality';
-import { LogoutButton } from '../../components/LogoutButton';
+import {
+  ModeSwitch,
+  WritingInspector,
+  type EditorMode,
+} from './ArticleEditorPanels';
+import { LogoutButton } from '../../../components/LogoutButton';
 import {
   EditorButton,
   EditorMain,
   EditorPage,
   EditorTopBar,
-} from '../../components/EditorShell';
+} from '../../../components/EditorShell';
+import {
+  normalizeRevisionNotes,
+  normalizeSourceLinks,
+} from '@/lib/frontmatter';
+import { isSafeExternalUrl } from '@/lib/url-safety';
 
-type EditorMode = 'write' | 'split' | 'preview';
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 interface StoredDraft {
@@ -60,11 +63,19 @@ interface StoredDraft {
   frontmatter: Frontmatter;
 }
 
-type HeadingItem = MarkdownHeading;
-
 const DRAFT_VERSION = 1;
 const DRAFT_KEY_PREFIX = 'blog-editor-article-draft:v2';
 const TEXTAREA_ID = 'article-markdown-editor';
+const QUALITY_FIELD_INPUT_IDS: Partial<Record<ArticleQualityField, string>> = {
+  title: 'frontmatter-title',
+  date: 'frontmatter-date',
+  updatedDate: 'frontmatter-updated-date',
+  description: 'frontmatter-description',
+  tags: 'frontmatter-tags',
+  category: 'frontmatter-category',
+  status: 'frontmatter-status',
+  featured: 'frontmatter-featured',
+};
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0];
@@ -87,8 +98,8 @@ function normalizeFrontmatter(frontmatter: Frontmatter): Frontmatter {
     series: frontmatter.series?.trim(),
     featured: Boolean(frontmatter.featured),
     tags: frontmatter.tags.map((tag) => tag.trim()).filter(Boolean),
-    sourceLinks: frontmatter.sourceLinks || [],
-    revisionNotes: frontmatter.revisionNotes || [],
+    sourceLinks: normalizeSourceLinks(frontmatter.sourceLinks),
+    revisionNotes: normalizeRevisionNotes(frontmatter.revisionNotes),
     templateId: frontmatter.templateId,
   };
 }
@@ -164,17 +175,6 @@ function clearStoredDraft(key: string): void {
   }
 }
 
-function formatDraftTime(timestamp: number | null): string {
-  if (!timestamp) {
-    return '尚未生成';
-  }
-
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 export function NewArticleContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -207,7 +207,11 @@ export function NewArticleContent() {
   });
   const [editorMode, setEditorMode] = useState<EditorMode>('split');
   const [saveState, setSaveState] = useState<SaveState>('idle');
-  const [statusMessage, setStatusMessage] = useState<{ tone: 'info' | 'success' | 'danger'; text: string } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    tone: 'info' | 'success' | 'danger';
+    text: string;
+    blockingCheck?: ArticleQualityCheck;
+  } | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState('');
   const [loadedArticleKey, setLoadedArticleKey] = useState('');
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
@@ -225,10 +229,17 @@ export function NewArticleContent() {
     [frontmatter.templateId, templateId]
   );
   const qualityChecks = useMemo(
-    () => getArticleQualityChecks({ ...frontmatter, content }, activeTemplate),
+    () => getArticleQualityChecks({ ...frontmatter, content, sourceLinks: frontmatter.sourceLinks }, activeTemplate),
     [activeTemplate, content, frontmatter]
   );
+  const failedBlockingCount = qualityChecks.filter((check) => check.severity === 'blocking' && !check.passed).length;
+  const failedWarningCount = qualityChecks.filter((check) => check.severity === 'warning' && !check.passed).length;
+  const frontmatterQualityChecks = useMemo(
+    () => getFrontmatterFieldQualityChecks(qualityChecks),
+    [qualityChecks]
+  );
   const missingArticle = Boolean(editId && isLoaded && loadedArticleKey === articleKey && !editingArticle);
+  const hasPersistedArticle = Boolean(editId && editingArticle);
 
   useEffect(() => {
     if (hasSelectedInitialMode.current) {
@@ -355,25 +366,70 @@ export function NewArticleContent() {
     }
   }, [isDirty, saveState]);
 
-  const handleSave = useCallback(async () => {
-    const normalizedFrontmatter = normalizeFrontmatter(frontmatter);
+  const focusElementById = useCallback((elementId: string) => {
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(elementId);
 
-    if (!normalizedFrontmatter.title) {
-      setSaveState('error');
-      setStatusMessage({ tone: 'danger', text: '标题不能为空。' });
+      if (!element) {
+        return;
+      }
+
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      if (element instanceof HTMLElement) {
+        element.focus({ preventScroll: true });
+      }
+    });
+  }, []);
+
+  const handleResolveQualityCheck = useCallback((check: ArticleQualityCheck) => {
+    const field = getArticleQualityField(check.id);
+
+    if (field === 'sourceLinks') {
+      const invalidSourceIndex = frontmatter.sourceLinks?.findIndex((source) => {
+        const url = source.url.trim();
+
+        return Boolean(url) && !isSafeExternalUrl(url);
+      }) ?? -1;
+
+      focusElementById(`frontmatter-source-url-${Math.max(0, invalidSourceIndex)}`);
       return;
     }
 
-    const failedBlockingCheck = getArticleQualityChecks(
-      { ...normalizedFrontmatter, content },
+    const fieldInputId = field ? QUALITY_FIELD_INPUT_IDS[field] : undefined;
+
+    if (fieldInputId) {
+      focusElementById(fieldInputId);
+      return;
+    }
+
+    if (field === 'content') {
+      if (editorMode === 'preview') {
+        setEditorMode('split');
+      }
+
+      focusElementById(TEXTAREA_ID);
+    }
+  }, [editorMode, focusElementById, frontmatter.sourceLinks]);
+
+  const handleSave = useCallback(async () => {
+    const failedBlockingCheck = getArticleSaveBlockingChecks(
+      { ...frontmatter, content },
       activeTemplate
-    ).find((check) => check.severity === 'blocking' && !check.passed);
+    )[0];
 
     if (failedBlockingCheck) {
       setSaveState('error');
-      setStatusMessage({ tone: 'danger', text: `保存前需要处理：${failedBlockingCheck.label}。` });
+      setStatusMessage({
+        tone: 'danger',
+        text: `保存前需要处理：${failedBlockingCheck.label}。`,
+        blockingCheck: failedBlockingCheck,
+      });
+      handleResolveQualityCheck(failedBlockingCheck);
       return;
     }
+
+    const normalizedFrontmatter = normalizeFrontmatter(frontmatter);
 
     setSaveState('saving');
     setStatusMessage(null);
@@ -409,7 +465,7 @@ export function NewArticleContent() {
       setSaveState('error');
       setStatusMessage({ tone: 'danger', text: '保存失败，请稍后重试。' });
     }
-  }, [activeTemplate, content, createArticle, draftKey, editId, frontmatter, router, updateArticleContent]);
+  }, [activeTemplate, content, createArticle, draftKey, editId, frontmatter, handleResolveQualityCheck, router, updateArticleContent]);
 
   const handleExport = useCallback(() => {
     const normalizedFrontmatter = normalizeFrontmatter(frontmatter);
@@ -446,7 +502,7 @@ export function NewArticleContent() {
     URL.revokeObjectURL(url);
   }, [content, editId, exportArticle, frontmatter]);
 
-  const handleJumpToHeading = useCallback((heading: HeadingItem) => {
+  const handleJumpToHeading = useCallback((heading: MarkdownHeading) => {
     if (editorMode === 'preview') {
       setEditorMode('split');
     }
@@ -511,7 +567,7 @@ export function NewArticleContent() {
             <EditorButton
               onClick={handleSave}
               disabled={saveState === 'saving'}
-              variant={saveState === 'error' ? 'danger' : isDirty ? 'primary' : saveState === 'saved' ? 'accent' : 'secondary'}
+              variant={saveState === 'error' ? 'danger' : !hasPersistedArticle || isDirty ? 'primary' : saveState === 'saved' ? 'accent' : 'secondary'}
               className={saveState === 'saved' ? 'border-success-light bg-success-50 text-success' : undefined}
             >
               {saveState === 'saving' ? (
@@ -550,18 +606,46 @@ export function NewArticleContent() {
 
         {statusMessage ? (
           <StatusMessage tone={statusMessage.tone}>
-            {statusMessage.text}
+            <span>{statusMessage.text}</span>
+            {statusMessage.blockingCheck ? (
+              <button
+                type="button"
+                onClick={() => handleResolveQualityCheck(statusMessage.blockingCheck as ArticleQualityCheck)}
+                className="mt-3 inline-flex min-h-11 items-center rounded-token-card border border-danger-light bg-surface px-3 text-sm font-medium text-error-600 transition hover:bg-error-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-9"
+              >
+                定位问题
+              </button>
+            ) : null}
           </StatusMessage>
         ) : null}
 
+        <MobilePublishingShortcut
+          blockingCount={failedBlockingCount}
+          descriptionLength={frontmatter.description.trim().length}
+          isDirty={isDirty}
+          isPersisted={hasPersistedArticle}
+          onOpenDetails={() => focusElementById('article-frontmatter-panel')}
+          statusLabel={getArticleStatusLabel(frontmatter.status)}
+          tagCount={frontmatter.tags.length}
+          warningCount={failedWarningCount}
+        />
+
         <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="space-y-4">
-            <FrontmatterForm value={frontmatter} onChange={setFrontmatter} />
+          <aside className="order-2 space-y-4 xl:order-1">
+            <div id="article-frontmatter-panel" tabIndex={-1} className="focus-visible:outline-none">
+              <FrontmatterForm
+                value={frontmatter}
+                onChange={setFrontmatter}
+                qualityChecks={frontmatterQualityChecks}
+              />
+            </div>
             <WritingInspector
               draftSavedAt={draftSavedAt}
               headings={headings}
+              isPersisted={hasPersistedArticle}
               isDirty={isDirty}
               onJumpToHeading={handleJumpToHeading}
+              onResolveCheck={handleResolveQualityCheck}
               qualityChecks={qualityChecks}
               readingMinutes={readingMinutes}
               templateName={activeTemplate?.name}
@@ -569,7 +653,7 @@ export function NewArticleContent() {
             />
           </aside>
 
-          <section className="overflow-hidden rounded-token-card border border-border bg-surface shadow-token-card">
+          <section className="order-1 overflow-hidden rounded-token-card border border-border bg-surface shadow-token-card xl:order-2">
             <div className="flex flex-col gap-3 border-b border-border bg-background/80 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="font-mono text-xs text-accent">
@@ -618,176 +702,94 @@ export function NewArticleContent() {
   );
 }
 
-function ModeSwitch({
-  value,
-  onChange,
-}: {
-  value: EditorMode;
-  onChange: (mode: EditorMode) => void;
-}) {
-  const modes: Array<{ value: EditorMode; label: string; icon: ReactNode }> = [
-    { value: 'write', label: '写作', icon: <Edit3 className="h-4 w-4" /> },
-    { value: 'split', label: '分栏', icon: <Columns2 className="h-4 w-4" /> },
-    { value: 'preview', label: '预览', icon: <Eye className="h-4 w-4" /> },
-  ];
-
-  return (
-    <div className="inline-flex w-full rounded-token-card border border-border bg-surface p-1 sm:w-auto">
-      {modes.map((mode) => (
-        <button
-          key={mode.value}
-          type="button"
-          onClick={() => onChange(mode.value)}
-          className={cn(
-            'inline-flex min-h-8 flex-1 items-center justify-center gap-2 rounded-token-sm px-3 text-sm font-medium transition sm:flex-none',
-            value === mode.value
-              ? 'bg-fg text-surface shadow-token-sm'
-              : 'text-muted hover:bg-background hover:text-fg'
-          )}
-          aria-pressed={value === mode.value}
-        >
-          {mode.icon}
-          <span>{mode.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function WritingInspector({
-  wordCount,
-  readingMinutes,
-  headings,
-  draftSavedAt,
+function MobilePublishingShortcut({
+  blockingCount,
+  descriptionLength,
   isDirty,
-  templateName,
-  qualityChecks,
-  onJumpToHeading,
+  isPersisted,
+  onOpenDetails,
+  statusLabel,
+  tagCount,
+  warningCount,
 }: {
-  wordCount: number;
-  readingMinutes: number;
-  headings: HeadingItem[];
-  draftSavedAt: number | null;
+  blockingCount: number;
+  descriptionLength: number;
   isDirty: boolean;
-  templateName?: string;
-  qualityChecks: ArticleQualityCheck[];
-  onJumpToHeading: (heading: HeadingItem) => void;
+  isPersisted: boolean;
+  onOpenDetails: () => void;
+  statusLabel: string;
+  tagCount: number;
+  warningCount: number;
 }) {
-  const failedBlocking = qualityChecks.filter((check) => check.severity === 'blocking' && !check.passed).length;
-  const failedWarnings = qualityChecks.filter((check) => check.severity === 'warning' && !check.passed).length;
+  const saveStatusLabel = !isPersisted
+    ? '未入库'
+    : isDirty
+      ? '有改动'
+      : '已保存';
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
-        <p className="font-mono text-xs text-accent">writing</p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Metric icon={<Hash className="h-4 w-4" />} label="字数" value={wordCount.toString()} />
-          <Metric icon={<Clock3 className="h-4 w-4" />} label="阅读" value={`${readingMinutes} 分钟`} />
-        </div>
-        <div className="mt-4 rounded-token-card border border-border bg-background p-3 text-sm text-muted">
-          <div className="flex items-center gap-2">
-            {isDirty ? (
-              <AlertCircle className="h-4 w-4 text-warning-600" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 text-success" />
-            )}
-            <span>{isDirty ? '有未保存改动' : '内容已保存'}</span>
-          </div>
-          <p className="mt-2 font-mono text-xs text-subtle">
-            draft {formatDraftTime(draftSavedAt)}
+    <section
+      className="rounded-token-card border border-border bg-surface p-3 shadow-token-card xl:hidden"
+      aria-labelledby="mobile-publishing-shortcut-title"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-xs text-accent">publish</p>
+          <h2 id="mobile-publishing-shortcut-title" className="mt-1 text-base font-semibold text-fg">
+            发布概览
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            先确认标题、描述、标签和公开路径，再继续写正文。
           </p>
         </div>
-      </section>
+        <span
+          className={cn(
+            'shrink-0 rounded-token-badge px-2 py-1 text-xs font-medium',
+            blockingCount
+              ? 'bg-error-50 text-error-600'
+              : warningCount
+                ? 'bg-warning-50 text-warning-600'
+                : 'bg-success-50 text-success'
+          )}
+          aria-live="polite"
+        >
+          {blockingCount ? `${blockingCount} 阻塞` : warningCount ? `${warningCount} 建议` : '可发布'}
+        </span>
+      </div>
 
-      <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-subtle" />
-          <h2 className="text-base font-semibold text-fg">写作检查</h2>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          {templateName ? (
-            <span className="rounded-token-badge border border-border bg-background px-2 py-1 text-subtle">
-              {templateName}
-            </span>
-          ) : null}
-          <span className="rounded-token-badge bg-error-50 px-2 py-1 text-error-600">
-            {failedBlocking} 阻塞
-          </span>
-          <span className="rounded-token-badge bg-warning-50 px-2 py-1 text-warning-600">
-            {failedWarnings} 建议
-          </span>
-        </div>
-        <div className="mt-3 space-y-2">
-          {qualityChecks.slice(0, 10).map((check) => (
-            <div
-              key={check.id}
-              className={cn(
-                'flex items-start gap-2 rounded-token-card border px-3 py-2 text-sm',
-                check.passed
-                  ? 'border-success-light bg-success-50/60 text-success'
-                  : check.severity === 'blocking'
-                    ? 'border-error-200 bg-error-50 text-error-600'
-                    : 'border-warning-200 bg-warning-50 text-warning-600'
-              )}
-            >
-              {check.passed ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-              ) : check.severity === 'blocking' ? (
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              ) : (
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              )}
-              <div className="min-w-0">
-                <p className="font-medium">{check.label}</p>
-                <p className="font-mono text-[11px] opacity-75">
-                  {QUALITY_SEVERITY_LABELS[check.severity]}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <MobilePublishingMetric label="保存" value={saveStatusLabel} muted={!isPersisted || isDirty} />
+        <MobilePublishingMetric label="状态" value={statusLabel} />
+        <MobilePublishingMetric label="标签" value={`${tagCount} 个`} muted={!tagCount} />
+        <MobilePublishingMetric label="摘要" value={`${descriptionLength} 字`} muted={descriptionLength < 30 || descriptionLength > 120} />
+      </dl>
 
-      <section className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
-        <div className="flex items-center gap-2">
-          <ListTree className="h-4 w-4 text-subtle" />
-          <h2 className="text-base font-semibold text-fg">目录</h2>
-        </div>
-        {headings.length ? (
-          <div className="mt-3 space-y-1">
-            {headings.slice(0, 12).map((heading) => (
-              <button
-                key={`${heading.index}-${heading.text}`}
-                type="button"
-                onClick={() => onJumpToHeading(heading)}
-                className={cn(
-                  'block w-full truncate rounded-token-sm px-2 py-1.5 text-left text-sm text-muted transition hover:bg-accent-50 hover:text-accent',
-                  heading.level === 2 ? 'pl-4' : heading.level === 3 ? 'pl-7' : heading.level === 4 ? 'pl-10' : ''
-                )}
-              >
-                {heading.text}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="mt-4 rounded-token-card border border-dashed border-border bg-background p-4 text-center text-sm text-subtle">
-            <FileText className="mx-auto mb-2 h-5 w-5" />
-            暂无标题
-          </div>
-        )}
-      </section>
-    </div>
+      <button
+        type="button"
+        onClick={onOpenDetails}
+        className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-token-card border border-accent-200 bg-accent-50 px-3 text-sm font-medium text-accent transition hover:bg-accent-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      >
+        检查文章信息
+      </button>
+    </section>
   );
 }
 
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function MobilePublishingMetric({
+  label,
+  muted,
+  value,
+}: {
+  label: string;
+  muted?: boolean;
+  value: string;
+}) {
   return (
-    <div className="rounded-token-card border border-border bg-background p-3">
-      <div className="flex items-center gap-2 text-subtle">
-        {icon}
-        <span className="text-xs">{label}</span>
-      </div>
-      <div className="mt-2 text-lg font-semibold text-fg">{value}</div>
+    <div className="rounded-token-card border border-border bg-background px-2 py-2">
+      <dt className="font-mono text-[11px] text-subtle">{label}</dt>
+      <dd className={cn('mt-1 truncate font-medium', muted ? 'text-warning-600' : 'text-fg')}>
+        {value}
+      </dd>
     </div>
   );
 }

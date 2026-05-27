@@ -56,8 +56,8 @@ R2 again on the new server unless you migrate the full `data/` directory and
 `.env`.
 
 Imports and `data:verify` enforce the same public navigation contract as the
-application: category slugs must be unique, tool URLs must be HTTPS, and each
-tool must include at least one tag. Invalid backup packages fail before
+application: category slugs must be unique, production tool URLs must be HTTPS,
+and each tool must include at least one tag. Invalid backup packages fail before
 replacing the target runtime data.
 
 ## Encrypted GitHub Backup Migration

@@ -1,13 +1,16 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import BlogEditorPage from '@/app/editor/blog/page';
+import BlogEditorPage from '@/app/editor/(authenticated)/blog/page';
+import type { Article } from '@/app/types/article';
 
 const pushMock = vi.fn();
 const exportArticleMock = vi.fn();
 const exportArticlesDataMock = vi.fn();
 const deleteArticleMock = vi.fn();
 const importArticleMock = vi.fn();
+const updateArticleMock = vi.fn();
+let articlesMock: Article[] = [];
 let lastConflictAtMock: number | null = null;
 let lastRemoteLoadErrorMock: { at: number; message: string } | null = null;
 let lastRemoteSaveErrorMock: { at: number; message: string } | null = null;
@@ -20,18 +23,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/app/hooks/useLocalArticles', () => ({
   useLocalArticles: () => ({
-    articles: [
-      {
-        id: 'article-1',
-        title: 'First Article',
-        date: '2026-03-09',
-        description: 'Desc',
-        tags: ['nextjs'],
-        content: '# First',
-        createdAt: 1,
-        updatedAt: 2,
-      },
-    ],
+    articles: articlesMock,
     deleteArticle: deleteArticleMock,
     exportArticle: exportArticleMock,
     exportArticlesData: exportArticlesDataMock,
@@ -40,6 +32,7 @@ vi.mock('@/app/hooks/useLocalArticles', () => ({
     lastConflictAt: lastConflictAtMock,
     lastRemoteLoadError: lastRemoteLoadErrorMock,
     lastRemoteSaveError: lastRemoteSaveErrorMock,
+    updateArticle: updateArticleMock,
   }),
 }));
 
@@ -58,6 +51,18 @@ describe('BlogEditorPage', () => {
   const revokeObjectURLMock = vi.fn();
 
   beforeEach(() => {
+    articlesMock = [
+      {
+        id: 'article-1',
+        title: 'First Article',
+        date: '2026-03-09',
+        description: 'Desc',
+        tags: ['nextjs'],
+        content: '# First',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
     pushMock.mockReset();
     exportArticleMock.mockReset().mockReturnValue('# First');
     exportArticlesDataMock.mockReset().mockReturnValue(
@@ -74,6 +79,11 @@ describe('BlogEditorPage', () => {
     );
     deleteArticleMock.mockReset();
     importArticleMock.mockReset();
+    updateArticleMock.mockReset().mockImplementation((id: string, updates: Partial<Article>) => {
+      const target = articlesMock.find((article) => article.id === id);
+
+      return target ? { ...target, ...updates, updatedAt: Date.now() } : null;
+    });
     lastConflictAtMock = null;
     lastRemoteLoadErrorMock = null;
     lastRemoteSaveErrorMock = null;
@@ -113,6 +123,7 @@ describe('BlogEditorPage', () => {
     );
 
     expect(exportButton).toBeTruthy();
+    expect(exportButton?.getAttribute('aria-label')).toBe('导出全部文章 JSON');
 
     act(() => {
       exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -132,6 +143,53 @@ describe('BlogEditorPage', () => {
     appendChildSpy.mockRestore();
     removeChildSpy.mockRestore();
     clickSpy.mockRestore();
+  });
+
+  it('keeps markdown import available through an accessible file input', () => {
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const importInput = container.querySelector<HTMLInputElement>('input[type="file"][aria-label="导入文章 Markdown"]');
+
+    expect(importInput).toBeInstanceOf(HTMLInputElement);
+    expect(importInput?.accept).toBe('.md,.markdown');
+    expect(importInput?.className).toContain('sr-only');
+    expect(importInput?.className).not.toContain('hidden');
+  });
+
+  it('shows feedback when the selected markdown file cannot be read', () => {
+    class FailingFileReader {
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
+      onerror: ((event: ProgressEvent<FileReader>) => void) | null = null;
+      onabort: ((event: ProgressEvent<FileReader>) => void) | null = null;
+
+      readAsText() {
+        this.onerror?.(new ProgressEvent('error') as ProgressEvent<FileReader>);
+      }
+    }
+
+    vi.stubGlobal('FileReader', FailingFileReader);
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const importInput = container.querySelector<HTMLInputElement>('input[type="file"][aria-label="导入文章 Markdown"]');
+
+    expect(importInput).toBeInstanceOf(HTMLInputElement);
+
+    Object.defineProperty(importInput, 'files', {
+      configurable: true,
+      value: [new File(['# Article'], 'article.md', { type: 'text/markdown' })],
+    });
+
+    act(() => {
+      importInput?.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(importArticleMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('文章文件读取失败，请重新选择 Markdown 文件。');
   });
 
   it('shows a warning when remote article data wins a save conflict', () => {
@@ -171,5 +229,316 @@ describe('BlogEditorPage', () => {
 
     expect(container.textContent).toContain('文章从服务器加载失败，当前显示本机副本');
     expect(container.textContent).toContain('编辑口令已过期');
+  });
+
+  it('publishes a complete draft from the article list', () => {
+    articlesMock = [
+      {
+        id: 'article-1',
+        title: 'Ready Draft',
+        date: '2026-03-09',
+        description: 'Ready to publish',
+        tags: ['nextjs'],
+        content: '# Ready',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const publishButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '发布'
+    );
+
+    expect(publishButton).toBeTruthy();
+
+    act(() => {
+      publishButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(updateArticleMock).toHaveBeenCalledWith('article-1', { status: 'published' });
+    expect(container.textContent).toContain('文章已标记为已发布');
+  });
+
+  it('opens article editing from the native article card button', () => {
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const editCardButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="编辑文章：First Article"]'
+    );
+
+    expect(editCardButton).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      editCardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(pushMock).toHaveBeenCalledWith('/editor/blog/new?edit=article-1');
+  });
+
+  it('keeps keyboard focus styles on article card icon actions', () => {
+    articlesMock = [
+      {
+        id: 'article-1',
+        slug: 'first-article',
+        title: 'First Article',
+        date: '2026-03-09',
+        description: 'Desc',
+        tags: ['nextjs'],
+        content: '# First',
+        status: 'published',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const previewLink = container.querySelector<HTMLAnchorElement>('a[aria-label="预览公开文章：First Article"]');
+    const editButtons = container.querySelectorAll<HTMLButtonElement>('button[aria-label="编辑文章：First Article"]');
+    const exportButton = container.querySelector<HTMLButtonElement>('button[aria-label="导出文章：First Article"]');
+    const deleteButton = container.querySelector<HTMLButtonElement>('button[aria-label="删除文章：First Article"]');
+
+    expect(editButtons).toHaveLength(2);
+
+    for (const action of [previewLink, editButtons[1], exportButton, deleteButton]) {
+      expect(action).toBeTruthy();
+      expect(action?.className).toContain('min-h-11');
+      expect(action?.className).toContain('min-w-11');
+      expect(action?.className).toContain('focus:ring-2');
+      expect(action?.className).toContain('focus:ring-link');
+    }
+  });
+
+  it('blocks publishing an incomplete draft from the article list', () => {
+    articlesMock = [
+      {
+        id: 'article-1',
+        title: '',
+        date: '2026-03-09',
+        description: 'Ready to publish',
+        tags: ['nextjs'],
+        content: '# Ready',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const publishButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '发布'
+    );
+
+    act(() => {
+      publishButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(updateArticleMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('发布前需要处理：标题已填写。');
+    const editRecoveryButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('去编辑')
+    );
+
+    expect(editRecoveryButton).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      editRecoveryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(pushMock).toHaveBeenCalledWith('/editor/blog/new?edit=article-1');
+  });
+
+  it('moves a published article back to draft from the article list', () => {
+    articlesMock = [
+      {
+        id: 'article-1',
+        title: 'Published Article',
+        date: '2026-03-09',
+        description: 'Published article',
+        tags: ['nextjs'],
+        content: '# Published',
+        status: 'published',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const draftButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '改为草稿'
+    );
+
+    expect(draftButton).toBeTruthy();
+
+    act(() => {
+      draftButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(updateArticleMock).toHaveBeenCalledWith('article-1', { status: 'draft' });
+    expect(container.textContent).toContain('文章已改为草稿');
+  });
+
+  it('filters articles from metric buttons and clears active filters', () => {
+    articlesMock = [
+      {
+        id: 'draft-article',
+        title: 'Draft Article',
+        date: '2026-03-09',
+        description: 'Draft article',
+        tags: ['draft'],
+        content: '# Draft',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 3,
+      },
+      {
+        id: 'featured-article',
+        title: 'Featured Article',
+        date: '2026-03-10',
+        description: 'Featured article',
+        tags: ['featured'],
+        content: '# Featured',
+        status: 'published',
+        featured: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: 'plain-article',
+        title: 'Plain Article',
+        date: '2026-03-11',
+        description: 'Plain article',
+        tags: ['plain'],
+        content: '# Plain',
+        status: 'published',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const draftMetric = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('草稿') && button.textContent.includes('1')
+    );
+
+    act(() => {
+      draftMetric?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('当前显示 1 / 3 篇');
+    expect(container.textContent).toContain('状态：草稿');
+    expect(container.textContent).toContain('Draft Article');
+    expect(container.textContent).not.toContain('Featured Article');
+
+    const featuredMetric = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('精选') && button.textContent.includes('1')
+    );
+
+    act(() => {
+      featuredMetric?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('仅精选');
+    expect(container.textContent).toContain('当前显示 0 / 3 篇');
+    expect(container.textContent).toContain('没有匹配的文章');
+    expect(container.textContent).toContain('当前筛选没有结果，清除筛选后可以回到完整文章列表。');
+
+    const clearButton = Array.from(container.querySelectorAll('button')).reverse().find((button) =>
+      button.textContent?.includes('清除筛选')
+    );
+
+    act(() => {
+      clearButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('当前显示 3 / 3 篇');
+    expect(container.textContent).toContain('未应用筛选');
+    expect(container.textContent).toContain('Featured Article');
+    expect(container.textContent).toContain('Plain Article');
+  });
+
+  it('gives the article search input an accessible name', () => {
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>('input[aria-label="搜索文章"]');
+
+    expect(searchInput).toBeInstanceOf(HTMLInputElement);
+    expect(searchInput?.placeholder).toBe('搜索标题、描述或标签');
+  });
+
+  it('removes individual active filters from filter chips', () => {
+    articlesMock = [
+      {
+        id: 'draft-article',
+        title: 'Draft Article',
+        date: '2026-03-09',
+        description: 'Draft article',
+        tags: ['draft'],
+        content: '# Draft',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 3,
+      },
+      {
+        id: 'published-article',
+        title: 'Published Article',
+        date: '2026-03-10',
+        description: 'Published article',
+        tags: ['published'],
+        content: '# Published',
+        status: 'published',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    const draftMetric = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('草稿') && button.textContent.includes('1')
+    );
+
+    act(() => {
+      draftMetric?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const removeStatusFilterButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="移除筛选：状态：草稿"]'
+    );
+
+    expect(removeStatusFilterButton).toBeInstanceOf(HTMLButtonElement);
+    expect(container.textContent).toContain('当前显示 1 / 2 篇');
+    expect(container.textContent).toContain('Draft Article');
+    expect(container.textContent).not.toContain('Published Article');
+
+    act(() => {
+      removeStatusFilterButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('当前显示 2 / 2 篇');
+    expect(container.textContent).toContain('未应用筛选');
+    expect(container.textContent).toContain('Published Article');
   });
 });
