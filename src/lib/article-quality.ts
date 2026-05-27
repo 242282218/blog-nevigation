@@ -1,13 +1,17 @@
 import type {
     ArticleKind,
+    ArticleSourceLink,
     ArticleStatus,
     ArticleTemplate,
     QualityRuleSeverity,
 } from '@/app/types/article';
+import { isPublicArticleStatus } from '@/lib/article-metadata';
+import { isSafeExternalUrl } from '@/lib/url-safety';
 
 export interface MarkdownHeading {
     level: number;
     text: string;
+    id: string;
     index: number;
 }
 
@@ -23,6 +27,7 @@ export interface ArticleQualityInput {
     status?: ArticleStatus;
     category?: string;
     featured?: boolean;
+    sourceLinks?: ArticleSourceLink[];
 }
 
 export interface ArticleQualityCheck {
@@ -31,6 +36,18 @@ export interface ArticleQualityCheck {
     severity: QualityRuleSeverity;
     passed: boolean;
 }
+
+export type ArticleQualityField =
+    | 'title'
+    | 'date'
+    | 'updatedDate'
+    | 'description'
+    | 'tags'
+    | 'category'
+    | 'status'
+    | 'featured'
+    | 'sourceLinks'
+    | 'content';
 
 const SECTION_ALIASES: Record<string, string[]> = {
     参考资料: ['来源', 'References', '参考链接'],
@@ -56,6 +73,7 @@ export function countMarkdownWords(value: string): number {
 
 export function getMarkdownHeadings(content: string, maxLevel = 4): MarkdownHeading[] {
     const headings: MarkdownHeading[] = [];
+    const allocateHeadingId = createMarkdownHeadingIdAllocator();
     let index = 0;
 
     for (const line of content.split('\n')) {
@@ -65,6 +83,7 @@ export function getMarkdownHeadings(content: string, maxLevel = 4): MarkdownHead
             headings.push({
                 level: match[1].length,
                 text: match[2],
+                id: allocateHeadingId(match[2]),
                 index,
             });
         }
@@ -73,6 +92,47 @@ export function getMarkdownHeadings(content: string, maxLevel = 4): MarkdownHead
     }
 
     return headings;
+}
+
+export function createMarkdownHeadingId(text: string): string {
+    return encodeURIComponent(getRenderedHeadingText(text) || 'section');
+}
+
+export function createMarkdownHeadingIdAllocator(): (text: string) => string {
+    const counts = new Map<string, number>();
+
+    return (text: string) => {
+        const baseId = createMarkdownHeadingId(text);
+        const count = counts.get(baseId) || 0;
+
+        counts.set(baseId, count + 1);
+
+        return count === 0 ? baseId : `${baseId}-${count + 1}`;
+    };
+}
+
+export function isFirstMarkdownH1DuplicateTitle(content: string, title?: string): boolean {
+    if (!title?.trim()) {
+        return false;
+    }
+
+    const firstHeading = getMarkdownHeadings(content)[0];
+
+    return Boolean(firstHeading?.level === 1 && firstHeading.id === createMarkdownHeadingId(title));
+}
+
+function getRenderedHeadingText(text: string): string {
+    return text
+        .trim()
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1')
+        .replace(/`([^`]*)`/g, '$1')
+        .replace(/~~([^~]*)~~/g, '$1')
+        .replace(/(\*\*|__)(.*?)\1/g, '$2')
+        .replace(/(\*|_)(.*?)\1/g, '$2')
+        .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, '$1')
+        .trim();
 }
 
 export function hasRequiredSection(headings: MarkdownHeading[], section: string): boolean {
@@ -95,6 +155,11 @@ export function getArticleQualityChecks(
     const descriptionLength = article.description.trim().length;
     const h1Count = headings.filter((heading) => heading.level === 1).length;
     const hasUntypedCodeBlock = /```(?:\s*\n|$)/.test(article.content);
+    const hasUnsafeSourceUrl = article.sourceLinks?.some((source) => {
+        const url = source.url.trim();
+
+        return Boolean(url) && !isSafeExternalUrl(url);
+    }) || false;
     const checks: ArticleQualityCheck[] = [
         {
             id: 'title-required',
@@ -112,7 +177,7 @@ export function getArticleQualityChecks(
             id: 'published-description',
             label: '公开文章有描述',
             severity: 'blocking',
-            passed: article.status !== 'published' || article.description.trim().length > 0,
+            passed: !isPublicArticleStatus(article.status) || article.description.trim().length > 0,
         },
         {
             id: 'description-length',
@@ -143,6 +208,12 @@ export function getArticleQualityChecks(
             label: '代码块声明语言',
             severity: 'suggestion',
             passed: !hasUntypedCodeBlock,
+        },
+        {
+            id: 'source-url-valid',
+            label: '参考资料链接安全有效',
+            severity: 'blocking',
+            passed: !hasUnsafeSourceUrl,
         },
     ];
 
@@ -183,6 +254,61 @@ export function getArticleQualityChecks(
     }
 
     return checks;
+}
+
+export function getArticleSaveBlockingChecks(
+    article: ArticleQualityInput,
+    template?: ArticleTemplate
+): ArticleQualityCheck[] {
+    const failedBlockingChecks = getArticleQualityChecks(article, template)
+        .filter((check) => check.severity === 'blocking' && !check.passed);
+
+    if (isPublicArticleStatus(article.status)) {
+        return failedBlockingChecks;
+    }
+
+    return failedBlockingChecks.filter((check) =>
+        check.id === 'date-valid' || check.id === 'source-url-valid'
+    );
+}
+
+export function getFrontmatterFieldQualityChecks(
+    checks: ArticleQualityCheck[]
+): Partial<Record<ArticleQualityField, ArticleQualityCheck[]>> {
+    const result: Partial<Record<ArticleQualityField, ArticleQualityCheck[]>> = {};
+
+    for (const check of checks) {
+        const field = getArticleQualityField(check.id);
+
+        if (!field || check.passed) {
+            continue;
+        }
+
+        result[field] = [...(result[field] || []), check];
+    }
+
+    return result;
+}
+
+export function getArticleQualityField(checkId: string): ArticleQualityField | null {
+    if (checkId.startsWith('required-section-') || checkId === 'code-language' || checkId === 'h1-limit') {
+        return 'content';
+    }
+
+    const fieldByCheckId: Record<string, ArticleQualityField> = {
+        'title-required': 'title',
+        'date-valid': 'date',
+        'published-description': 'description',
+        'description-length': 'description',
+        'tags-present': 'tags',
+        'category-present': 'category',
+        'sources-for-research': 'content',
+        'source-url-valid': 'sourceLinks',
+        'featured-public': 'featured',
+        'evergreen-updated-date': 'updatedDate',
+    };
+
+    return fieldByCheckId[checkId] || null;
 }
 
 function normalizeHeadingText(value: string): string {

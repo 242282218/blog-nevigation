@@ -1,10 +1,11 @@
-﻿'use client';
+'use client';
 
 import { useCallback } from 'react';
 import type { Category, Tool } from '@/app/types/navigation';
 import defaultNavData from '@/content/seeds/navigation/data/tools.json';
 import { useSyncedResource } from '@/app/hooks/useSyncedResource';
 import { parseNavigationData } from '@/lib/navigation-data';
+import { createEditorCsrfHeaders } from '@/app/editor/editor-csrf';
 
 const STORAGE_KEY = 'blog-navigation-data';
 const NAVIGATION_API_PATH = '/api/data/navigation';
@@ -90,9 +91,9 @@ async function saveNavDataToServer(
     const response = await fetch(NAVIGATION_API_PATH, {
       method: 'PUT',
       credentials: 'include',
-      headers: {
+      headers: createEditorCsrfHeaders({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ categories, revision: context.revision }),
     });
 

@@ -1,5 +1,5 @@
-import { getPosts } from '@/lib/markdown';
-import { readNavigationFromDisk, readSiteSettingsFromDisk } from '@/lib/editor-data-storage';
+import { getPostsAsync } from '@/lib/markdown';
+import { readNavigationFromDiskAsync, readSiteSettingsFromDiskAsync } from '@/lib/editor-data-storage';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { LucideIcon } from 'lucide-react';
@@ -40,10 +40,12 @@ const writingTopics: Array<{
     },
 ];
 
-export default function Home() {
-    const posts = getPosts().filter((post) => !post.slugArray.includes('navigation'));
-    const navigation = readNavigationFromDisk();
-    const settings = readSiteSettingsFromDisk();
+export default async function Home() {
+    const [posts, navigation, settings] = await Promise.all([
+        getPostsAsync().then((items) => items.filter((post) => !post.slugArray.includes('navigation'))),
+        readNavigationFromDiskAsync(),
+        readSiteSettingsFromDiskAsync(),
+    ]);
     const latestPosts = posts.slice(0, 4);
     const latestPost = latestPosts[0];
     const highlightedTools = navigation

@@ -1,5 +1,7 @@
 import type { Article, ArticleRevisionNote, ArticleSourceLink } from '@/app/types/article';
 import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
+import { normalizeSafeExternalUrl } from '@/lib/url-safety';
+import { normalizeOptionalString } from '@/lib/utils';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -15,10 +17,6 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isOptionalString(value: unknown): value is string | undefined {
     return value === undefined || typeof value === 'string';
-}
-
-function normalizeOptionalString(value: unknown): string | undefined {
-    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function normalizeOptionalBoolean(value: unknown): boolean | undefined {
@@ -100,9 +98,15 @@ function normalizeSourceLinks(value: unknown): ArticleSourceLink[] {
             return [];
         }
 
+        const url = normalizeSafeExternalUrl(item.url);
+
+        if (!url) {
+            return [];
+        }
+
         return [{
             title: item.title.trim(),
-            url: item.url.trim(),
+            url,
             ...(typeof item.note === 'string' && item.note.trim() ? { note: item.note.trim() } : {}),
         }];
     });

@@ -24,6 +24,21 @@ type RemoteLoadResult =
   | string[]
   | null;
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+}
+
 function TestSyncedResource({
   loadLocal = () => null,
   loadRemote,
@@ -342,5 +357,74 @@ describe('useSyncedResource', () => {
 
     expect(container.textContent).toBe('local-change remote-error:server unavailable');
     expect(saveRemote).toHaveBeenCalledOnce();
+  });
+
+  it('does not let an older conflict response replace newer local edits', async () => {
+    const firstSave = createDeferred<SaveRemoteResult>();
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi
+      .fn()
+      .mockReturnValueOnce(firstSave.promise)
+      .mockResolvedValue({
+        revision: 'revision-3',
+      });
+    const saveLocal = vi.fn();
+    let setResourceData: ((value: string[]) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={(setData) => {
+            setResourceData = setData;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      setResourceData?.(['first-local-edit']);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    await flushPromises();
+
+    expect(saveRemote).toHaveBeenCalledOnce();
+    expect(saveRemote).toHaveBeenLastCalledWith(['first-local-edit'], {
+      revision: 'revision-1',
+    });
+
+    await act(async () => {
+      setResourceData?.(['second-local-edit']);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+
+    await act(async () => {
+      firstSave.resolve({
+        conflict: true,
+        data: ['server-old-conflict'],
+        revision: 'revision-2',
+      });
+    });
+    await flushPromises();
+
+    expect(container.textContent).toBe('second-local-edit');
+
+    await flushPromises();
+
+    expect(saveRemote).toHaveBeenCalledTimes(2);
+    expect(saveRemote).toHaveBeenLastCalledWith(['second-local-edit'], {
+      revision: 'revision-2',
+    });
+    expect(container.textContent).toBe('second-local-edit');
   });
 });

@@ -82,6 +82,38 @@ describe('CommandInput', () => {
     expect(container.textContent).not.toContain('⌘');
   });
 
+  it('opens search as a dialog and clears the current command query', async () => {
+    act(() => {
+      root.render(<CommandInput />);
+    });
+
+    const openButton = container.querySelector<HTMLButtonElement>('button[aria-label="搜索文章和链接"]');
+
+    expect(openButton?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(openButton?.getAttribute('aria-expanded')).toBe('false');
+
+    await openAdminMenu();
+
+    const dialog = container.querySelector('[role="dialog"][aria-label="全站搜索"]');
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="搜索文章或链接"]');
+    const clearButton = container.querySelector<HTMLButtonElement>('button[aria-label="清空命令搜索"]');
+
+    expect(openButton?.getAttribute('aria-expanded')).toBe('true');
+    expect(openButton?.getAttribute('aria-controls')).toBe('command-search-panel');
+    expect(dialog).toBeTruthy();
+    expect(input?.value).toBe(':admin');
+    expect(clearButton).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      clearButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(input?.value).toBe('');
+    expect(input).toBe(document.activeElement);
+    expect(container.textContent).toContain('输入关键词搜索文章和链接');
+  });
+
   it('shows the settings entry in the initialized admin command menu', async () => {
     act(() => {
       root.render(<CommandInput />);

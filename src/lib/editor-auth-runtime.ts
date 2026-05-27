@@ -13,7 +13,7 @@ const AUTH_PASSWORD_NAMESPACE = 'blog-navigation-editor-password:v1';
 const AUTH_ENV_TOKEN_NAMESPACE = 'blog-navigation-editor-env-token:v1';
 const AUTH_CONFIG_FILE_NAME = 'editor-auth.json';
 const AUTH_CONFIG_DIRECTORY_NAME = 'settings';
-const MIN_EDITOR_SECRET_LENGTH = 8;
+const MIN_EDITOR_SECRET_LENGTH = 12;
 const RUNTIME_SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const scryptAsync = promisify(scrypt);
 
@@ -33,6 +33,31 @@ interface EnvironmentEditorSessionState {
     activeSessionSalt: string;
     activeSessionHash: string;
     activeSessionExpiresAt: string;
+}
+
+const ENVIRONMENT_EDITOR_SESSION_GLOBAL_KEY = Symbol.for(
+    'blog-navigation-editor-env-session-state'
+);
+
+type EnvironmentEditorSessionGlobalState = {
+    state: EnvironmentEditorSessionState | null;
+};
+
+function getEnvironmentEditorSessionGlobalState(): EnvironmentEditorSessionGlobalState {
+    const globalObject = globalThis as typeof globalThis & {
+        [ENVIRONMENT_EDITOR_SESSION_GLOBAL_KEY]?: EnvironmentEditorSessionGlobalState;
+    };
+
+    if (!globalObject[ENVIRONMENT_EDITOR_SESSION_GLOBAL_KEY]) {
+        globalObject[ENVIRONMENT_EDITOR_SESSION_GLOBAL_KEY] = { state: null };
+    }
+
+    return globalObject[ENVIRONMENT_EDITOR_SESSION_GLOBAL_KEY];
+}
+
+function getEnvironmentEditorSessionFilePath(): string | null {
+    const dataRoot = getEditorDataRoot();
+    return dataRoot ? path.join(dataRoot, AUTH_CONFIG_DIRECTORY_NAME, 'editor-env-session.json') : null;
 }
 
 let environmentEditorSessionState: EnvironmentEditorSessionState | null = null;
@@ -55,6 +80,13 @@ export class RuntimeEditorAuthConfigInvalidError extends Error {
     constructor(public readonly filePath: string) {
         super('Stored editor auth config is invalid.');
         this.name = 'RuntimeEditorAuthConfigInvalidError';
+    }
+}
+
+export class RuntimeEditorAuthSetupTokenRequiredError extends Error {
+    constructor() {
+        super('EDITOR_RUNTIME_AUTH_SETUP_TOKEN is required when runtime editor auth setup is enabled in production.');
+        this.name = 'RuntimeEditorAuthSetupTokenRequiredError';
     }
 }
 
@@ -257,15 +289,97 @@ export async function initializeRuntimeEditorAuth(secret: string): Promise<strin
     return sessionValue;
 }
 
+function parseEnvironmentEditorSessionState(value: unknown): EnvironmentEditorSessionState | null {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const candidate = value as Partial<EnvironmentEditorSessionState>;
+
+    if (
+        typeof candidate.tokenHash !== 'string' ||
+        typeof candidate.activeSessionSalt !== 'string' ||
+        typeof candidate.activeSessionHash !== 'string' ||
+        typeof candidate.activeSessionExpiresAt !== 'string'
+    ) {
+        return null;
+    }
+
+    return {
+        tokenHash: candidate.tokenHash,
+        activeSessionSalt: candidate.activeSessionSalt,
+        activeSessionHash: candidate.activeSessionHash,
+        activeSessionExpiresAt: candidate.activeSessionExpiresAt,
+    };
+}
+
+function readEnvironmentEditorSessionState(): EnvironmentEditorSessionState | null {
+    if (environmentEditorSessionState) {
+        return environmentEditorSessionState;
+    }
+
+    const globalState = getEnvironmentEditorSessionGlobalState();
+
+    if (globalState.state) {
+        environmentEditorSessionState = globalState.state;
+        return environmentEditorSessionState;
+    }
+
+    const filePath = getEnvironmentEditorSessionFilePath();
+
+    if (!filePath || !fs.existsSync(filePath)) {
+        return null;
+    }
+
+    try {
+        environmentEditorSessionState = parseEnvironmentEditorSessionState(
+            JSON.parse(fs.readFileSync(filePath, 'utf8'))
+        );
+        return environmentEditorSessionState;
+    } catch {
+        return null;
+    }
+}
+
+function writeEnvironmentEditorSessionState(state: EnvironmentEditorSessionState): void {
+    const filePath = getEnvironmentEditorSessionFilePath();
+
+    getEnvironmentEditorSessionGlobalState().state = state;
+
+    if (!filePath) {
+        environmentEditorSessionState = state;
+        return;
+    }
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), {
+        encoding: 'utf8',
+        mode: 0o600,
+    });
+    fs.chmodSync(filePath, 0o600);
+    environmentEditorSessionState = state;
+}
+
+function deleteEnvironmentEditorSessionState(): void {
+    const filePath = getEnvironmentEditorSessionFilePath();
+
+    environmentEditorSessionState = null;
+    getEnvironmentEditorSessionGlobalState().state = null;
+
+    if (filePath) {
+        fs.rmSync(filePath, { force: true });
+    }
+}
+
 export async function createRuntimeEditorSession(): Promise<string | null> {
     const envSecret = getEditorAccessToken();
     const sessionValue = randomBytes(32).toString('hex');
 
     if (envSecret) {
-        environmentEditorSessionState = {
+        writeEnvironmentEditorSessionState({
             tokenHash: createEnvironmentTokenHash(envSecret),
             ...createRuntimeEditorSessionFields(sessionValue),
-        };
+        });
 
         return sessionValue;
     }
@@ -288,7 +402,7 @@ export async function createRuntimeEditorSession(): Promise<string | null> {
 
 export function revokeRuntimeEditorSession(): void {
     if (getEditorAccessToken()) {
-        environmentEditorSessionState = null;
+        deleteEnvironmentEditorSessionState();
         return;
     }
 
@@ -345,17 +459,19 @@ export async function isValidRuntimeEditorSession(
     const envSecret = getEditorAccessToken();
 
     if (envSecret) {
+        const sessionState = readEnvironmentEditorSessionState();
+
         if (
-            !environmentEditorSessionState ||
-            isSessionExpired(environmentEditorSessionState.activeSessionExpiresAt) ||
-            !safeEqual(environmentEditorSessionState.tokenHash, createEnvironmentTokenHash(envSecret))
+            !sessionState ||
+            isSessionExpired(sessionState.activeSessionExpiresAt) ||
+            !safeEqual(sessionState.tokenHash, createEnvironmentTokenHash(envSecret))
         ) {
             return false;
         }
 
         return safeEqual(
-            createSessionHash(sessionValue, environmentEditorSessionState.activeSessionSalt),
-            environmentEditorSessionState.activeSessionHash
+            createSessionHash(sessionValue, sessionState.activeSessionSalt),
+            sessionState.activeSessionHash
         );
     }
 
@@ -377,6 +493,7 @@ export async function isValidRuntimeEditorSession(
 
 export function resetEnvironmentEditorSessionForTests(): void {
     environmentEditorSessionState = null;
+    getEnvironmentEditorSessionGlobalState().state = null;
 }
 
 export function getRuntimeEditorAuthSetupToken(): string | null {
@@ -384,11 +501,27 @@ export function getRuntimeEditorAuthSetupToken(): string | null {
     return token ? token : null;
 }
 
+export function getRuntimeEditorAuthSetupConfigurationError(): RuntimeEditorAuthSetupTokenRequiredError | null {
+    if (
+        process.env.NODE_ENV === 'production' &&
+        process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' &&
+        !getRuntimeEditorAuthSetupToken()
+    ) {
+        return new RuntimeEditorAuthSetupTokenRequiredError();
+    }
+
+    return null;
+}
+
 function isRuntimeEditorAuthAlreadyInitialized(): boolean {
     return Boolean(getEditorAccessToken() || readRuntimeEditorAuthConfig());
 }
 
 export function isRuntimeEditorAuthSetupEnabled(): boolean {
+    if (getRuntimeEditorAuthSetupConfigurationError()) {
+        return false;
+    }
+
     if (
         process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
         getRuntimeEditorAuthSetupToken()
@@ -396,20 +529,35 @@ export function isRuntimeEditorAuthSetupEnabled(): boolean {
         return true;
     }
 
+    if (process.env.NODE_ENV === 'production') {
+        return false;
+    }
+
     return !isRuntimeEditorAuthAlreadyInitialized();
 }
 
 export function isRuntimeEditorAuthSetupTokenRequired(): boolean {
+    if (getRuntimeEditorAuthSetupConfigurationError()) {
+        return true;
+    }
+
     return Boolean(getRuntimeEditorAuthSetupToken());
 }
 
 export function isValidRuntimeEditorAuthSetupToken(candidate: string): boolean {
+    if (getRuntimeEditorAuthSetupConfigurationError()) {
+        return false;
+    }
+
     const setupToken = getRuntimeEditorAuthSetupToken();
 
     if (!setupToken) {
         return (
             process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
-            !isRuntimeEditorAuthAlreadyInitialized()
+            (
+                process.env.NODE_ENV !== 'production' &&
+                !isRuntimeEditorAuthAlreadyInitialized()
+            )
         );
     }
 

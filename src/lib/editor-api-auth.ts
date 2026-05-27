@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { timingSafeEqual } from 'node:crypto';
 import {
+    EDITOR_CSRF_COOKIE,
+    EDITOR_CSRF_HEADER,
     EDITOR_SESSION_COOKIE,
 } from '@/lib/editor-auth';
 import {
@@ -13,6 +16,39 @@ import {
 } from '@/lib/editor-data-storage';
 
 export const EDITOR_AUTH_CONFIG_INVALID_MESSAGE = '编辑口令配置文件损坏，请修复或删除后重试。';
+
+function createEditorCsrfInvalidResponse(): NextResponse {
+    return NextResponse.json(
+        {
+            message: '编辑请求校验失败，请刷新页面后重试。',
+        },
+        { status: 403 }
+    );
+}
+
+function isSameOriginEditorRequest(request: NextRequest): boolean {
+    const origin = request.headers.get('origin');
+
+    if (!origin) {
+        return false;
+    }
+
+    return origin === request.nextUrl.origin;
+}
+
+function isValidEditorCsrfToken(request: NextRequest): boolean {
+    const csrfCookie = request.cookies.get(EDITOR_CSRF_COOKIE)?.value;
+    const csrfHeader = request.headers.get(EDITOR_CSRF_HEADER);
+
+    if (!(csrfCookie && csrfHeader)) {
+        return false;
+    }
+
+    const a = Buffer.from(csrfCookie);
+    const b = Buffer.from(csrfHeader);
+
+    return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export async function ensureEditorSession(request: NextRequest): Promise<NextResponse | null> {
     try {
@@ -43,6 +79,20 @@ export async function ensureEditorSession(request: NextRequest): Promise<NextRes
         }
 
         throw error;
+    }
+
+    return null;
+}
+
+export async function ensureEditorWriteRequest(request: NextRequest): Promise<NextResponse | null> {
+    const authError = await ensureEditorSession(request);
+
+    if (authError) {
+        return authError;
+    }
+
+    if (!isSameOriginEditorRequest(request) || !isValidEditorCsrfToken(request)) {
+        return createEditorCsrfInvalidResponse();
     }
 
     return null;

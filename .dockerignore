@@ -15,12 +15,6 @@ output
 *.log
 tsconfig.tsbuildinfo
 
-tests
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
-vitest.config.ts
 jest.config.*
 __mocks__
 
@@ -36,8 +30,6 @@ __mocks__
 docs
 design-system
 
-.eslintrc.json
-eslint.config.mjs
 .prettierrc*
 .editorconfig
 .nvmrc

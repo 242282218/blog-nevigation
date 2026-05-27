@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useCallback } from 'react';
 import type { Article, Frontmatter } from '@/app/types/article';
@@ -14,12 +14,19 @@ import {
   parseMarkdownWithFrontmatter,
   serializeMarkdownWithFrontmatter,
 } from '@/lib/frontmatter';
+import { createEditorCsrfHeaders } from '@/app/editor/editor-csrf';
 
 const STORAGE_KEY = 'blog-local-articles';
 const ARTICLES_API_PATH = '/api/data/articles';
 
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function getTodayString(): string {
@@ -102,9 +109,9 @@ async function saveArticlesToServer(
     const response = await fetch(ARTICLES_API_PATH, {
       method: 'PUT',
       credentials: 'include',
-      headers: {
+      headers: createEditorCsrfHeaders({
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ articles, revision: context.revision }),
     });
 

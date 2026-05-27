@@ -2,9 +2,6 @@
 const nextConfig = {
   output: 'standalone',
   devIndicators: false,
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
   images: {
     unoptimized: true,
   },

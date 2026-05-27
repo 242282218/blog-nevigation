@@ -102,4 +102,23 @@ describe('article data contract', () => {
       }),
     ]);
   });
+
+  it('drops unsafe article source links during parsing', () => {
+    expect(parseArticlesData([{
+      ...article,
+      sourceLinks: [
+        { title: 'Safe', url: ' https://example.com/reference ', note: ' Reference ' },
+        { title: 'Script', url: 'javascript:alert(1)' },
+        { title: 'Data', url: 'data:text/html,<script>alert(1)</script>' },
+        { title: 'Plain HTTP', url: 'http://example.com/reference' },
+        { title: 'Missing URL', url: '   ' },
+      ],
+    }])).toEqual([
+      expect.objectContaining({
+        sourceLinks: [
+          { title: 'Safe', url: 'https://example.com/reference', note: 'Reference' },
+        ],
+      }),
+    ]);
+  });
 });

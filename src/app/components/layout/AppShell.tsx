@@ -8,13 +8,23 @@ interface AppShellProps {
     children: React.ReactNode;
 }
 
+export function ConditionalHeader() {
+    const pathname = usePathname();
+
+    if (pathname.startsWith('/editor')) {
+        return null;
+    }
+
+    return <Header />;
+}
+
 export function AppShell({ children }: AppShellProps) {
     const pathname = usePathname();
     const isEditorRoute = pathname.startsWith('/editor');
 
     return (
         <>
-            {!isEditorRoute && <Header />}
+            <ConditionalHeader />
             <main
                 id="main-content"
                 className={cn(

@@ -1,5 +1,7 @@
 import js from '@eslint/js';
 import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
+import nextPlugin from '@next/eslint-plugin-next';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import jsxA11yPlugin from 'eslint-plugin-jsx-a11y';
@@ -69,12 +71,16 @@ export default [
             },
         },
         plugins: {
+            '@typescript-eslint': tsPlugin,
+            '@next/next': nextPlugin,
             react: reactPlugin,
             'react-hooks': reactHooksPlugin,
             'jsx-a11y': jsxA11yPlugin,
         },
         rules: {
             ...reactPlugin.configs.recommended.rules,
+            ...nextPlugin.configs.recommended.rules,
+            ...nextPlugin.configs['core-web-vitals'].rules,
             ...jsxA11yPlugin.configs.recommended.rules,
             'react-hooks/rules-of-hooks': 'error',
             'react-hooks/exhaustive-deps': 'warn',
@@ -82,6 +88,11 @@ export default [
             'jsx-a11y/no-autofocus': 'off',
             'no-undef': 'off',
             'no-unused-vars': 'off',
+            '@typescript-eslint/no-unused-vars': ['error', {
+                argsIgnorePattern: '^_',
+                varsIgnorePattern: '^_',
+                caughtErrorsIgnorePattern: '^_',
+            }],
             'react/jsx-no-comment-textnodes': 'off',
             'react/no-unescaped-entities': 'off',
             'react/no-unknown-property': 'off',

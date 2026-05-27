@@ -6,34 +6,40 @@ import {
   Calendar,
   Clock3,
   Download,
+  Edit3,
   Edit2,
   Eye,
   FileText,
   Plus,
   Search,
   Sparkles,
+  Send,
   Tag,
   Trash2,
+  Undo2,
   Upload,
+  X,
 } from 'lucide-react';
 import { useLocalArticles } from '@/app/hooks/useLocalArticles';
 import { TemplateSelector } from './components/TemplateSelector';
 import { Article } from '@/app/types/article';
-import { StatusMessage } from '@/app/components/ui';
+import { EmptyState, StatusMessage } from '@/app/components/ui';
 import { cn } from '@/lib/utils';
 import {
   ARTICLE_KIND_OPTIONS,
   ARTICLE_STATUS_OPTIONS,
   getArticleKindLabel,
   getArticleStatusLabel,
+  isPublicArticleStatus,
 } from '@/lib/article-metadata';
-import { LogoutButton } from '../components/LogoutButton';
+import { getArticleSaveBlockingChecks } from '@/lib/article-quality';
+import { LogoutButton } from '../../components/LogoutButton';
 import {
   EditorButton,
   EditorMain,
   EditorPage,
   EditorTopBar,
-} from '../components/EditorShell';
+} from '../../components/EditorShell';
 
 function countArticleWords(content: string): number {
   const cjkCount = content.match(/[\u4e00-\u9fff]/g)?.length || 0;
@@ -65,14 +71,23 @@ export default function BlogEditorPage() {
     lastConflictAt,
     lastRemoteLoadError,
     lastRemoteSaveError,
+    updateArticle,
   } = useLocalArticles();
   const [showTemplates, setShowTemplates] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ tone: 'success' | 'danger' | 'info'; text: string } | null>(null);
+  const [message, setMessage] = useState<{
+    tone: 'success' | 'danger' | 'info';
+    text: string;
+    action?: { label: string; articleId: string };
+  } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [kindFilter, setKindFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [featuredFilter, setFeaturedFilter] = useState(false);
+  const hasActiveFilters = Boolean(searchTerm.trim() || kindFilter || statusFilter || categoryFilter || featuredFilter);
+  const activeKindLabel = ARTICLE_KIND_OPTIONS.find((option) => option.value === kindFilter)?.label || kindFilter;
+  const activeStatusLabel = ARTICLE_STATUS_OPTIONS.find((option) => option.value === statusFilter)?.label || statusFilter;
 
   const sortedArticles = useMemo(
     () => [...articles].sort((first, second) => second.updatedAt - first.updatedAt),
@@ -108,10 +123,19 @@ export default function BlogEditorPage() {
         (!keyword || haystack.includes(keyword)) &&
         (!kindFilter || article.kind === kindFilter) &&
         (!statusFilter || (article.status || 'published') === statusFilter) &&
-        (!categoryFilter || article.category === categoryFilter)
+        (!categoryFilter || article.category === categoryFilter) &&
+        (!featuredFilter || article.featured)
       );
     });
-  }, [categoryFilter, kindFilter, searchTerm, sortedArticles, statusFilter]);
+  }, [categoryFilter, featuredFilter, kindFilter, searchTerm, sortedArticles, statusFilter]);
+
+  const handleClearFilters = useCallback(() => {
+    setSearchTerm('');
+    setKindFilter('');
+    setStatusFilter('');
+    setCategoryFilter('');
+    setFeaturedFilter(false);
+  }, []);
 
   const handleSelectTemplate = useCallback((templateId: string) => {
     router.push(`/editor/blog/new?template=${templateId}`);
@@ -134,6 +158,35 @@ export default function BlogEditorPage() {
       setTimeout(() => setDeleteConfirm(null), 3000);
     }
   }, [deleteConfirm, deleteArticle]);
+
+  const handleTogglePublishState = useCallback((article: Article) => {
+    const status = article.status || 'published';
+
+    if (status === 'draft') {
+      const nextArticle: Article = { ...article, status: 'published' };
+      const failedBlockingCheck = getArticleSaveBlockingChecks(nextArticle)[0];
+
+      if (failedBlockingCheck) {
+        setMessage({
+          tone: 'danger',
+          text: `发布前需要处理：${failedBlockingCheck.label}。`,
+          action: { label: '去编辑', articleId: article.id },
+        });
+        return;
+      }
+
+      const updated = updateArticle(article.id, { status: 'published' });
+      setMessage(updated
+        ? { tone: 'success', text: '文章已标记为已发布。' }
+        : { tone: 'danger', text: '未找到要发布的文章。' });
+      return;
+    }
+
+    const updated = updateArticle(article.id, { status: 'draft' });
+    setMessage(updated
+      ? { tone: 'success', text: '文章已改为草稿。' }
+      : { tone: 'danger', text: '未找到要改为草稿的文章。' });
+  }, [updateArticle]);
 
   const handleExport = useCallback((article: Article) => {
     const markdown = exportArticle(article);
@@ -175,17 +228,27 @@ export default function BlogEditorPage() {
     }
 
     const reader = new FileReader();
+    const handleReadError = () => {
+      setMessage({ tone: 'danger', text: '文章文件读取失败，请重新选择 Markdown 文件。' });
+    };
 
     reader.onload = (readerEvent) => {
-      const content = readerEvent.target?.result as string;
+      const content = typeof readerEvent.target?.result === 'string'
+        ? readerEvent.target.result
+        : '';
 
-      if (content) {
-        const imported = importArticle(content);
-        setMessage(imported
-          ? { tone: 'success', text: '文章已导入。' }
-          : { tone: 'danger', text: '文章导入失败，请检查 Markdown frontmatter。' });
+      if (!content.trim()) {
+        setMessage({ tone: 'danger', text: '文章导入失败，请检查 Markdown frontmatter。' });
+        return;
       }
+
+      const imported = importArticle(content);
+      setMessage(imported
+        ? { tone: 'success', text: '文章已导入。' }
+        : { tone: 'danger', text: '文章导入失败，请检查 Markdown frontmatter。' });
     };
+    reader.onerror = handleReadError;
+    reader.onabort = handleReadError;
     reader.readAsText(file);
     event.target.value = '';
   }, [importArticle]);
@@ -212,18 +275,23 @@ export default function BlogEditorPage() {
             <EditorButton
               onClick={handleExportAll}
               disabled={articles.length === 0}
+              aria-label="导出全部文章 JSON"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">导出</span>
             </EditorButton>
-            <label className="inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm font-medium text-fg transition hover:border-border hover:bg-surface focus-within:ring-2 focus-within:ring-link focus-within:ring-offset-2">
+            <label
+              className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm font-medium text-fg transition hover:border-border hover:bg-surface focus-within:ring-2 focus-within:ring-link focus-within:ring-offset-2 sm:min-h-10 sm:min-w-0"
+              aria-label="导入文章 Markdown"
+            >
               <Upload className="w-4 h-4" />
               <span className="hidden sm:inline">导入</span>
               <input
                 type="file"
                 accept=".md,.markdown"
                 onChange={handleImport}
-                className="hidden"
+                className="sr-only"
+                aria-label="导入文章 Markdown"
               />
             </label>
 
@@ -259,15 +327,49 @@ export default function BlogEditorPage() {
 
         {message ? (
           <StatusMessage tone={message.tone}>
-            {message.text}
+            <span>{message.text}</span>
+            {message.action ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (message.action) {
+                    handleEdit(message.action.articleId);
+                  }
+                }}
+                className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-token-card border border-danger-light bg-surface px-3 text-sm font-medium text-error-600 transition hover:bg-error-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-9"
+              >
+                <Edit3 className="h-4 w-4" />
+                {message.action.label}
+              </button>
+            ) : null}
           </StatusMessage>
         ) : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <AssetMetric label="总文章" value={articleStats.total} />
-          <AssetMetric label="草稿" value={articleStats.drafts} />
-          <AssetMetric label="常青" value={articleStats.evergreen} />
-          <AssetMetric label="精选" value={articleStats.featured} />
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="文章状态快速筛选">
+          <AssetMetric
+            label="总文章"
+            value={articleStats.total}
+            active={!statusFilter && !categoryFilter && !searchTerm.trim() && !kindFilter}
+            onClick={handleClearFilters}
+          />
+          <AssetMetric
+            label="草稿"
+            value={articleStats.drafts}
+            active={statusFilter === 'draft'}
+            onClick={() => setStatusFilter(statusFilter === 'draft' ? '' : 'draft')}
+          />
+          <AssetMetric
+            label="常青"
+            value={articleStats.evergreen}
+            active={statusFilter === 'evergreen'}
+            onClick={() => setStatusFilter(statusFilter === 'evergreen' ? '' : 'evergreen')}
+          />
+          <AssetMetric
+            label="精选"
+            value={articleStats.featured}
+            active={featuredFilter}
+            onClick={() => setFeaturedFilter((current) => !current)}
+          />
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -318,7 +420,7 @@ export default function BlogEditorPage() {
                 <button
                   type="button"
                   onClick={() => handleEdit(latestArticle.id)}
-                  className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-accent hover:text-accent-800"
+                  className="mt-4 inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-token-card px-3 text-sm font-medium text-accent transition hover:bg-accent-50 hover:text-accent-800 sm:min-h-9 sm:min-w-0"
                 >
                   <Edit2 className="h-4 w-4" />
                   继续编辑
@@ -343,7 +445,7 @@ export default function BlogEditorPage() {
                 <button
                   type="button"
                   onClick={() => setShowTemplates(false)}
-                  className="text-sm text-muted hover:text-fg"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card px-3 text-sm text-muted hover:bg-surface hover:text-fg sm:min-h-9 sm:min-w-0"
                 >
                   收起
                 </button>
@@ -365,14 +467,15 @@ export default function BlogEditorPage() {
                 <input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
+                  aria-label="搜索文章"
                   placeholder="搜索标题、描述或标签"
-                  className="w-full rounded-token-card border border-border bg-surface py-2 pl-9 pr-3 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20"
+                  className="min-h-11 w-full rounded-token-card border border-border bg-surface py-2 pl-9 pr-3 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20 sm:min-h-10"
                 />
               </label>
               <select
                 value={kindFilter}
                 onChange={(event) => setKindFilter(event.target.value)}
-                className="rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20"
+                className="min-h-11 rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20 sm:min-h-10"
                 aria-label="按文章类型筛选"
               >
                 <option value="">全部类型</option>
@@ -385,7 +488,7 @@ export default function BlogEditorPage() {
               <select
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value)}
-                className="rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20"
+                className="min-h-11 rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20 sm:min-h-10"
                 aria-label="按文章状态筛选"
               >
                 <option value="">全部状态</option>
@@ -398,7 +501,7 @@ export default function BlogEditorPage() {
               <select
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
-                className="rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20"
+                className="min-h-11 rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-fg outline-none transition focus:border-link focus:ring-2 focus:ring-link/20 sm:min-h-10"
                 aria-label="按分类筛选"
               >
                 <option value="">全部分类</option>
@@ -411,10 +514,60 @@ export default function BlogEditorPage() {
             </div>
           </div>
 
+          <div className="flex flex-col gap-2 rounded-token-card border border-border bg-surface px-3 py-2 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+            <p aria-live="polite">
+              当前显示 <span className="font-semibold text-fg">{filteredArticles.length}</span> / {articles.length} 篇
+            </p>
+            {hasActiveFilters ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {searchTerm.trim() ? (
+                  <FilterPill label={`搜索：${searchTerm.trim()}`} onRemove={() => setSearchTerm('')} />
+                ) : null}
+                {kindFilter ? (
+                  <FilterPill label={`类型：${activeKindLabel}`} onRemove={() => setKindFilter('')} />
+                ) : null}
+                {statusFilter ? (
+                  <FilterPill label={`状态：${activeStatusLabel}`} onRemove={() => setStatusFilter('')} />
+                ) : null}
+                {categoryFilter ? (
+                  <FilterPill label={`分类：${categoryFilter}`} onRemove={() => setCategoryFilter('')} />
+                ) : null}
+                {featuredFilter ? (
+                  <FilterPill label="仅精选" onRemove={() => setFeaturedFilter(false)} />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-token-card border border-border bg-background px-3 text-xs font-medium text-muted transition hover:border-accent-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-9"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  清除筛选
+                </button>
+              </div>
+            ) : (
+              <span className="font-mono text-xs text-subtle">未应用筛选</span>
+            )}
+          </div>
+
           {filteredArticles.length === 0 ? (
-            <div className="rounded-token-card border border-dashed border-border bg-surface p-8 text-center text-sm text-subtle">
-              {articles.length === 0 ? '还没有文章' : '没有匹配的文章'}
-            </div>
+            <EmptyState
+              icon={FileText}
+              title={articles.length === 0 ? '还没有文章' : '没有匹配的文章'}
+              description={articles.length === 0
+                ? '选择一个模板或空白文章后，这里会显示你的写作列表。'
+                : '当前筛选没有结果，清除筛选后可以回到完整文章列表。'}
+              action={articles.length === 0 ? (
+                <EditorButton onClick={() => setShowTemplates(true)} variant="accent">
+                  <Plus className="h-4 w-4" />
+                  新建文章
+                </EditorButton>
+              ) : (
+                <EditorButton onClick={handleClearFilters}>
+                  <X className="h-4 w-4" />
+                  清除筛选
+                </EditorButton>
+              )}
+            />
           ) : (
             <div className="space-y-3">
               {filteredArticles.map((article) => (
@@ -424,6 +577,7 @@ export default function BlogEditorPage() {
                   onEdit={() => handleEdit(article.id)}
                   onDelete={() => handleDelete(article.id)}
                   onExport={() => handleExport(article)}
+                  onTogglePublishState={() => handleTogglePublishState(article)}
                   isDeleting={deleteConfirm === article.id}
                 />
               ))}
@@ -440,22 +594,85 @@ interface ArticleCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onExport: () => void;
+  onTogglePublishState: () => void;
   isDeleting: boolean;
 }
 
-function AssetMetric({ label, value }: { label: string; value: number }) {
+function AssetMetric({
+  label,
+  value,
+  active = false,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const className = cn(
+    'rounded-token-card border p-4 text-left shadow-token-card transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+    active
+      ? 'border-accent-300 bg-accent-50 text-accent shadow-token-md'
+      : 'border-border bg-surface text-fg hover:border-accent-200 hover:bg-accent-50/50'
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={className}
+        aria-pressed={active}
+      >
+        <MetricContent label={label} value={value} active={active} />
+      </button>
+    );
+  }
+
   return (
-    <div className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
-      <p className="font-mono text-xs text-subtle">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-fg">{value}</p>
+    <div className={className}>
+      <MetricContent label={label} value={value} active={active} />
     </div>
   );
 }
 
-function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: ArticleCardProps) {
+function MetricContent({ label, value, active }: { label: string; value: number; active: boolean }) {
+  return (
+    <>
+      <p className={cn('font-mono text-xs', active ? 'text-accent' : 'text-subtle')}>{label}</p>
+      <p className={cn('mt-2 text-2xl font-semibold', active ? 'text-accent' : 'text-fg')}>{value}</p>
+    </>
+  );
+}
+
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onRemove}
+      className="inline-flex min-h-11 items-center gap-1.5 rounded-token-badge border border-border bg-background px-2 py-1 text-xs text-muted transition hover:border-accent-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-8"
+      aria-label={`移除筛选：${label}`}
+    >
+      {label}
+      <X className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+function ArticleCard({
+  article,
+  onEdit,
+  onDelete,
+  onExport,
+  onTogglePublishState,
+  isDeleting,
+}: ArticleCardProps) {
   const wordCount = countArticleWords(article.content);
   const readingMinutes = Math.max(1, Math.ceil(wordCount / 450));
   const status = article.status || 'published';
+  const isPublic = isPublicArticleStatus(status);
+  const publishActionLabel = isPublic ? '改为草稿' : '发布';
+  const PublishActionIcon = isPublic ? Undo2 : Send;
 
   return (
     <div className="group relative overflow-hidden rounded-token-card border border-border bg-surface p-4 shadow-token-card transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:bg-accent-50/40 hover:shadow-token-card-hover focus-within:border-accent-300 focus-within:ring-2 focus-within:ring-accent-100 active:translate-y-0">
@@ -522,11 +739,25 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
           </div>
         </button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+          <button
+            type="button"
+            onClick={onTogglePublishState}
+            className={cn(
+              'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-token-card border px-2.5 py-2 text-xs font-medium transition-colors focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9',
+              isPublic
+                ? 'border-border bg-surface text-muted hover:bg-warning-50 hover:text-warning-600'
+                : 'border-accent-200 bg-accent-50 text-accent-700 hover:bg-accent-100'
+            )}
+            aria-label={`${publishActionLabel}文章：${article.title || '无标题'}`}
+          >
+            <PublishActionIcon className="h-4 w-4" />
+            <span>{publishActionLabel}</span>
+          </button>
           {article.slug && status !== 'draft' ? (
             <a
               href={`/posts/${article.slug}`}
-              className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card text-subtle transition-colors hover:bg-accent-50 hover:text-accent focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9 sm:min-w-9"
               title="预览公开页"
               aria-label={`预览公开文章：${article.title || '无标题'}`}
             >
@@ -535,7 +766,7 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
           ) : null}
           <button
             onClick={onEdit}
-            className="rounded-token-card p-2 text-subtle transition-colors hover:bg-accent-50 hover:text-accent"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card text-subtle transition-colors hover:bg-accent-50 hover:text-accent focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9 sm:min-w-9"
             title="编辑"
             aria-label={`编辑文章：${article.title || '无标题'}`}
           >
@@ -543,7 +774,7 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
           </button>
           <button
             onClick={onExport}
-            className="rounded-token-card p-2 text-subtle transition-colors hover:bg-success-50 hover:text-success"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card text-subtle transition-colors hover:bg-success-50 hover:text-success focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9 sm:min-w-9"
             title="导出"
             aria-label={`导出文章：${article.title || '无标题'}`}
           >
@@ -552,7 +783,7 @@ function ArticleCard({ article, onEdit, onDelete, onExport, isDeleting }: Articl
           <button
             onClick={onDelete}
             className={cn(
-              'rounded-token-card p-2 transition-colors',
+              'inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card transition-colors focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9 sm:min-w-9',
               isDeleting
                 ? 'bg-error-50 text-error-600'
                 : 'text-subtle hover:bg-error-50 hover:text-error-600'

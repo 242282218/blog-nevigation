@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createArticleSlug } from '@/lib/article-data';
 import {
     EditorDataFileInvalidError,
@@ -11,11 +11,17 @@ import {
     getEditorDataResourceManifest,
     isEditorDataRootConfigured,
     readArticlesFromDisk,
+    readArticlesFromDiskAsync,
     readEditorDataManifest,
     readNavigationFromDisk,
+    readNavigationFromDiskAsync,
+    readSiteSettingsFromDiskAsync,
     readSiteSettingsFromDisk,
+    restoreEditorDataRootAtomically,
+    withEditorDataRootLock,
     writeArticlesToDisk,
     writeArticlesToDiskIfRevisionMatches,
+    EditorDataRestoreIncompleteError,
 } from '@/lib/editor-data-storage';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 import type { Article } from '@/app/types/article';
@@ -59,6 +65,9 @@ function createArticle(id: string, title: string): Article {
 }
 
 afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+
     if (ORIGINAL_BLOG_DATA_ROOT === undefined) {
         delete process.env.BLOG_DATA_ROOT;
     } else {
@@ -84,10 +93,10 @@ describe('editor data storage configuration', () => {
         expect(getDefaultNavigationSeedFilePath()).toContain('navigation');
     });
 
-    it('fails writes explicitly when BLOG_DATA_ROOT is missing', () => {
+    it('fails writes explicitly when BLOG_DATA_ROOT is missing', async () => {
         delete process.env.BLOG_DATA_ROOT;
 
-        expect(() => writeArticlesToDisk([])).toThrow(EditorDataRootNotConfiguredError);
+        await expect(writeArticlesToDisk([])).rejects.toThrow(EditorDataRootNotConfiguredError);
     });
 
     it('falls back to default site settings when runtime settings are missing', () => {
@@ -96,24 +105,26 @@ describe('editor data storage configuration', () => {
         expect(readSiteSettingsFromDisk()).toEqual(DEFAULT_SITE_SETTINGS);
     });
 
-    it('creates and updates a manifest when runtime data is written', () => {
+    it('creates and updates a manifest when runtime data is written', async () => {
         createTempDataRoot();
+        const fsyncSpy = vi.spyOn(fs, 'fsyncSync');
 
-        const firstManifest = writeArticlesToDisk([]);
+        const firstManifest = await writeArticlesToDisk([]);
         const manifestAfterWrite = readEditorDataManifest();
-        const secondManifest = writeArticlesToDisk([]);
+        const secondManifest = await writeArticlesToDisk([]);
 
         expect(firstManifest.revision).toBe(manifestAfterWrite.resources.articles?.revision);
         expect(secondManifest.revision).not.toBe(firstManifest.revision);
+        expect(fsyncSpy).toHaveBeenCalled();
     });
 
-    it('writes articles only when the current revision still matches', () => {
+    it('writes articles only when the current revision still matches', async () => {
         createTempDataRoot();
         const originalArticles = [createArticle('article-1', 'Original Article')];
         const nextArticles = [createArticle('article-2', 'Next Article')];
-        const originalManifest = writeArticlesToDisk(originalArticles);
+        const originalManifest = await writeArticlesToDisk(originalArticles);
 
-        const result = writeArticlesToDiskIfRevisionMatches(nextArticles, originalManifest.revision);
+        const result = await writeArticlesToDiskIfRevisionMatches(nextArticles, originalManifest.revision);
 
         expect(result).toEqual(
             expect.objectContaining({
@@ -126,15 +137,15 @@ describe('editor data storage configuration', () => {
         expect(readArticlesFromDisk()).toEqual(nextArticles);
     });
 
-    it('returns the current articles without writing when the expected revision is stale', () => {
+    it('returns the current articles without writing when the expected revision is stale', async () => {
         createTempDataRoot();
         const originalArticles = [createArticle('article-1', 'Original Article')];
         const newerArticles = [createArticle('article-2', 'Newer Article')];
         const attemptedArticles = [createArticle('article-3', 'Attempted Article')];
-        const originalManifest = writeArticlesToDisk(originalArticles);
-        const newerManifest = writeArticlesToDisk(newerArticles);
+        const originalManifest = await writeArticlesToDisk(originalArticles);
+        const newerManifest = await writeArticlesToDisk(newerArticles);
 
-        const result = writeArticlesToDiskIfRevisionMatches(attemptedArticles, originalManifest.revision);
+        const result = await writeArticlesToDiskIfRevisionMatches(attemptedArticles, originalManifest.revision);
 
         expect(result).toEqual({
             success: false,
@@ -156,6 +167,35 @@ describe('editor data storage configuration', () => {
 
         expect(manifest?.revision).toMatch(/^derived-/);
         expect(fs.existsSync(path.join(tempRoot, 'manifest.json'))).toBe(false);
+    });
+
+    it('uses stable hashes for semantically equal object key orders', async () => {
+        createTempDataRoot();
+        const articles = [createArticle('article-1', 'Original Article')];
+        const reorderedArticles = [
+            {
+                revisionNotes: [],
+                sourceLinks: [],
+                featured: false,
+                status: 'published',
+                kind: 'essay',
+                slug: articles[0].slug,
+                updatedAt: 2,
+                createdAt: 1,
+                content: '# Original Article',
+                tags: ['test'],
+                description: 'Original Article description',
+                date: '2026-05-24',
+                title: 'Original Article',
+                id: 'article-1',
+            },
+        ];
+
+        await writeArticlesToDisk(articles);
+
+        const manifest = getEditorDataResourceManifest('articles', reorderedArticles);
+
+        expect(manifest?.revision).not.toMatch(/^derived-/);
     });
 
     it('rejects corrupt runtime article JSON instead of returning empty data', () => {
@@ -182,5 +222,129 @@ describe('editor data storage configuration', () => {
 
         expect(readNavigationFromDisk().length).toBeGreaterThan(0);
         expect(fs.existsSync(navigationPath)).toBe(false);
+    });
+
+    it('reads runtime data through asynchronous public read helpers', async () => {
+        const tempRoot = createTempDataRoot();
+        const article = createArticle('article-async', 'Async Article');
+        const navigation = [{
+            name: 'Docs',
+            icon: 'book',
+            slug: 'docs',
+            tools: [{
+                icon: 'link',
+                title: 'Example Docs',
+                description: 'Reference documentation',
+                url: 'https://example.com/docs',
+                tags: ['docs'],
+            }],
+        }];
+
+        writeText(path.join(tempRoot, 'articles', 'articles.json'), JSON.stringify([article]));
+        writeText(path.join(tempRoot, 'navigation', 'tools.json'), JSON.stringify(navigation));
+
+        expect(await readArticlesFromDiskAsync()).toEqual([article]);
+        expect(await readNavigationFromDiskAsync()).toEqual(navigation);
+        expect(await readSiteSettingsFromDiskAsync()).toEqual(DEFAULT_SITE_SETTINGS);
+    });
+
+    it('keeps the data write lock fresh while a long operation holds it', async () => {
+        const tempRoot = createTempDataRoot();
+        vi.useFakeTimers();
+
+        await withEditorDataRootLock(async () => {
+            const lockHeartbeatPath = path.join(tempRoot, '.data-write.lock', 'heartbeat.json');
+            const firstHeartbeat = fs.readFileSync(lockHeartbeatPath, 'utf8');
+
+            await vi.advanceTimersByTimeAsync(31_000);
+
+            expect(fs.readFileSync(lockHeartbeatPath, 'utf8')).not.toBe(firstHeartbeat);
+        });
+
+        expect(fs.existsSync(path.join(tempRoot, '.data-write.lock'))).toBe(false);
+    });
+
+    it('recovers incomplete restores before serving reads', async () => {
+        const tempRoot = createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        const originalManifest = await writeArticlesToDisk(originalArticles);
+        const backupRoot = path.join(tempRoot, '.restore-backup-test');
+
+        fs.mkdirSync(path.join(backupRoot, 'articles'), { recursive: true });
+        fs.copyFileSync(
+            path.join(tempRoot, 'articles', 'articles.json'),
+            path.join(backupRoot, 'articles', 'articles.json')
+        );
+        fs.copyFileSync(
+            path.join(tempRoot, 'manifest.json'),
+            path.join(backupRoot, 'manifest.json')
+        );
+        writeText(
+            path.join(tempRoot, '.restore-state.json'),
+            JSON.stringify({
+                version: 1,
+                phase: 'replacing',
+                stagingDirectory: path.join(tempRoot, '.restore-staging-test'),
+                backupDirectory: backupRoot,
+                files: [
+                    path.join(tempRoot, 'articles', 'articles.json'),
+                    path.join(tempRoot, 'navigation', 'tools.json'),
+                    path.join(tempRoot, 'settings', 'site.json'),
+                    path.join(tempRoot, 'manifest.json'),
+                ],
+                updatedAt: new Date().toISOString(),
+            })
+        );
+        writeText(
+            path.join(tempRoot, 'articles', 'articles.json'),
+            JSON.stringify([createArticle('article-2', 'Mixed Article')])
+        );
+
+        expect(readArticlesFromDisk()).toEqual(originalArticles);
+        expect(readEditorDataManifest().resources.articles?.revision).toBe(originalManifest.revision);
+        expect(fs.existsSync(path.join(tempRoot, '.restore-state.json'))).toBe(false);
+    });
+
+    it('leaves a restore marker when rollback cannot be completed', async () => {
+        const tempRoot = createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+
+        await writeArticlesToDisk(originalArticles);
+
+        const renameSync = fs.renameSync;
+        const copyFileSync = fs.copyFileSync;
+        let stagedReplaceCount = 0;
+
+        vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+            const oldPathText = String(oldPath);
+
+            if (oldPathText.includes('.restore-staging') && !oldPathText.endsWith('.tmp')) {
+                stagedReplaceCount += 1;
+            }
+
+            if (stagedReplaceCount === 2) {
+                throw new Error('Simulated replacement failure.');
+            }
+
+            return renameSync(oldPath, newPath);
+        });
+        vi.spyOn(fs, 'copyFileSync').mockImplementation((source, destination) => {
+            if (String(destination) === path.join(tempRoot, 'articles', 'articles.json')) {
+                throw new Error('Simulated rollback failure.');
+            }
+
+            return copyFileSync(source, destination);
+        });
+
+        await expect(
+            restoreEditorDataRootAtomically({
+                articles: [createArticle('article-2', 'Replacement Article')],
+                navigation: [],
+                settings: DEFAULT_SITE_SETTINGS,
+            })
+        ).rejects.toThrow('Simulated rollback failure.');
+
+        expect(fs.existsSync(path.join(tempRoot, '.restore-state.json'))).toBe(true);
+        expect(() => readArticlesFromDisk()).toThrow(EditorDataRestoreIncompleteError);
     });
 });

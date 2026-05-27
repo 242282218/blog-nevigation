@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+    getRequestClientId,
+    isRequestClientIdReliable,
+} from '@/lib/request-client';
 
 const AUTH_FAILURE_LIMIT = 5;
 const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_FAILURE_BUCKET_LIMIT = 1_000;
 
 type AuthOperation = 'login' | 'setup';
 
@@ -10,17 +15,39 @@ interface AuthFailureBucket {
     resetAt: number;
 }
 
-const authFailureBuckets = new Map<AuthOperation, AuthFailureBucket>();
+const authFailureBuckets = new Map<string, AuthFailureBucket>();
 
-function getActiveAuthFailureBucket(operation: AuthOperation): AuthFailureBucket | null {
-    const bucket = authFailureBuckets.get(operation);
+function pruneExpiredAuthFailureBuckets(): void {
+    const now = Date.now();
+
+    for (const [key, bucket] of authFailureBuckets) {
+        if (bucket.resetAt <= now) {
+            authFailureBuckets.delete(key);
+        }
+    }
+}
+
+function pruneOldestAuthFailureBucket(): void {
+    const oldestKey = authFailureBuckets.keys().next().value as string | undefined;
+
+    if (oldestKey) {
+        authFailureBuckets.delete(oldestKey);
+    }
+}
+
+function getAuthFailureBucketKey(request: NextRequest, operation: AuthOperation): string {
+    return `${operation}:${getRequestClientId(request)}`;
+}
+
+function getActiveAuthFailureBucket(bucketKey: string): AuthFailureBucket | null {
+    const bucket = authFailureBuckets.get(bucketKey);
 
     if (!bucket) {
         return null;
     }
 
     if (bucket.resetAt <= Date.now()) {
-        authFailureBuckets.delete(operation);
+        authFailureBuckets.delete(bucketKey);
         return null;
     }
 
@@ -36,13 +63,24 @@ function createRateLimitResponse(): NextResponse {
     );
 }
 
+function createClientIdentityConfigurationResponse(): NextResponse {
+    return NextResponse.json(
+        {
+            message: '生产环境必须配置 TRUSTED_PROXY_IPS 后才能使用编辑登录。',
+        },
+        { status: 503 }
+    );
+}
+
 export function getEditorAuthRateLimitResponse(
     request: NextRequest,
     operation: AuthOperation
 ): NextResponse | null {
-    void request;
+    if (!isRequestClientIdReliable()) {
+        return createClientIdentityConfigurationResponse();
+    }
 
-    const bucket = getActiveAuthFailureBucket(operation);
+    const bucket = getActiveAuthFailureBucket(getAuthFailureBucketKey(request, operation));
 
     if (!bucket || bucket.count < AUTH_FAILURE_LIMIT) {
         return null;
@@ -52,12 +90,17 @@ export function getEditorAuthRateLimitResponse(
 }
 
 export function recordEditorAuthFailure(request: NextRequest, operation: AuthOperation): void {
-    void request;
-
-    const bucket = getActiveAuthFailureBucket(operation);
+    const bucketKey = getAuthFailureBucketKey(request, operation);
+    const bucket = getActiveAuthFailureBucket(bucketKey);
 
     if (!bucket) {
-        authFailureBuckets.set(operation, {
+        pruneExpiredAuthFailureBuckets();
+
+        if (authFailureBuckets.size >= AUTH_FAILURE_BUCKET_LIMIT) {
+            pruneOldestAuthFailureBucket();
+        }
+
+        authFailureBuckets.set(bucketKey, {
             count: 1,
             resetAt: Date.now() + AUTH_FAILURE_WINDOW_MS,
         });
@@ -68,9 +111,7 @@ export function recordEditorAuthFailure(request: NextRequest, operation: AuthOpe
 }
 
 export function clearEditorAuthFailures(request: NextRequest, operation: AuthOperation): void {
-    void request;
-
-    authFailureBuckets.delete(operation);
+    authFailureBuckets.delete(getAuthFailureBucketKey(request, operation));
 }
 
 export function resetEditorAuthRateLimitForTests(): void {

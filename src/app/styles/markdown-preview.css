@@ -186,15 +186,21 @@
   font-size: 0.75rem;
   font-weight: 500;
   gap: 0.35rem;
-  min-height: 1.75rem;
-  padding: 0.25rem 0.55rem;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.75rem;
+  transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, color 150ms ease;
 }
 
 .markdown-preview .markdown-code-block__copy:hover {
   background: var(--accent-soft);
   border-color: var(--terracotta-200);
   color: var(--accent);
+}
+
+.markdown-preview .markdown-code-block__copy:focus,
+.markdown-preview .markdown-code-block__copy:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .markdown-preview .markdown-code-block pre {

@@ -335,7 +335,7 @@ describe('backup API', () => {
       updatedAt: 4,
     };
 
-    writeArticlesToDisk([newerArticle]);
+    await writeArticlesToDisk([newerArticle]);
 
     const response = await POST(
       await createAuthedEditorRequest('http://localhost/api/data/backup', {

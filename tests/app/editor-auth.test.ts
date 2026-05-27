@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DELETE,
   GET,
@@ -10,6 +10,8 @@ import {
 } from '@/app/api/editor-auth/route';
 import { ensureEditorSession } from '@/lib/editor-api-auth';
 import {
+  EDITOR_CSRF_COOKIE,
+  EDITOR_CSRF_HEADER,
   EDITOR_SESSION_COOKIE,
   SESSION_NAMESPACE,
   getSafeEditorNextPath,
@@ -23,11 +25,14 @@ import {
 } from '../helpers/api-route';
 
 const ORIGINAL_ENV = {
+  NODE_ENV: process.env.NODE_ENV,
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_AUTH_CONFIG_FILE: process.env.EDITOR_AUTH_CONFIG_FILE,
   EDITOR_ALLOW_RUNTIME_AUTH_SETUP: process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP,
   EDITOR_RUNTIME_AUTH_SETUP_TOKEN: process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
+  TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
+  SKIP_IP_VALIDATION: process.env.SKIP_IP_VALIDATION,
 };
 const TEMP_DIRECTORIES: string[] = [];
 
@@ -80,11 +85,34 @@ function extractSessionCookie(response: Response): string {
   return response.headers.get('set-cookie')?.split(';')[0] ?? '';
 }
 
+function extractCookie(response: Response, name: string): string {
+  return response.headers.get('set-cookie')
+    ?.split(',')
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith(`${name}=`))
+    ?.split(';')[0] ?? '';
+}
+
 function createRequestWithSession(sessionCookie: string): NextRequest {
   return new NextRequest('http://localhost/api/data/articles', {
     headers: {
       Cookie: sessionCookie,
     },
+  });
+}
+
+function createLogoutRequest(response: Response, headersInit?: HeadersInit): NextRequest {
+  const sessionCookie = extractCookie(response, EDITOR_SESSION_COOKIE);
+  const csrfCookie = extractCookie(response, EDITOR_CSRF_COOKIE);
+  const headers = new Headers(headersInit);
+
+  headers.set('Cookie', `${sessionCookie}; ${csrfCookie}`);
+  headers.set('Origin', headers.get('Origin') ?? 'http://localhost');
+  headers.set(EDITOR_CSRF_HEADER, csrfCookie.slice(`${EDITOR_CSRF_COOKIE}=`.length));
+
+  return new NextRequest('http://localhost/api/editor-auth', {
+    method: 'DELETE',
+    headers,
   });
 }
 
@@ -122,8 +150,8 @@ describe('editor auth API', () => {
     process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
 
     const setupResponse = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
       setupToken: 'setup-token',
     }));
     const setupCookie = setupResponse.headers.get('set-cookie');
@@ -133,7 +161,7 @@ describe('editor auth API', () => {
     expect(setupResponse.status).toBe(200);
     expect(await setupResponse.json()).toEqual({ success: true });
     expect(setupCookie).toContain(`${EDITOR_SESSION_COOKIE}=`);
-    expect(configText).not.toContain('new-secret');
+    expect(configText).not.toContain('new-secret-12chars');
     expect(configText).not.toContain(setupSession);
 
     const sessionResponse = await GET(
@@ -151,7 +179,7 @@ describe('editor auth API', () => {
       setupTokenRequired: true,
     });
 
-    const loginResponse = await POST(createJsonRequest({ secret: 'new-secret' }));
+    const loginResponse = await POST(createJsonRequest({ secret: 'new-secret-12chars' }));
     const loginCookie = loginResponse.headers.get('set-cookie') ?? '';
 
     expect(loginResponse.status).toBe(200);
@@ -208,13 +236,13 @@ describe('editor auth API', () => {
     });
 
     const setupResponse = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
     }));
 
     expect(setupResponse.status).toBe(200);
     expect(await setupResponse.json()).toEqual({ success: true });
-    expect(fs.readFileSync(configFilePath, 'utf8')).not.toContain('new-secret');
+    expect(fs.readFileSync(configFilePath, 'utf8')).not.toContain('new-secret-12chars');
 
     const statusAfterSetup = await GET(new NextRequest('http://localhost/api/editor-auth', {
       headers: {
@@ -230,6 +258,66 @@ describe('editor auth API', () => {
     });
   });
 
+  it('rejects first-use initialization in production without an explicit setup token or opt-in', async () => {
+    delete process.env.EDITOR_ACCESS_TOKEN;
+    delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
+    delete process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP;
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
+      createTempDirectoryWithCleanup('editor-auth-production-setup-'),
+      'editor-auth.json'
+    );
+
+    const statusBeforeSetup = await GET(new NextRequest('http://localhost/api/editor-auth'));
+    const setupResponse = await PUT(createJsonRequest({
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
+    }));
+
+    expect(await statusBeforeSetup.json()).toEqual({
+      configured: false,
+      authenticated: false,
+      setupEnabled: false,
+      setupTokenRequired: false,
+    });
+    expect(setupResponse.status).toBe(403);
+    expect(await setupResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('首次初始化未启用'),
+      })
+    );
+  });
+
+  it('returns a configuration error when production runtime setup is enabled without a setup token', async () => {
+    delete process.env.EDITOR_ACCESS_TOKEN;
+    delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP = 'true';
+    process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
+      createTempDirectoryWithCleanup('editor-auth-production-missing-setup-token-'),
+      'editor-auth.json'
+    );
+
+    const statusResponse = await GET(new NextRequest('http://localhost/api/editor-auth'));
+    const setupResponse = await PUT(createJsonRequest({
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
+    }));
+
+    expect(statusResponse.status).toBe(500);
+    expect(await statusResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('EDITOR_RUNTIME_AUTH_SETUP_TOKEN'),
+      })
+    );
+    expect(setupResponse.status).toBe(500);
+    expect(await setupResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('EDITOR_RUNTIME_AUTH_SETUP_TOKEN'),
+      })
+    );
+  });
+
   it('rejects first-use initialization when the setup token is wrong', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
     process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
@@ -239,8 +327,8 @@ describe('editor auth API', () => {
     );
 
     const response = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
       setupToken: 'wrong-token',
     }));
 
@@ -261,8 +349,8 @@ describe('editor auth API', () => {
     );
 
     const response = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
       setupToken: 'setup-token',
     }));
 
@@ -285,7 +373,12 @@ describe('editor auth API', () => {
     );
     const wrongSecretResponse = await POST(createJsonRequest({ secret: 'wrong-secret' }));
 
-    expect(malformedResponse.status).toBe(401);
+    expect(malformedResponse.status).toBe(400);
+    expect(await malformedResponse.json()).toEqual(
+      expect.objectContaining({
+        code: 'invalid_json',
+      })
+    );
     expect(malformedResponse.headers.get('set-cookie')).toBeNull();
     expect(wrongSecretResponse.status).toBe(401);
     expect(wrongSecretResponse.headers.get('set-cookie')).toBeNull();
@@ -337,6 +430,42 @@ describe('editor auth API', () => {
     expect(await legacyResponse.json()).toEqual(expect.objectContaining({ authenticated: false }));
   });
 
+  it('persists environment-token sessions under BLOG_DATA_ROOT for shared deployments', async () => {
+    const dataRoot = createTempDirectoryWithCleanup('editor-auth-env-session-');
+
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+
+    const loginResponse = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const sessionCookie = extractSessionCookie(loginResponse);
+    resetEnvironmentEditorSessionForTests();
+
+    const sessionResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: { Cookie: sessionCookie },
+    }));
+
+    expect(fs.existsSync(path.join(dataRoot, 'settings', 'editor-env-session.json'))).toBe(true);
+    expect(await sessionResponse.json()).toEqual(expect.objectContaining({ authenticated: true }));
+  });
+
+  it('keeps environment-token sessions valid after module reloads without BLOG_DATA_ROOT', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    delete process.env.BLOG_DATA_ROOT;
+
+    const {
+      createRuntimeEditorSession,
+      isValidRuntimeEditorSession,
+    } = await import('@/lib/editor-auth-runtime');
+    const session = await createRuntimeEditorSession();
+
+    vi.resetModules();
+
+    const reloadedRuntime = await import('@/lib/editor-auth-runtime');
+
+    await expect(isValidRuntimeEditorSession(session)).resolves.toBe(true);
+    await expect(reloadedRuntime.isValidRuntimeEditorSession(session)).resolves.toBe(true);
+  });
+
   it('rate limits repeated login failures', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
 
@@ -356,13 +485,31 @@ describe('editor auth API', () => {
     );
   });
 
-  it('does not trust forwarded IP headers for login rate limiting', async () => {
+  it('requires trusted proxy configuration for login rate limiting in production', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    delete process.env.TRUSTED_PROXY_IPS;
+    delete process.env.SKIP_IP_VALIDATION;
+    vi.stubEnv('NODE_ENV', 'production');
+
+    const response = await POST(createJsonRequest({ secret: 'correct-secret' }));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('set-cookie')).toBeNull();
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('TRUSTED_PROXY_IPS'),
+      })
+    );
+  });
+
+  it('isolates login rate limiting by client IP', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await POST(createJsonRequest(
         { secret: 'wrong-secret' },
-        { 'X-Forwarded-For': `198.51.100.${attempt + 1}` }
+        { 'X-Forwarded-For': '198.51.100.10, 203.0.113.1' }
       ));
 
       expect(response.status).toBe(401);
@@ -370,11 +517,17 @@ describe('editor auth API', () => {
 
     const blockedResponse = await POST(createJsonRequest(
       { secret: 'correct-secret' },
-      { 'X-Forwarded-For': '198.51.100.200' }
+      { 'X-Forwarded-For': '198.51.100.10, 203.0.113.1' }
+    ));
+    const otherClientResponse = await POST(createJsonRequest(
+      { secret: 'correct-secret' },
+      { 'X-Forwarded-For': '198.51.100.200, 203.0.113.1' }
     ));
 
     expect(blockedResponse.status).toBe(429);
     expect(blockedResponse.headers.get('set-cookie')).toBeNull();
+    expect(otherClientResponse.status).toBe(200);
+    expect(otherClientResponse.headers.get('set-cookie')).toContain(`${EDITOR_SESSION_COOKIE}=`);
   });
 
   it('rate limits repeated setup failures', async () => {
@@ -387,16 +540,16 @@ describe('editor auth API', () => {
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const response = await PUT(createJsonRequest({
-        secret: 'new-secret',
-        confirmSecret: 'new-secret',
+        secret: 'new-secret-12chars',
+        confirmSecret: 'new-secret-12chars',
         setupToken: 'wrong-token',
       }));
       expect(response.status).toBe(403);
     }
 
     const blockedResponse = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
       setupToken: 'setup-token',
     }));
 
@@ -405,13 +558,50 @@ describe('editor auth API', () => {
   });
 
   it('clears the editor session cookie on logout', async () => {
-    const response = await DELETE();
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+
+    const loginResponse = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const response = await DELETE(createLogoutRequest(loginResponse));
     const setCookie = response.headers.get('set-cookie');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
     expect(setCookie).toContain(`${EDITOR_SESSION_COOKIE}=`);
     expect(setCookie).toContain('Max-Age=0');
+  });
+
+  it('requires an authenticated same-origin CSRF-protected request for logout', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+
+    const loginResponse = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const sessionCookie = extractCookie(loginResponse, EDITOR_SESSION_COOKIE);
+    const csrfCookie = extractCookie(loginResponse, EDITOR_CSRF_COOKIE);
+    const csrfToken = csrfCookie.slice(`${EDITOR_CSRF_COOKIE}=`.length);
+    const missingSessionResponse = await DELETE(new NextRequest('http://localhost/api/editor-auth', {
+      method: 'DELETE',
+      headers: {
+        Origin: 'http://localhost',
+      },
+    }));
+    const missingCsrfResponse = await DELETE(new NextRequest('http://localhost/api/editor-auth', {
+      method: 'DELETE',
+      headers: {
+        Cookie: `${sessionCookie}; ${csrfCookie}`,
+        Origin: 'http://localhost',
+      },
+    }));
+    const crossOriginResponse = await DELETE(new NextRequest('http://localhost/api/editor-auth', {
+      method: 'DELETE',
+      headers: {
+        Cookie: `${sessionCookie}; ${csrfCookie}`,
+        Origin: 'https://attacker.example',
+        [EDITOR_CSRF_HEADER]: csrfToken,
+      },
+    }));
+
+    expect(missingSessionResponse.status).toBe(401);
+    expect(missingCsrfResponse.status).toBe(403);
+    expect(crossOriginResponse.status).toBe(403);
   });
 
   it('revokes the current runtime editor session on logout', async () => {
@@ -425,8 +615,8 @@ describe('editor auth API', () => {
     process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
 
     const setupResponse = await PUT(createJsonRequest({
-      secret: 'new-secret',
-      confirmSecret: 'new-secret',
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
       setupToken: 'setup-token',
     }));
     const setupCookie = setupResponse.headers.get('set-cookie')?.split(';')[0] ?? '';
@@ -435,7 +625,7 @@ describe('editor auth API', () => {
       headers: { Cookie: setupCookie },
     }))).status).toBe(200);
 
-    await DELETE();
+    await DELETE(createLogoutRequest(setupResponse));
 
     const sessionResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
       headers: { Cookie: setupCookie },
@@ -454,13 +644,15 @@ describe('editor auth API', () => {
     process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
 
     const getResponse = await GET(new NextRequest('http://localhost/api/editor-auth'));
-    const postResponse = await POST(createJsonRequest({ secret: 'new-secret' }));
+    const postResponse = await POST(createJsonRequest({ secret: 'new-secret-12chars' }));
     const putResponse = await PUT(createJsonRequest({
       secret: 'replacement-secret',
       confirmSecret: 'replacement-secret',
       setupToken: 'setup-token',
     }));
-    const deleteResponse = await DELETE();
+    const deleteResponse = await DELETE(new NextRequest('http://localhost/api/editor-auth', {
+      method: 'DELETE',
+    }));
 
     expect(getResponse.status).toBe(500);
     expect(postResponse.status).toBe(500);
@@ -468,8 +660,7 @@ describe('editor auth API', () => {
     expect(putResponse.status).toBe(500);
     expect(putResponse.headers.get('set-cookie')).toBeNull();
     expect(deleteResponse.status).toBe(500);
-    expect(deleteResponse.headers.get('set-cookie')).toContain(`${EDITOR_SESSION_COOKIE}=`);
-    expect(deleteResponse.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(deleteResponse.headers.get('set-cookie')).toBeNull();
     expect(fs.readFileSync(configFilePath, 'utf8')).toBe('{');
     expect(await getResponse.json()).toEqual(
       expect.objectContaining({

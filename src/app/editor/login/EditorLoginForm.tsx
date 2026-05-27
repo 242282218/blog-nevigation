@@ -21,6 +21,25 @@ interface EditorLoginFormProps {
     authErrorMessage?: string | null;
 }
 
+type SetupValidationField = 'token' | 'secret' | 'confirmSecret';
+
+type SetupValidationError = {
+    field: SetupValidationField;
+    message: string;
+};
+
+const SETUP_FIELD_IDS: Record<SetupValidationField, string> = {
+    token: 'editor-setup-token',
+    secret: 'editor-setup-secret',
+    confirmSecret: 'editor-setup-confirm-secret',
+};
+
+function focusField(id: string): void {
+    window.requestAnimationFrame(() => {
+        document.getElementById(id)?.focus();
+    });
+}
+
 function EditorInitializationGuide() {
     return (
         <section
@@ -59,8 +78,18 @@ export function EditorLoginForm({
     const [setupSecret, setSetupSecret] = useState('');
     const [setupConfirmSecret, setSetupConfirmSecret] = useState('');
     const [setupToken, setSetupToken] = useState('');
-    const [setupErrorMessage, setSetupErrorMessage] = useState<string | null>(null);
+    const [setupValidationError, setSetupValidationError] = useState<SetupValidationError | null>(null);
     const [isInitializing, setIsInitializing] = useState(false);
+    const setupErrorMessage = setupValidationError?.message ?? null;
+
+    const setSetupFieldValue = (
+        field: SetupValidationField,
+        setter: (value: string) => void,
+        value: string
+    ) => {
+        setter(value);
+        setSetupValidationError((current) => current?.field === field ? null : current);
+    };
 
     const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -103,22 +132,40 @@ export function EditorLoginForm({
         const normalizedSecret = setupSecret.trim();
 
         if (normalizedSecret.length < 8) {
-            setSetupErrorMessage('编辑口令至少需要 8 个字符。');
+            const validationError = {
+                field: 'secret',
+                message: '编辑口令至少需要 8 个字符。',
+            } satisfies SetupValidationError;
+
+            setSetupValidationError(validationError);
+            focusField(SETUP_FIELD_IDS[validationError.field]);
             return;
         }
 
         if (normalizedSecret !== setupConfirmSecret.trim()) {
-            setSetupErrorMessage('两次输入的编辑口令不一致。');
+            const validationError = {
+                field: 'confirmSecret',
+                message: '两次输入的编辑口令不一致。',
+            } satisfies SetupValidationError;
+
+            setSetupValidationError(validationError);
+            focusField(SETUP_FIELD_IDS[validationError.field]);
             return;
         }
 
         if (setupTokenRequired && !setupToken.trim()) {
-            setSetupErrorMessage('请输入初始化密钥。');
+            const validationError = {
+                field: 'token',
+                message: '请输入初始化密钥。',
+            } satisfies SetupValidationError;
+
+            setSetupValidationError(validationError);
+            focusField(SETUP_FIELD_IDS[validationError.field]);
             return;
         }
 
         setIsInitializing(true);
-        setSetupErrorMessage(null);
+        setSetupValidationError(null);
 
         try {
             const response = await fetch('/api/editor-auth', {
@@ -141,9 +188,11 @@ export function EditorLoginForm({
             router.replace(nextPath);
             router.refresh();
         } catch (error) {
-            setSetupErrorMessage(
-                error instanceof Error ? error.message : '初始化失败，请稍后重试。'
-            );
+            setSetupValidationError({
+                field: 'confirmSecret',
+                message: error instanceof Error ? error.message : '初始化失败，请稍后重试。',
+            });
+            focusField(SETUP_FIELD_IDS.confirmSecret);
         } finally {
             setIsInitializing(false);
         }
@@ -222,9 +271,11 @@ export function EditorLoginForm({
                                     id="editor-setup-token"
                                     type="password"
                                     value={setupToken}
-                                    onChange={(event) => setSetupToken(event.target.value)}
+                                    onChange={(event) => setSetupFieldValue('token', setSetupToken, event.target.value)}
                                     disabled={isInitializing}
                                     autoComplete="one-time-code"
+                                    aria-describedby={setupValidationError?.field === 'token' ? 'editor-setup-error' : undefined}
+                                    aria-invalid={setupValidationError?.field === 'token'}
                                     className={`${editorInputClassName} px-4 py-3`}
                                     placeholder="输入服务器配置的初始化密钥"
                                 />
@@ -239,9 +290,11 @@ export function EditorLoginForm({
                                 id="editor-setup-secret"
                                 type="password"
                                 value={setupSecret}
-                                onChange={(event) => setSetupSecret(event.target.value)}
+                                onChange={(event) => setSetupFieldValue('secret', setSetupSecret, event.target.value)}
                                 disabled={isInitializing}
                                 autoComplete="new-password"
+                                aria-describedby={setupValidationError?.field === 'secret' ? 'editor-setup-error' : undefined}
+                                aria-invalid={setupValidationError?.field === 'secret'}
                                 className={`${editorInputClassName} px-4 py-3`}
                                 placeholder="至少 8 个字符"
                             />
@@ -255,11 +308,11 @@ export function EditorLoginForm({
                                 id="editor-setup-confirm-secret"
                                 type="password"
                                 value={setupConfirmSecret}
-                                onChange={(event) => setSetupConfirmSecret(event.target.value)}
+                                onChange={(event) => setSetupFieldValue('confirmSecret', setSetupConfirmSecret, event.target.value)}
                                 disabled={isInitializing}
                                 autoComplete="new-password"
-                                aria-describedby={setupErrorMessage ? 'editor-setup-error' : undefined}
-                                aria-invalid={Boolean(setupErrorMessage)}
+                                aria-describedby={setupValidationError?.field === 'confirmSecret' ? 'editor-setup-error' : undefined}
+                                aria-invalid={setupValidationError?.field === 'confirmSecret'}
                                 className={`${editorInputClassName} px-4 py-3`}
                                 placeholder="再次输入编辑口令"
                             />
@@ -303,7 +356,10 @@ export function EditorLoginForm({
                 )}
 
                 <div className="mt-6 text-sm text-muted">
-                    <Link href="/" className="text-fg underline underline-offset-4">
+                    <Link
+                        href="/"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-token-card px-3 text-fg underline underline-offset-4 transition hover:bg-surface focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9 sm:min-w-0"
+                    >
                         返回首页
                     </Link>
                 </div>

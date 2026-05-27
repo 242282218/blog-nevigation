@@ -3,19 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Cloud, CloudDownload, CloudUpload, Save } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
-import { loadCurrentBackupManifest } from '../backup-current-manifest';
-import { createRestoreActionMessage } from '../backup-action-message';
+import { loadCurrentBackupManifest } from '../../backup-current-manifest';
+import { createRestoreActionMessage } from '../../backup-action-message';
+import { createEditorCsrfHeaders } from '../../editor-csrf';
 import {
     EditorButton,
     EditorPanel,
     editorInputClassName,
-} from '../components/EditorShell';
+} from '../../components/EditorShell';
 
 type CloudflareR2Settings = {
     enabled: boolean;
     accountId: string;
     bucket: string;
-    accessKeyId: string;
+    hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
     prefix: string;
     endpoint: string;
@@ -50,13 +51,21 @@ type RemoteBackupActionResponse = {
     };
 };
 
-type CloudflareR2Form = Omit<CloudflareR2Settings, 'hasSecretAccessKey'> & {
+type CloudflareR2Form = Omit<CloudflareR2Settings, 'hasSecretAccessKey' | 'hasAccessKeyId'> & {
+    accessKeyId: string;
     secretAccessKey: string;
 };
 
 type CloudflareMessage = {
     tone: 'success' | 'warning' | 'danger' | 'loading' | 'info';
     text: string;
+};
+
+type CloudflareR2ValidationField = 'accountId' | 'bucket' | 'accessKeyId' | 'secretAccessKey';
+
+type CloudflareR2ValidationError = {
+    field: CloudflareR2ValidationField;
+    message: string;
 };
 
 interface TextFieldProps {
@@ -66,6 +75,7 @@ interface TextFieldProps {
     value: string;
     type?: 'text' | 'password';
     placeholder?: string;
+    error?: string;
     onChange: (value: string) => void;
 }
 
@@ -76,8 +86,11 @@ function TextField({
     value,
     type = 'text',
     placeholder,
+    error,
     onChange,
 }: TextFieldProps) {
+    const descriptionId = `${id}-description`;
+
     return (
         <div>
             <label htmlFor={id} className="block text-sm font-medium text-fg">
@@ -89,9 +102,17 @@ function TextField({
                 value={value}
                 placeholder={placeholder}
                 onChange={(event) => onChange(event.target.value)}
+                aria-invalid={Boolean(error)}
+                aria-describedby={descriptionId}
                 className={`${editorInputClassName} mt-2`}
             />
-            <p className="mt-1.5 text-xs leading-5 text-subtle">{help}</p>
+            <p
+                id={descriptionId}
+                className={`mt-1.5 text-xs leading-5 ${error ? 'text-error-600' : 'text-subtle'}`}
+                role={error ? 'alert' : undefined}
+            >
+                {error || help}
+            </p>
         </div>
     );
 }
@@ -114,7 +135,7 @@ function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
         enabled: Boolean(settings?.enabled),
         accountId: settings?.accountId ?? '',
         bucket: settings?.bucket ?? '',
-        accessKeyId: settings?.accessKeyId ?? '',
+        accessKeyId: '',
         secretAccessKey: '',
         prefix: settings?.prefix ?? 'blog-navigation',
         endpoint: settings?.endpoint ?? '',
@@ -122,28 +143,42 @@ function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
     };
 }
 
-function validateCloudflareR2Form(form: CloudflareR2Form, hasSecretAccessKey: boolean): string | null {
+function validateCloudflareR2Form(
+    form: CloudflareR2Form,
+    hasSecretAccessKey: boolean
+): CloudflareR2ValidationError | null {
     if (!form.enabled) {
         return null;
     }
 
     if (!form.accountId.trim()) {
-        return '请填写 Cloudflare Account ID。';
+        return { field: 'accountId', message: '请填写 Cloudflare Account ID。' };
     }
 
     if (!form.bucket.trim()) {
-        return '请填写 R2 Bucket。';
+        return { field: 'bucket', message: '请填写 R2 Bucket。' };
     }
 
     if (!form.accessKeyId.trim()) {
-        return '请填写 R2 Access Key ID。';
+        return { field: 'accessKeyId', message: '请填写 R2 Access Key ID。' };
     }
 
     if (!form.secretAccessKey.trim() && !hasSecretAccessKey) {
-        return '请填写 R2 Secret Access Key。';
+        return { field: 'secretAccessKey', message: '请填写 R2 Secret Access Key。' };
     }
 
     return null;
+}
+
+const CLOUDFLARE_R2_FIELD_IDS: Record<CloudflareR2ValidationField, string> = {
+    accountId: 'r2-account-id',
+    bucket: 'r2-bucket',
+    accessKeyId: 'r2-access-key-id',
+    secretAccessKey: 'r2-secret-access-key',
+};
+
+function isCloudflareR2ValidationField(id: keyof CloudflareR2Form): id is CloudflareR2ValidationField {
+    return id === 'accountId' || id === 'bucket' || id === 'accessKeyId' || id === 'secretAccessKey';
 }
 
 export function CloudflareR2SettingsPanel() {
@@ -155,6 +190,7 @@ export function CloudflareR2SettingsPanel() {
     const [isSaving, setIsSaving] = useState(false);
     const [isRemoteBusy, setIsRemoteBusy] = useState(false);
     const [message, setMessage] = useState<CloudflareMessage | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<CloudflareR2ValidationField, string>>>({});
     const canRunRemoteAction = Boolean(status?.configured) && !isLoading && !isRemoteBusy && !isSaving;
 
     useEffect(() => {
@@ -206,6 +242,19 @@ export function CloudflareR2SettingsPanel() {
                 ...current,
                 [id]: value,
             }));
+            setFieldErrors((current) => {
+                if (id === 'enabled' && value === false) {
+                    return {};
+                }
+
+                if (!isCloudflareR2ValidationField(id) || !current[id]) {
+                    return current;
+                }
+
+                const nextErrors = { ...current };
+                delete nextErrors[id];
+                return nextErrors;
+            });
         },
         []
     );
@@ -217,10 +266,15 @@ export function CloudflareR2SettingsPanel() {
             const validationError = validateCloudflareR2Form(form, hasSecretAccessKey);
 
             if (validationError) {
-                setMessage({ tone: 'danger', text: validationError });
+                setFieldErrors({ [validationError.field]: validationError.message });
+                setMessage({ tone: 'danger', text: validationError.message });
+                window.requestAnimationFrame(() => {
+                    document.getElementById(CLOUDFLARE_R2_FIELD_IDS[validationError.field])?.focus();
+                });
                 return;
             }
 
+            setFieldErrors({});
             setIsSaving(true);
             setMessage({ tone: 'loading', text: '正在保存 Cloudflare R2 配置...' });
 
@@ -228,9 +282,9 @@ export function CloudflareR2SettingsPanel() {
                 const response = await fetch('/api/data/cloudflare-r2', {
                     method: 'PUT',
                     credentials: 'include',
-                    headers: {
+                    headers: createEditorCsrfHeaders({
                         'Content-Type': 'application/json',
-                    },
+                    }),
                     body: JSON.stringify({ settings: form }),
                 });
                 const payload = (await response.json().catch(() => null)) as CloudflareR2Response | null;
@@ -271,13 +325,13 @@ export function CloudflareR2SettingsPanel() {
             const currentManifest = action === 'restore'
                 ? await loadCurrentBackupManifest()
                 : undefined;
-            const response = await fetch('/api/data/backup/remote', {
+            const response = await fetch(`/api/data/backup/remote/${action}`, {
                 method: 'POST',
                 credentials: 'include',
-                headers: {
+                headers: createEditorCsrfHeaders({
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action, currentManifest }),
+                }),
+                body: JSON.stringify({ currentManifest }),
             });
             const payload = (await response.json().catch(() => null)) as RemoteBackupActionResponse | null;
 
@@ -380,12 +434,12 @@ export function CloudflareR2SettingsPanel() {
                 ) : null}
 
                 <div className="grid gap-4">
-                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted">
+                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
                         <input
                             type="checkbox"
                             checked={form.enabled}
                             onChange={(event) => updateField('enabled', event.target.checked)}
-                            className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-link"
+                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
                         />
                         <span>
                             <span className="block font-medium text-fg">启用 R2 远端备份</span>
@@ -399,6 +453,7 @@ export function CloudflareR2SettingsPanel() {
                             label="Account ID"
                             help="Cloudflare 账户 ID，用于生成默认 R2 endpoint。"
                             value={form.accountId}
+                            error={fieldErrors.accountId}
                             onChange={(value) => updateField('accountId', value)}
                         />
                         <TextField
@@ -406,6 +461,7 @@ export function CloudflareR2SettingsPanel() {
                             label="Bucket"
                             help="保存 backup.json 和 snapshots 的 R2 bucket。"
                             value={form.bucket}
+                            error={fieldErrors.bucket}
                             onChange={(value) => updateField('bucket', value)}
                         />
                         <TextField
@@ -413,6 +469,7 @@ export function CloudflareR2SettingsPanel() {
                             label="Access Key ID"
                             help="R2 S3 API Token 的 Access Key ID。"
                             value={form.accessKeyId}
+                            error={fieldErrors.accessKeyId}
                             onChange={(value) => updateField('accessKeyId', value)}
                         />
                         <TextField
@@ -422,6 +479,7 @@ export function CloudflareR2SettingsPanel() {
                             value={form.secretAccessKey}
                             type="password"
                             placeholder={hasSecretAccessKey ? '已保存，留空不变' : ''}
+                            error={fieldErrors.secretAccessKey}
                             onChange={(value) => updateField('secretAccessKey', value)}
                         />
                         <TextField
@@ -440,12 +498,12 @@ export function CloudflareR2SettingsPanel() {
                         />
                     </div>
 
-                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted">
+                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
                         <input
                             type="checkbox"
                             checked={form.snapshotOnWrite}
                             onChange={(event) => updateField('snapshotOnWrite', event.target.checked)}
-                            className="mt-1 h-4 w-4 rounded border-border text-accent focus:ring-link"
+                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
                         />
                         <span>
                             <span className="block font-medium text-fg">每次写入都创建 snapshot</span>

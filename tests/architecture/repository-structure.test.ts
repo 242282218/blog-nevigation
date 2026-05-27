@@ -40,6 +40,50 @@ describe('repository structure migration', () => {
         });
     });
 
+    it('uses resource endpoints for remote backup actions while isolating legacy action dispatch', () => {
+        const remoteRoute = fs.readFileSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'remote', 'route.ts'), 'utf8');
+        const editorHome = fs.readFileSync(resolveRepoPath('src', 'app', 'editor', '(authenticated)', 'page.tsx'), 'utf8');
+        const r2SettingsPanel = fs.readFileSync(
+            resolveRepoPath('src', 'app', 'editor', '(authenticated)', 'settings', 'CloudflareR2SettingsPanel.tsx'),
+            'utf8'
+        );
+
+        expect(fs.existsSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'remote', 'sync', 'route.ts'))).toBe(true);
+        expect(fs.existsSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'remote', 'restore', 'route.ts'))).toBe(true);
+        expect(remoteRoute).toContain('parseRemoteBackupAction');
+        expect(editorHome).toContain('/api/data/backup/remote/sync');
+        expect(editorHome).toContain('/api/data/backup/remote/restore');
+        expect(r2SettingsPanel).toContain('/api/data/backup/remote/${action}');
+        expect(editorHome).not.toContain("JSON.stringify({ action: 'sync'");
+        expect(editorHome).not.toContain("JSON.stringify({ action: 'restore'");
+        expect(r2SettingsPanel).not.toContain('JSON.stringify({ action, currentManifest })');
+    });
+
+    it('keeps public request paths on asynchronous data reads', () => {
+        const publicEntryFiles = [
+            resolveRepoPath('src', 'app', 'page.tsx'),
+            resolveRepoPath('src', 'app', 'blog', 'page.tsx'),
+            resolveRepoPath('src', 'app', 'posts', '[...slug]', 'page.tsx'),
+            resolveRepoPath('src', 'app', 'navigation', 'page.tsx'),
+            resolveRepoPath('src', 'app', 'api', 'search', 'route.ts'),
+            resolveRepoPath('src', 'app', 'layout.tsx'),
+        ];
+
+        publicEntryFiles.forEach((filePath) => {
+            const source = fs.readFileSync(filePath, 'utf8');
+
+            expect(source, filePath).not.toMatch(/\bgetPosts\b/);
+            expect(source, filePath).not.toMatch(/\bgetPostBySlugArray\b/);
+            expect(source, filePath).not.toMatch(/\bgetRelatedPosts\b/);
+            expect(source, filePath).not.toMatch(/\breadNavigationFromDisk\b/);
+            expect(source, filePath).not.toMatch(/\breadSiteSettingsFromDisk\b/);
+        });
+
+        expect(fs.readFileSync(resolveRepoPath('src', 'app', 'page.tsx'), 'utf8')).toContain('getPostsAsync');
+        expect(fs.readFileSync(resolveRepoPath('src', 'app', 'navigation', 'page.tsx'), 'utf8')).toContain('readNavigationFromDiskAsync');
+        expect(fs.readFileSync(resolveRepoPath('src', 'app', 'api', 'search', 'route.ts'), 'utf8')).toContain('readNavigationFromDiskAsync');
+    });
+
     it('keeps production deployment and data migration boundaries explicit', () => {
         const dockerIgnore = fs.readFileSync(resolveRepoPath('.dockerignore'), 'utf8');
         const dockerfile = fs.readFileSync(resolveRepoPath('Dockerfile'), 'utf8');
@@ -68,12 +112,27 @@ describe('repository structure migration', () => {
         expect(nodeVersion).toBe('24');
         expect(packageJson.packageManager).toBe('npm@11.6.2');
         expect(packageJson.scripts?.start).toBe('node scripts/start-standalone.mjs');
+        expect(packageJson.scripts?.check).toContain('npm run check:env');
+        expect(packageJson.scripts?.['check:env']).toBe('node scripts/test/check-env-files.mjs');
+        expect(fs.readFileSync(resolveRepoPath('scripts', 'test', 'check-env-files.mjs'), 'utf8')).toContain('.env.local');
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
         expect(dockerfile).toContain('FROM node:24-alpine AS runner');
-        expect(dockerfile).toContain('RUN npm ci --legacy-peer-deps --prefer-offline --no-audit');
+        expect(dockerfile).toContain('RUN npm ci --prefer-offline --no-audit');
+        expect(dockerfile).not.toContain('--legacy-peer-deps');
+        expect(dockerfile).toContain('npm run lint');
+        expect(dockerfile).toContain('npm run typecheck');
+        expect(dockerfile).toContain('npm run build');
+        expect(dockerfile).not.toContain('ignoreDuringBuilds: true');
+        expect(dockerfile).not.toContain('ignoreBuildErrors: true');
         expect(dockerfile).not.toContain('--no-optional');
-        expect(dockerfile).toContain('COPY package.json package-lock.json next.config.mjs');
+        expect(dockerfile).toContain('COPY package.json package-lock.json next.config.mjs tsconfig.json postcss.config.mjs tailwind.config.ts vitest.config.ts eslint.config.mjs ./');
+        expect(dockerfile).toContain('COPY tests ./tests');
+        expect(dockerIgnore).not.toMatch(/^tests$/m);
+        expect(dockerIgnore).not.toMatch(/^\*\.test\.ts$/m);
+        expect(dockerIgnore).not.toMatch(/^\*\.test\.tsx$/m);
+        expect(dockerIgnore).not.toMatch(/^eslint\.config\.mjs$/m);
+        expect(dockerIgnore).not.toMatch(/^vitest\.config\.ts$/m);
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/public ./public');
@@ -83,12 +142,20 @@ describe('repository structure migration', () => {
         expect(dockerEntrypoint).toContain('mkdir -p "$DATA_ROOT/articles" "$DATA_ROOT/navigation" "$DATA_ROOT/settings"');
         expect(dockerEntrypoint).toContain('chown -R nextjs:nodejs "$DATA_ROOT"');
         expect(dockerEntrypoint).toContain('exec su-exec nextjs "$@"');
-        expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
-        expect(localCompose).toContain('EDITOR_AUTH_INTERNAL_ORIGIN: ${EDITOR_AUTH_INTERNAL_ORIGIN:-http://127.0.0.1:3000}');
+        expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
+        expect(localCompose).toContain('127.0.0.1:${APP_PORT:-3000}:3000');
+        expect(localCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
+        expect(localCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
+        expect(localCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
+        expect(localCompose).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
+        expect(envExample).toContain('COOKIE_SECURE=false');
+        expect(envExample).toContain('TRUSTED_PROXY_IPS=');
+        expect(envExample).toContain('R2_BACKUP_ENCRYPTION_KEY=');
+        expect(envExample).toContain('R2_ALLOW_PLAINTEXT_BACKUP=false');
         expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(dockerDocs).toContain('EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"');
-        expect(dockerDocs).toContain('-e EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3000');
+        expect(dockerDocs).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
         expect(dockerDocs).toContain('-e COOKIE_SECURE=false');
         expect(dockerDocs).toContain('deploy/compose.prod.yaml');
         expect(dockerDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
@@ -100,16 +167,31 @@ describe('repository structure migration', () => {
         expect(nextConfig).toContain('DENY');
         expect(nextConfig).toContain('Permissions-Policy');
         expect(nextConfig).toContain('camera=(), microphone=(), geolocation=()');
+        const middleware = fs.readFileSync(resolveRepoPath('src', 'middleware.ts'), 'utf8');
+        expect(middleware).toContain('Content-Security-Policy');
+        expect(middleware).toContain("default-src 'self'");
+        expect(middleware).toContain("'nonce-${nonce}'");
+        expect(middleware).toContain('strict-dynamic');
+        expect(nextConfig).not.toContain("script-src 'self';");
+        expect(nextConfig).not.toContain('ignoreDuringBuilds');
+        expect(nextConfig).not.toContain('unoptimized: true');
         expect(deployCompose).toContain('BLOG_DATA_ROOT: /var/lib/blog-navigation');
         expect(deployCompose).toContain('./data:/var/lib/blog-navigation');
         expect(deployCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
         expect(deployCompose).not.toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
-        expect(deployWorkflow).toContain('uses: actions/checkout@v6');
-        expect(deployWorkflow).toContain('uses: actions/setup-node@v6');
-        expect(deployWorkflow).toContain('uses: docker/setup-buildx-action@v4');
-        expect(deployWorkflow).toContain('uses: docker/login-action@v4');
-        expect(deployWorkflow).toContain('uses: docker/metadata-action@v6');
-        expect(deployWorkflow).toContain('uses: docker/build-push-action@v7');
+        expect(deployCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
+        expect(deployCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
+        expect(deployCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
+        expect(deployWorkflow).toContain('# actions/checkout@v6');
+        expect(deployWorkflow).toContain('# actions/setup-node@v6');
+        expect(deployWorkflow).toContain('npm run check:env');
+        expect(deployWorkflow).toContain('npm run test:coverage');
+        expect(deployWorkflow).not.toContain('npm run test:run');
+        expect(deployWorkflow).toContain('# docker/setup-buildx-action@v4');
+        expect(deployWorkflow).toContain('# docker/login-action@v4');
+        expect(deployWorkflow).toContain('# docker/metadata-action@v6');
+        expect(deployWorkflow).toContain('# docker/build-push-action@v7');
+        expect(deployWorkflow).not.toMatch(/uses:\s+[^@\n]+@v\d+/);
         expect(deployWorkflow).toContain('docker compose -f compose.prod.yaml port app 3000');
         expect(deployWorkflow).toContain('HEALTHCHECK_URL');
         expect(deployWorkflow).toContain('Build did not produce an image digest; refusing to deploy.');
@@ -120,7 +202,9 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).toContain('PREV_IMAGE_ID=$(docker inspect');
         expect(deployWorkflow).toContain('docker image inspect');
         expect(deployWorkflow).not.toMatch(/curl[^\n]+http:\/\/127\.0\.0\.1:3000\//);
-        expect(uiSmokeWorkflow).toContain('EDITOR_AUTH_INTERNAL_ORIGIN=http://127.0.0.1:3210');
+        expect(uiSmokeWorkflow).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
+        expect(uiSmokeWorkflow).not.toMatch(/uses:\s+[^@\n]+@v\d+/);
+        expect(uiSmokeWorkflow).toContain('run: npm ci');
         expect(uiSmokeWorkflow).toContain('npm run start');
         expect(uiSmokeWorkflow).not.toContain('next start');
         expect(migrationDocs).toContain('data .env compose.prod.yaml');
@@ -130,13 +214,17 @@ describe('repository structure migration', () => {
         expect(r2Docs).toContain('complete R2');
         expect(r2Docs).toContain('configuration source');
         expect(r2Docs).toContain('not used as field fallbacks');
+        expect(r2Docs).toContain('R2_BACKUP_ENCRYPTION_KEY');
+        expect(r2Docs).toContain('required by default');
+        expect(r2Docs).toContain('R2_ALLOW_PLAINTEXT_BACKUP=true');
         expect(serverDocs).toContain('refuses to start if the build did not publish an immutable');
         expect(serverDocs).toContain('then runs the same health check');
-        expect(serverDocs).toContain('against the rollback container');
+        expect(serverDocs).toContain('same mounted data directory');
         expect(serverDocs).toContain('openssl rand -base64 32');
         expect(serverDocs).toContain('COOKIE_SECURE=true');
+        expect(serverDocs).toContain('TRUSTED_PROXY_IPS');
         expect(serverDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
-        expect(migrationDocs).toContain('tool URLs must be HTTPS');
+        expect(migrationDocs).toContain('production tool URLs must be HTTPS');
         expect(migrationDocs).toContain('Invalid backup packages fail before');
         expect(migrationDocs).toContain('replacing the target runtime data');
     });

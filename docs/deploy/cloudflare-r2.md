@@ -37,9 +37,16 @@ R2_ACCESS_KEY_ID=your-r2-access-key
 R2_SECRET_ACCESS_KEY=your-r2-secret-key
 R2_PREFIX=blog-navigation
 R2_SNAPSHOT_ON_WRITE=false
+R2_BACKUP_ENCRYPTION_KEY=<32-byte-base64-or-hex-key>
+R2_ALLOW_PLAINTEXT_BACKUP=false
 ```
 
 `R2_ENDPOINT` is optional. Leave it empty for normal Cloudflare R2 usage.
+`R2_BACKUP_ENCRYPTION_KEY` is required by default when R2 backup is enabled.
+Uploaded R2 backup objects are AES-256-GCM encrypted; keep the same key for
+future restores. Set `R2_ALLOW_PLAINTEXT_BACKUP=true` only for an intentional
+plaintext migration. Existing plaintext backups remain restorable when the key
+is absent.
 
 ## Object Layout
 

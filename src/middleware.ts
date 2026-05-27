@@ -1,82 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    EDITOR_SESSION_COOKIE,
     getSafeEditorNextPath,
 } from '@/lib/editor-auth';
 
-const EDITOR_AUTH_STATUS_TIMEOUT_MS = 1500;
+const CSP_NONCE_HEADER = 'x-nonce';
 
-function getEditorAuthInternalOrigin(request: NextRequest): string | null {
-    const configuredOrigin = process.env.EDITOR_AUTH_INTERNAL_ORIGIN?.trim();
-
-    if (configuredOrigin) {
-        return configuredOrigin;
-    }
-
-    if (process.env.NODE_ENV !== 'production') {
-        return request.nextUrl.origin;
-    }
-
-    return null;
+interface SecurityHeaders {
+    contentSecurityPolicy: string;
+    requestHeaders: Headers;
 }
 
-async function fetchEditorAuthStatus(
-    authStatusUrl: URL,
-    cookieHeader: string
-): Promise<unknown | null> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EDITOR_AUTH_STATUS_TIMEOUT_MS);
-
-    try {
-        const response = await fetch(authStatusUrl, {
-            headers: {
-                Cookie: cookieHeader,
-            },
-            signal: controller.signal,
-        });
-
-        if (!response.ok) {
-            return null;
-        }
-
-        return await response.json().catch(() => null);
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(timeoutId);
-    }
+function normalizeCspHeader(value: string): string {
+    return value.replace(/\s{2,}/g, ' ').trim();
 }
 
-export async function middleware(request: NextRequest) {
+function createContentSecurityPolicy(nonce: string): string {
+    const scriptSrc = process.env.NODE_ENV === 'development'
+        ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
+        : `'self' 'nonce-${nonce}' 'strict-dynamic'`;
+
+    return normalizeCspHeader(`
+        default-src 'self';
+        script-src ${scriptSrc};
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob: https:;
+        font-src 'self' data:;
+        connect-src 'self';
+        frame-ancestors 'none';
+        base-uri 'self';
+        form-action 'self'
+    `);
+}
+
+function createSecurityHeaders(request: NextRequest): SecurityHeaders {
+    const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
+    const contentSecurityPolicy = createContentSecurityPolicy(nonce);
+    const requestHeaders = new Headers(request.headers);
+
+    requestHeaders.set(CSP_NONCE_HEADER, nonce);
+    requestHeaders.set('Content-Security-Policy', contentSecurityPolicy);
+
+    return {
+        contentSecurityPolicy,
+        requestHeaders,
+    };
+}
+
+function createSecurityHeadersResponse(securityHeaders: SecurityHeaders): NextResponse {
+    const response = NextResponse.next({
+        request: {
+            headers: securityHeaders.requestHeaders,
+        },
+    });
+
+    response.headers.set('Content-Security-Policy', securityHeaders.contentSecurityPolicy);
+
+    if (process.env.NODE_ENV === 'production') {
+        response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+
+    return response;
+}
+
+function setSecurityHeaders(response: NextResponse, securityHeaders: SecurityHeaders): NextResponse {
+    response.headers.set('Content-Security-Policy', securityHeaders.contentSecurityPolicy);
+
+    if (process.env.NODE_ENV === 'production') {
+        response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+
+    return response;
+}
+
+export function middleware(request: NextRequest) {
     const { pathname, search } = request.nextUrl;
+    const securityHeaders = createSecurityHeaders(request);
+    const response = createSecurityHeadersResponse(securityHeaders);
 
     if (!pathname.startsWith('/editor') || pathname === '/editor/login') {
-        return NextResponse.next();
+        return response;
     }
 
-    const authInternalOrigin = getEditorAuthInternalOrigin(request);
+    const sessionCookie = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
 
-    const cookieHeader = request.headers.get('cookie') ?? '';
-
-    if (authInternalOrigin && cookieHeader) {
-        const authStatusUrl = new URL('/api/editor-auth', authInternalOrigin);
-        const authStatus = await fetchEditorAuthStatus(
-            authStatusUrl,
-            cookieHeader
-        );
-
-        if (typeof authStatus === 'object' && authStatus && 'authenticated' in authStatus) {
-            if (authStatus.authenticated === true) {
-                return NextResponse.next();
-            }
-        }
+    if (!sessionCookie) {
+        const loginUrl = new URL('/editor/login', request.url);
+        loginUrl.searchParams.set('next', getSafeEditorNextPath(`${pathname}${search}`));
+        return setSecurityHeaders(NextResponse.redirect(loginUrl), securityHeaders);
     }
 
-    const loginUrl = new URL('/editor/login', request.url);
-    loginUrl.searchParams.set('next', getSafeEditorNextPath(`${pathname}${search}`));
-
-    return NextResponse.redirect(loginUrl);
+    return response;
 }
 
 export const config = {
-    matcher: ['/editor/:path*'],
+    matcher: [
+        {
+            source: '/((?!api|_next/static|_next/image|favicon.ico|logo.svg).*)',
+            missing: [
+                { type: 'header', key: 'next-router-prefetch' },
+                { type: 'header', key: 'purpose', value: 'prefetch' },
+            ],
+        },
+    ],
 };

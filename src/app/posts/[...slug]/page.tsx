@@ -1,4 +1,5 @@
-import { getPostBySlugArray, getRelatedPosts } from '@/lib/markdown';
+import type { Metadata } from 'next';
+import { getPostBySlugArrayAsync, getRelatedPostsAsync } from '@/lib/markdown';
 import { MarkdownContent } from '@/app/components/markdown';
 import { PageHero } from '@/app/components/ui';
 import { notFound } from 'next/navigation';
@@ -9,22 +10,36 @@ import { getMarkdownHeadings } from '@/lib/article-quality';
 
 export const dynamic = 'force-dynamic';
 
+export async function generateMetadata({ params }: { params: Promise<{ slug: string[] }> }): Promise<Metadata> {
+    const resolvedParams = await params;
+    const post = await getPostBySlugArrayAsync(resolvedParams.slug);
+
+    if (!post) {
+        return { title: '文章未找到' };
+    }
+
+    return {
+        title: post.meta.title,
+        description: post.meta.description,
+    };
+}
+
 export default async function PostPage({ params }: { params: Promise<{ slug: string[] }> }) {
     const resolvedParams = await params;
-    const post = getPostBySlugArray(resolvedParams.slug);
+    const post = await getPostBySlugArrayAsync(resolvedParams.slug);
 
     if (!post) {
         notFound();
     }
 
     const headings = getMarkdownHeadings(post.content).filter((heading) => heading.level >= 2);
-    const relatedPosts = getRelatedPosts(post.meta, 4);
+    const relatedPosts = await getRelatedPostsAsync(post.meta, 4);
 
     return (
         <article className="mx-auto max-w-3xl pb-10">
             <Link
                 href="/blog"
-                className="mb-5 inline-flex min-h-9 items-center gap-2 rounded-token-button border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-border-focus hover:text-fg"
+                className="mb-5 inline-flex min-h-[44px] items-center gap-2 rounded-token-button border border-border bg-surface px-4 py-2 text-sm font-medium text-muted transition-colors duration-token-fast hover:border-border-focus hover:text-fg"
             >
                 <ArrowLeft className="h-4 w-4 text-subtle" />
                 返回归档
@@ -44,10 +59,10 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
                         ) : null}
                         <span className="inline-flex items-center gap-2">
                             <CalendarDays className="h-4 w-4" />
-                            <time>{post.meta.date || 'UNTRACKED'}</time>
+                            <time dateTime={post.meta.date || undefined}>{post.meta.date || 'UNTRACKED'}</time>
                         </span>
                         {post.meta.updatedDate ? (
-                            <span>修订 {post.meta.updatedDate}</span>
+                            <span>修订 <time dateTime={post.meta.updatedDate}>{post.meta.updatedDate}</time></span>
                         ) : null}
                         <span className="inline-flex items-center gap-2">
                             <Clock3 className="h-4 w-4" />
@@ -89,8 +104,8 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
                         {headings.slice(0, 12).map((heading) => (
                             <a
                                 key={`${heading.index}-${heading.text}`}
-                                href={`#${encodeURIComponent(heading.text)}`}
-                                className="truncate rounded-token-sm px-2 py-1 text-muted hover:bg-accent-50 hover:text-accent"
+                                href={`#${heading.id}`}
+                                className="flex min-h-[44px] items-center truncate rounded-token-sm px-3 py-2 text-muted hover:bg-accent-50 hover:text-accent"
                             >
                                 {heading.text}
                             </a>
@@ -102,6 +117,7 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
             <MarkdownContent
                 content={post.content}
                 className="mt-5 rounded-token-card border border-border bg-surface p-4 md:p-6"
+                skipDuplicateTitle={post.meta.title}
             />
 
             {post.meta.sourceLinks.length ? (
@@ -113,7 +129,12 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
                     <ul className="mt-3 space-y-2 text-sm">
                         {post.meta.sourceLinks.map((source) => (
                             <li key={`${source.title}-${source.url}`}>
-                                <a href={source.url} className="font-medium text-accent hover:text-accent-800">
+                                <a
+                                    href={source.url}
+                                    className="font-medium text-accent hover:text-accent-800"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
                                     {source.title}
                                 </a>
                                 {source.note ? <p className="mt-1 text-muted">{source.note}</p> : null}
@@ -148,7 +169,7 @@ export default async function PostPage({ params }: { params: Promise<{ slug: str
                             <Link
                                 key={related.slug}
                                 href={`/posts/${related.slug}`}
-                                className="block rounded-token-sm px-2 py-2 text-sm text-muted transition hover:bg-accent-50 hover:text-accent"
+                                className="flex min-h-[44px] items-center rounded-token-sm px-3 py-2 text-sm text-muted transition hover:bg-accent-50 hover:text-accent"
                             >
                                 {related.title}
                             </Link>
