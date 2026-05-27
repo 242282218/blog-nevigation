@@ -492,6 +492,10 @@ export async function isValidRuntimeEditorSession(
 }
 
 export function resetEnvironmentEditorSessionForTests(): void {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('resetEnvironmentEditorSessionForTests must not be called in production.');
+    }
+
     environmentEditorSessionState = null;
     getEnvironmentEditorSessionGlobalState().state = null;
 }

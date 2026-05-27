@@ -14,7 +14,7 @@ import { isPublicArticleStatus, normalizeArticleKind, normalizeArticleStatus } f
 import { countMarkdownWords } from '@/lib/article-quality';
 import { normalizeOptionalString } from '@/lib/utils';
 import { registerEditorRuntimeCacheReset } from '@/lib/editor-runtime-cache';
-import { normalizeSafeExternalUrl } from '@/lib/url-safety';
+import { normalizeSourceLinks, normalizeRevisionNotes } from '@/lib/source-links';
 
 export interface PostMeta {
     slug: string;
@@ -91,58 +91,6 @@ function normalizeStringArray(value: unknown): string[] {
         .filter((item): item is string => typeof item === 'string')
         .map((item) => item.trim())
         .filter(Boolean);
-}
-
-function normalizeSourceLinks(value: unknown): ArticleSourceLink[] {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((item) => {
-        if (
-            !item ||
-            typeof item !== 'object' ||
-            typeof (item as { title?: unknown }).title !== 'string' ||
-            typeof (item as { url?: unknown }).url !== 'string'
-        ) {
-            return [];
-        }
-
-        const source = item as { title: string; url: string; note?: unknown };
-        const title = source.title.trim();
-        const url = normalizeSafeExternalUrl(source.url);
-
-        if (!title || !url) {
-            return [];
-        }
-
-        return [{
-            title,
-            url,
-            ...(typeof source.note === 'string' && source.note.trim() ? { note: source.note.trim() } : {}),
-        }];
-    });
-}
-
-function normalizeRevisionNotes(value: unknown): ArticleRevisionNote[] {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((item) => {
-        if (
-            !item ||
-            typeof item !== 'object' ||
-            typeof (item as { date?: unknown }).date !== 'string' ||
-            typeof (item as { note?: unknown }).note !== 'string'
-        ) {
-            return [];
-        }
-
-        const revision = item as { date: string; note: string };
-
-        return [{ date: revision.date, note: revision.note }];
-    });
 }
 
 function mapArticleToPostMeta(article: Article): PostMeta {

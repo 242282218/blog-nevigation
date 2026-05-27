@@ -51,7 +51,7 @@ import {
 import {
   normalizeRevisionNotes,
   normalizeSourceLinks,
-} from '@/lib/frontmatter';
+} from '@/lib/source-links';
 import { isSafeExternalUrl } from '@/lib/url-safety';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';

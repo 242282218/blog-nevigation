@@ -6,7 +6,7 @@ import { MarkdownContent } from '@/app/components/markdown';
 import type { Frontmatter } from '@/app/types/article';
 import { getArticleKindLabel, getArticleStatusLabel } from '@/lib/article-metadata';
 import { getMarkdownHeadings } from '@/lib/article-quality';
-import { normalizeRevisionNotes, normalizeSourceLinks } from '@/lib/frontmatter';
+import { normalizeRevisionNotes, normalizeSourceLinks } from '@/lib/source-links';
 
 interface PreviewPaneProps {
   content: string;

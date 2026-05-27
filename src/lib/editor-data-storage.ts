@@ -12,18 +12,21 @@ import {
     type SiteSettings,
 } from '@/lib/site-settings';
 import { resetEditorRuntimeCaches } from '@/lib/editor-runtime-cache';
+import {
+    EditorDataLockTimeoutError,
+    acquireEditorDataRootLock,
+    releaseEditorDataRootLock,
+    getHeldEditorDataLockCount,
+    incrementHeldEditorDataLockCount,
+    decrementHeldEditorDataLockCount,
+    setHeldEditorDataLockCount,
+} from '@/lib/editor-data-lock';
 
 const ARTICLES_FILE_NAME = 'articles.json';
 const NAVIGATION_FILE_NAME = 'tools.json';
 const SETTINGS_FILE_NAME = 'site.json';
 const MANIFEST_FILE_NAME = 'manifest.json';
 const MANIFEST_VERSION = 1;
-const DATA_LOCK_DIRECTORY_NAME = '.data-write.lock';
-const DATA_LOCK_HEARTBEAT_FILE_NAME = 'heartbeat.json';
-const DATA_LOCK_WAIT_TIMEOUT_MS = 5000;
-const DATA_LOCK_STALE_MS = 5 * 60 * 1000;
-const DATA_LOCK_HEARTBEAT_MS = 30 * 1000;
-const DATA_LOCK_RETRY_MS = 50;
 const DATA_CACHE_TTL_MS = 2_000;
 const RESTORE_STATE_FILE_NAME = '.restore-state.json';
 const RESTORE_STATE_VERSION = 1;
@@ -61,12 +64,7 @@ export class EditorDataRootNotConfiguredError extends Error {
     }
 }
 
-export class EditorDataLockTimeoutError extends Error {
-    constructor(public readonly lockPath: string) {
-        super('Timed out while waiting for the editor data write lock.');
-        this.name = 'EditorDataLockTimeoutError';
-    }
-}
+export { EditorDataLockTimeoutError };
 
 export class EditorDataFileInvalidError extends Error {
     constructor(
@@ -86,24 +84,12 @@ export class EditorDataRestoreIncompleteError extends Error {
     }
 }
 
-const heldEditorDataLocks = new Map<string, number>();
 const editorDataCache = new Map<string, {
     expiresAt: number;
     mtimeMs: number;
     size: number;
     value: unknown;
 }>();
-
-type EditorDataRootLock = {
-    directory: string;
-    token: string;
-    heartbeatTimer: ReturnType<typeof setInterval> | null;
-};
-
-type EditorDataLockSnapshot = {
-    mtimeMs: number;
-    owner: string | null;
-};
 
 type EditorDataRestoreState = {
     version: typeof RESTORE_STATE_VERSION;
@@ -113,14 +99,6 @@ type EditorDataRestoreState = {
     files: string[];
     updatedAt: string;
 };
-
-async function sleep(milliseconds: number): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function sleepSync(milliseconds: number): void {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
-}
 
 function getEditorDataRootOrThrow(): string {
     const root = getEditorDataRoot();
@@ -132,259 +110,29 @@ function getEditorDataRootOrThrow(): string {
     return root;
 }
 
-function getLockDirectory(root: string): string {
-    return path.join(root, DATA_LOCK_DIRECTORY_NAME);
-}
-
-function getLockHeartbeatPath(lockDirectory: string): string {
-    return path.join(lockDirectory, DATA_LOCK_HEARTBEAT_FILE_NAME);
-}
-
-function readLockOwner(lockDirectory: string): string | null {
-    try {
-        return fs.readFileSync(path.join(lockDirectory, 'owner.json'), 'utf8');
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            return null;
-        }
-
-        throw error;
-    }
-}
-
-function getLockOwnerToken(lockDirectory: string): string | null {
-    const owner = readLockOwner(lockDirectory);
-
-    if (!owner) {
-        return null;
-    }
-
-    try {
-        const parsed = JSON.parse(owner) as { token?: unknown };
-
-        return typeof parsed.token === 'string' ? parsed.token : null;
-    } catch {
-        return null;
-    }
-}
-
-function readLockSnapshot(lockDirectory: string): EditorDataLockSnapshot | null {
-    try {
-        const stats = fs.statSync(
-            fs.existsSync(getLockHeartbeatPath(lockDirectory))
-                ? getLockHeartbeatPath(lockDirectory)
-                : lockDirectory
-        );
-
-        return {
-            mtimeMs: stats.mtimeMs,
-            owner: readLockOwner(lockDirectory),
-        };
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            return null;
-        }
-
-        throw error;
-    }
-}
-
-function isLockStale(snapshot: EditorDataLockSnapshot): boolean {
-    return Date.now() - snapshot.mtimeMs > DATA_LOCK_STALE_MS;
-}
-
-function isSameLockSnapshot(
-    first: EditorDataLockSnapshot,
-    second: EditorDataLockSnapshot
-): boolean {
-    return first.mtimeMs === second.mtimeMs && first.owner === second.owner;
-}
-
-function removeStaleLockIfUnchanged(
-    lockDirectory: string,
-    staleSnapshot: EditorDataLockSnapshot
-): boolean {
-    const currentSnapshot = readLockSnapshot(lockDirectory);
-
-    if (!currentSnapshot) {
-        return true;
-    }
-
-    if (!isSameLockSnapshot(staleSnapshot, currentSnapshot)) {
-        return false;
-    }
-
-    fs.rmSync(lockDirectory, { recursive: true, force: true });
-    return true;
-}
-
-function writeLockHeartbeat(lock: Pick<EditorDataRootLock, 'directory' | 'token'>): void {
-    if (getLockOwnerToken(lock.directory) !== lock.token) {
-        return;
-    }
-
-    fs.writeFileSync(
-        getLockHeartbeatPath(lock.directory),
-        JSON.stringify({
-            token: lock.token,
-            pid: process.pid,
-            heartbeatAt: new Date().toISOString(),
-        }, null, 2),
-        'utf8'
-    );
-}
-
-function startLockHeartbeat(lock: Pick<EditorDataRootLock, 'directory' | 'token'>): ReturnType<typeof setInterval> {
-    writeLockHeartbeat(lock);
-    const heartbeatTimer = setInterval(() => {
-        try {
-            writeLockHeartbeat(lock);
-        } catch (error) {
-            console.error('[editor-data-storage] Failed to refresh data write lock heartbeat:', error);
-        }
-    }, DATA_LOCK_HEARTBEAT_MS);
-
-    heartbeatTimer.unref?.();
-    return heartbeatTimer;
-}
-
-const DATA_LOCK_SYNC_WAIT_TIMEOUT_MS = 500;
-
-function tryAcquireLockCore(lockDirectory: string, token: string): EditorDataRootLock | null {
-    try {
-        fs.mkdirSync(lockDirectory);
-
-        try {
-            fs.writeFileSync(
-                path.join(lockDirectory, 'owner.json'),
-                JSON.stringify({
-                    token,
-                    pid: process.pid,
-                    acquiredAt: new Date().toISOString(),
-                }, null, 2),
-                'utf8'
-            );
-        } catch (error) {
-            fs.rmSync(lockDirectory, { recursive: true, force: true });
-            throw error;
-        }
-
-        const lock = {
-            directory: lockDirectory,
-            token,
-        };
-
-        return {
-            directory: lockDirectory,
-            token,
-            heartbeatTimer: startLockHeartbeat(lock),
-        };
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-            throw error;
-        }
-
-        const snapshot = readLockSnapshot(lockDirectory);
-
-        if (!snapshot) {
-            return null;
-        }
-
-        if (isLockStale(snapshot) && removeStaleLockIfUnchanged(lockDirectory, snapshot)) {
-            return null;
-        }
-
-        return null;
-    }
-}
-
-async function acquireEditorDataRootLock(root: string): Promise<EditorDataRootLock> {
-    const resolvedRoot = path.resolve(root);
-    const lockDirectory = getLockDirectory(resolvedRoot);
-    const deadline = Date.now() + DATA_LOCK_WAIT_TIMEOUT_MS;
-    const token = `${process.pid}-${Date.now()}-${process.hrtime.bigint().toString(36)}`;
-
-    fs.mkdirSync(resolvedRoot, { recursive: true });
-
-    while (true) {
-        const lock = tryAcquireLockCore(lockDirectory, token);
-
-        if (lock) {
-            return lock;
-        }
-
-        if (Date.now() >= deadline) {
-            throw new EditorDataLockTimeoutError(lockDirectory);
-        }
-
-        await sleep(DATA_LOCK_RETRY_MS);
-    }
-}
-
-function acquireEditorDataRootLockSync(root: string): EditorDataRootLock {
-    const resolvedRoot = path.resolve(root);
-    const lockDirectory = getLockDirectory(resolvedRoot);
-    const deadline = Date.now() + DATA_LOCK_SYNC_WAIT_TIMEOUT_MS;
-    const token = `${process.pid}-${Date.now()}-${process.hrtime.bigint().toString(36)}`;
-
-    fs.mkdirSync(resolvedRoot, { recursive: true });
-
-    while (true) {
-        const lock = tryAcquireLockCore(lockDirectory, token);
-
-        if (lock) {
-            return lock;
-        }
-
-        if (Date.now() >= deadline) {
-            throw new EditorDataLockTimeoutError(lockDirectory);
-        }
-
-        sleepSync(DATA_LOCK_RETRY_MS);
-    }
-}
-
-function releaseEditorDataRootLock(lock: EditorDataRootLock): void {
-    if (lock.heartbeatTimer) {
-        clearInterval(lock.heartbeatTimer);
-    }
-
-    if (getLockOwnerToken(lock.directory) !== lock.token) {
-        return;
-    }
-
-    fs.rmSync(lock.directory, { recursive: true, force: true });
-}
-
 export async function withEditorDataRootLock<T>(operation: () => T | Promise<T>): Promise<T> {
     const root = getEditorDataRootOrThrow();
     const resolvedRoot = path.resolve(root);
-    const heldCount = heldEditorDataLocks.get(resolvedRoot) ?? 0;
+    const heldCount = getHeldEditorDataLockCount(resolvedRoot);
 
     if (heldCount > 0) {
-        heldEditorDataLocks.set(resolvedRoot, heldCount + 1);
+        incrementHeldEditorDataLockCount(resolvedRoot);
 
         try {
             return await operation();
         } finally {
-            const nextHeldCount = (heldEditorDataLocks.get(resolvedRoot) ?? 1) - 1;
-
-            if (nextHeldCount <= 0) {
-                heldEditorDataLocks.delete(resolvedRoot);
-            } else {
-                heldEditorDataLocks.set(resolvedRoot, nextHeldCount);
-            }
+            decrementHeldEditorDataLockCount(resolvedRoot);
         }
     }
 
     const lock = await acquireEditorDataRootLock(resolvedRoot);
-    heldEditorDataLocks.set(resolvedRoot, 1);
+    setHeldEditorDataLockCount(resolvedRoot, 1);
 
     try {
         recoverIncompleteRestore(resolvedRoot);
         return await operation();
     } finally {
-        heldEditorDataLocks.delete(resolvedRoot);
+        setHeldEditorDataLockCount(resolvedRoot, 0);
         releaseEditorDataRootLock(lock);
     }
 }
@@ -474,7 +222,7 @@ function getEditorDataRootForReadRecovery(filePath: string | null): string | nul
 }
 
 async function recoverIncompleteRestoreForRead(root: string): Promise<void> {
-    const heldCount = heldEditorDataLocks.get(root) ?? 0;
+    const heldCount = getHeldEditorDataLockCount(root);
 
     if (heldCount > 0) {
         recoverIncompleteRestore(root);
@@ -482,12 +230,12 @@ async function recoverIncompleteRestoreForRead(root: string): Promise<void> {
     }
 
     const lock = await acquireEditorDataRootLock(root);
-    heldEditorDataLocks.set(root, 1);
+    setHeldEditorDataLockCount(root, 1);
 
     try {
         recoverIncompleteRestore(root);
     } finally {
-        heldEditorDataLocks.delete(root);
+        setHeldEditorDataLockCount(root, 0);
         releaseEditorDataRootLock(lock);
     }
 }
@@ -502,7 +250,7 @@ function recoverIncompleteRestoreForReadSync(filePath: string | null): void {
     const restoreStatePath = getRestoreStateFilePath(root);
 
     if (fs.existsSync(restoreStatePath)) {
-        const heldCount = heldEditorDataLocks.get(root) ?? 0;
+        const heldCount = getHeldEditorDataLockCount(root);
 
         if (heldCount > 0) {
             try {
@@ -514,18 +262,9 @@ function recoverIncompleteRestoreForReadSync(filePath: string | null): void {
             return;
         }
 
-        const lock = acquireEditorDataRootLockSync(root);
-        heldEditorDataLocks.set(root, 1);
-
-        try {
-            recoverIncompleteRestore(root);
-        } catch (error) {
-            console.error('[editor-data-storage] Failed to recover incomplete restore before read:', error);
-            throw new EditorDataRestoreIncompleteError(restoreStatePath);
-        } finally {
-            heldEditorDataLocks.delete(root);
-            releaseEditorDataRootLock(lock);
-        }
+        // Skip lock acquisition in sync path to avoid blocking the event loop.
+        // Recovery will complete on the next async write operation or explicit recovery call.
+        throw new EditorDataRestoreIncompleteError(restoreStatePath);
     }
 }
 

@@ -209,6 +209,10 @@ export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): P
 }
 
 export function resetRemoteBackupQueueForTests(): void {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('resetRemoteBackupQueueForTests must not be called in production.');
+    }
+
     activeRemoteBackup = null;
     pendingRemoteBackupOptions = null;
 }

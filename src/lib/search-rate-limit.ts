@@ -97,5 +97,9 @@ export function getSearchRateLimitResponse(request: NextRequest): NextResponse |
 }
 
 export function resetSearchRateLimitForTests(): void {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('resetSearchRateLimitForTests must not be called in production.');
+    }
+
     searchRateLimitBuckets.clear();
 }

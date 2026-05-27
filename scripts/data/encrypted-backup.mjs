@@ -1,11 +1,18 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, scryptSync, randomBytes } from 'node:crypto';
 
 const ENCRYPTED_BACKUP_VERSION = 1;
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
-const KEY_DERIVATION = 'sha256';
+const CURRENT_KEY_DERIVATION = 'scrypt';
+const SUPPORTED_KEY_DERIVATIONS = ['sha256', 'scrypt'];
+const KEY_DERIVATION_SALT = 'blog-navigation-backup-v1';
+const KEY_LENGTH = 32;
 
-function deriveKey(secret) {
-  return createHash(KEY_DERIVATION).update(secret, 'utf8').digest();
+function deriveKey(secret, method = CURRENT_KEY_DERIVATION) {
+  if (method === 'scrypt') {
+    return scryptSync(secret, KEY_DERIVATION_SALT, KEY_LENGTH);
+  }
+
+  return createHash('sha256').update(secret, 'utf8').digest();
 }
 
 export function getBackupEncryptionSecret() {
@@ -25,7 +32,7 @@ export function createEncryptedBackupPayload(backupPayload, secret) {
   return {
     version: ENCRYPTED_BACKUP_VERSION,
     algorithm: ENCRYPTION_ALGORITHM,
-    keyDerivation: KEY_DERIVATION,
+    keyDerivation: CURRENT_KEY_DERIVATION,
     encryptedAt: new Date().toISOString(),
     iv: iv.toString('base64'),
     authTag: cipher.getAuthTag().toString('base64'),
@@ -42,7 +49,7 @@ export function decryptBackupPayload(encryptedPayload, secret) {
     !encryptedPayload ||
     encryptedPayload.version !== ENCRYPTED_BACKUP_VERSION ||
     encryptedPayload.algorithm !== ENCRYPTION_ALGORITHM ||
-    encryptedPayload.keyDerivation !== KEY_DERIVATION ||
+    !SUPPORTED_KEY_DERIVATIONS.includes(encryptedPayload.keyDerivation) ||
     typeof encryptedPayload.iv !== 'string' ||
     typeof encryptedPayload.authTag !== 'string' ||
     typeof encryptedPayload.ciphertext !== 'string'
@@ -52,7 +59,7 @@ export function decryptBackupPayload(encryptedPayload, secret) {
 
   const decipher = createDecipheriv(
     ENCRYPTION_ALGORITHM,
-    deriveKey(secret),
+    deriveKey(secret, encryptedPayload.keyDerivation),
     Buffer.from(encryptedPayload.iv, 'base64')
   );
   decipher.setAuthTag(Buffer.from(encryptedPayload.authTag, 'base64'));

@@ -13,13 +13,13 @@ export function getEditorCookieOptions() {
     const forceInsecure = process.env.COOKIE_SECURE === 'false';
 
     if (forceInsecure && process.env.NODE_ENV === 'production') {
-        console.warn('[editor-auth] COOKIE_SECURE=false in production disables the Secure cookie flag. This is insecure for HTTPS deployments.');
+        console.warn('[editor-auth] COOKIE_SECURE=false is ignored in production. Session cookies always use the Secure flag.');
     }
 
     return {
         httpOnly: true,
         sameSite: 'lax' as const,
-        secure: !forceInsecure && process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' ? true : !forceInsecure,
         path: '/',
         maxAge: EDITOR_SESSION_MAX_AGE,
     };
@@ -30,7 +30,7 @@ export function getEditorCsrfCookieOptions() {
     return {
         httpOnly: false,
         sameSite: 'lax' as const,
-        secure: !forceInsecure && process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' ? true : !forceInsecure,
         path: '/',
         maxAge: EDITOR_SESSION_MAX_AGE,
     };

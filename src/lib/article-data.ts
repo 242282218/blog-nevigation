@@ -1,6 +1,6 @@
-import type { Article, ArticleRevisionNote, ArticleSourceLink } from '@/app/types/article';
+import type { Article } from '@/app/types/article';
 import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-metadata';
-import { normalizeSafeExternalUrl } from '@/lib/url-safety';
+import { normalizeSourceLinks, normalizeRevisionNotes } from '@/lib/source-links';
 import { normalizeOptionalString } from '@/lib/utils';
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -82,66 +82,20 @@ export function isArticle(value: unknown): value is Article {
     );
 }
 
-function normalizeSourceLinks(value: unknown): ArticleSourceLink[] {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((item) => {
-        if (
-            !isRecord(item) ||
-            typeof item.title !== 'string' ||
-            typeof item.url !== 'string' ||
-            !item.title.trim() ||
-            !item.url.trim()
-        ) {
-            return [];
-        }
-
-        const url = normalizeSafeExternalUrl(item.url);
-
-        if (!url) {
-            return [];
-        }
-
-        return [{
-            title: item.title.trim(),
-            url,
-            ...(typeof item.note === 'string' && item.note.trim() ? { note: item.note.trim() } : {}),
-        }];
-    });
-}
-
-function normalizeRevisionNotes(value: unknown): ArticleRevisionNote[] {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    return value.flatMap((item) => {
-        if (
-            !isRecord(item) ||
-            typeof item.date !== 'string' ||
-            typeof item.note !== 'string' ||
-            !item.date.trim() ||
-            !item.note.trim()
-        ) {
-            return [];
-        }
-
-        return [{
-            date: item.date.trim(),
-            note: item.note.trim(),
-        }];
-    });
-}
-
 function normalizeArticle(value: unknown): Article | null {
     if (!isArticle(value)) {
         return null;
     }
 
     return {
-        ...value,
+        id: value.id,
+        title: value.title,
+        date: value.date,
+        description: value.description,
+        tags: value.tags,
+        content: value.content,
+        createdAt: value.createdAt,
+        updatedAt: value.updatedAt,
         slug: normalizeStoredSlug(value.slug) ?? createArticleSlug(value),
         kind: normalizeArticleKind(value.kind),
         status: normalizeArticleStatus(value.status),

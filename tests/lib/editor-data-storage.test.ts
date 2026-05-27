@@ -264,7 +264,46 @@ describe('editor data storage configuration', () => {
         expect(fs.existsSync(path.join(tempRoot, '.data-write.lock'))).toBe(false);
     });
 
-    it('recovers incomplete restores before serving reads', async () => {
+    it('throws on sync reads when an incomplete restore is pending outside a lock', async () => {
+        const tempRoot = createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        await writeArticlesToDisk(originalArticles);
+        const backupRoot = path.join(tempRoot, '.restore-backup-test');
+
+        fs.mkdirSync(path.join(backupRoot, 'articles'), { recursive: true });
+        fs.copyFileSync(
+            path.join(tempRoot, 'articles', 'articles.json'),
+            path.join(backupRoot, 'articles', 'articles.json')
+        );
+        fs.copyFileSync(
+            path.join(tempRoot, 'manifest.json'),
+            path.join(backupRoot, 'manifest.json')
+        );
+        writeText(
+            path.join(tempRoot, '.restore-state.json'),
+            JSON.stringify({
+                version: 1,
+                phase: 'replacing',
+                stagingDirectory: path.join(tempRoot, '.restore-staging-test'),
+                backupDirectory: backupRoot,
+                files: [
+                    path.join(tempRoot, 'articles', 'articles.json'),
+                    path.join(tempRoot, 'navigation', 'tools.json'),
+                    path.join(tempRoot, 'settings', 'site.json'),
+                    path.join(tempRoot, 'manifest.json'),
+                ],
+                updatedAt: new Date().toISOString(),
+            })
+        );
+        writeText(
+            path.join(tempRoot, 'articles', 'articles.json'),
+            JSON.stringify([createArticle('article-2', 'Mixed Article')])
+        );
+
+        expect(() => readArticlesFromDisk()).toThrow(EditorDataRestoreIncompleteError);
+    });
+
+    it('recovers incomplete restores during async reads', async () => {
         const tempRoot = createTempDataRoot();
         const originalArticles = [createArticle('article-1', 'Original Article')];
         const originalManifest = await writeArticlesToDisk(originalArticles);
@@ -300,7 +339,7 @@ describe('editor data storage configuration', () => {
             JSON.stringify([createArticle('article-2', 'Mixed Article')])
         );
 
-        expect(readArticlesFromDisk()).toEqual(originalArticles);
+        expect(await readArticlesFromDiskAsync()).toEqual(originalArticles);
         expect(readEditorDataManifest().resources.articles?.revision).toBe(originalManifest.revision);
         expect(fs.existsSync(path.join(tempRoot, '.restore-state.json'))).toBe(false);
     });

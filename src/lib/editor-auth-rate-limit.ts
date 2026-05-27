@@ -115,5 +115,9 @@ export function clearEditorAuthFailures(request: NextRequest, operation: AuthOpe
 }
 
 export function resetEditorAuthRateLimitForTests(): void {
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error('resetEditorAuthRateLimitForTests must not be called in production.');
+    }
+
     authFailureBuckets.clear();
 }
