@@ -54,7 +54,7 @@ jobs:
           set -euo pipefail
 
           mkdir -p output
-          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false setsid npm run start > output/ui-smoke-server.log 2>&1 &
+          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false TRUSTED_PROXY_IPS='*' setsid npm run start > output/ui-smoke-server.log 2>&1 &
           server_pid=$!
 
           cleanup() {
