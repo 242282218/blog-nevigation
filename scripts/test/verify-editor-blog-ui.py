@@ -29,6 +29,54 @@ def assert_min_touch_target(locator, label: str) -> None:
     )
 
 
+def set_textarea_selection(locator, start: int, end: int) -> None:
+    selection = locator.evaluate(
+        """(element, range) => new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              element.focus();
+              element.setSelectionRange(range.start, range.end);
+              element.dispatchEvent(new Event('select', { bubbles: true }));
+              resolve({
+                start: element.selectionStart,
+                end: element.selectionEnd,
+              });
+            });
+          });
+        })""",
+        {"start": start, "end": end},
+    )
+    assert selection == {"start": start, "end": end}, f"Selection mismatch: {selection}"
+
+
+def select_textarea_text(locator, text: str) -> None:
+    selection = locator.evaluate(
+        """(element, text) => new Promise((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const start = element.value.indexOf(text);
+              if (start < 0) {
+                resolve({ start: -1, end: -1 });
+                return;
+              }
+
+              const end = start + text.length;
+              element.focus();
+              element.setSelectionRange(start, end);
+              element.dispatchEvent(new Event('select', { bubbles: true }));
+              resolve({
+                start: element.selectionStart,
+                end: element.selectionEnd,
+              });
+            });
+          });
+        })""",
+        text,
+    )
+    assert selection["start"] >= 0, f"Could not find text in textarea: {text}"
+    assert selection["end"] - selection["start"] == len(text), f"Selection mismatch: {selection}"
+
+
 def goto_editor_page(page, path: str) -> None:
     target_url = f"{BASE_URL}{path}"
 
@@ -236,30 +284,14 @@ def main() -> None:
             "mobile outline jump action",
         )
         heading_button = mobile_page.get_by_role("button", name="标题").first
-        mobile_editor.evaluate(
-            """(element) => {
-              element.focus();
-              element.setSelectionRange(10, 24);
-            }"""
-        )
+        set_textarea_selection(mobile_editor, 10, 24)
         heading_button.click()
         expect(mobile_editor).to_have_value(mobile_content)
-        mobile_editor.evaluate(
-            """(element) => {
-              element.focus();
-              element.setSelectionRange(2, 8);
-            }"""
-        )
+        set_textarea_selection(mobile_editor, 2, 8)
         mobile_page.keyboard.press("Control+B")
         mobile_content = "# **Mobile**\n\n## Jump Target\n\nContent\n\n## Install\n\nNotes\n\n## Verify\n\nNotes\n\n## Ship\n\nNotes"
         expect(mobile_editor).to_have_value(mobile_content)
-        mobile_editor.evaluate(
-            """(element) => {
-              const start = element.value.indexOf('Install');
-              element.focus();
-              element.setSelectionRange(start, start + 'Install'.length);
-            }"""
-        )
+        select_textarea_text(mobile_editor, "Install")
         mobile_page.keyboard.press("Control+Shift+X")
         mobile_content = "# **Mobile**\n\n## Jump Target\n\nContent\n\n## ~~Install~~\n\nNotes\n\n## Verify\n\nNotes\n\n## Ship\n\nNotes"
         expect(mobile_editor).to_have_value(mobile_content)
