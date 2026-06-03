@@ -7,6 +7,7 @@ import { ArrowRight, CalendarDays, Clock3, FileText, Tag } from 'lucide-react';
 import { EmptyState, PageHero, PostCard } from '@/app/components/ui';
 import { ARTICLE_KIND_OPTIONS, getArticleKindLabel } from '@/lib/article-metadata';
 import { createOgImagePath } from '@/lib/site-url';
+import { cn } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,12 +55,12 @@ function createFilterHref(filters: { kind?: string; category?: string }): string
 }
 
 function cnFilter(active: boolean): string {
-    return [
+    return cn(
         'inline-flex min-h-[44px] items-center rounded-token-button border px-3 py-1.5 text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:min-h-0',
         active
             ? 'border-accent-300 bg-accent-50 text-accent'
-            : 'border-border bg-background text-muted hover:border-accent-200 hover:text-accent',
-    ].join(' ');
+            : 'border-border bg-background text-muted hover:border-accent-200 hover:text-accent'
+    );
 }
 
 export default async function BlogPage({
