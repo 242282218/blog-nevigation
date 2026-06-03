@@ -109,6 +109,7 @@ export function useSyncedResource<T>({
   const remoteSyncedGenerationRef = useRef(0);
   const saveSequenceRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
+  const saveLocalTimerRef = useRef<number | null>(null);
   const queuedSaveRef = useRef<{ value: T; generation: number } | null>(null);
   const inFlightSaveRef = useRef<{ sequence: number; generation: number } | null>(null);
   const mountedRef = useRef(true);
@@ -141,6 +142,15 @@ export function useSyncedResource<T>({
 
     window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
+  }, []);
+
+  const clearLocalSaveTimer = useCallback(() => {
+    if (saveLocalTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(saveLocalTimerRef.current);
+    saveLocalTimerRef.current = null;
   }, []);
 
   const flushRemoteSaveQueue = useCallback(() => {
@@ -255,13 +265,9 @@ export function useSyncedResource<T>({
     return () => {
       mountedRef.current = false;
       clearPendingSaveTimer();
-
-      if (saveLocalTimerRef.current !== null) {
-        window.clearTimeout(saveLocalTimerRef.current);
-        saveLocalTimerRef.current = null;
-      }
+      clearLocalSaveTimer();
     };
-  }, [clearPendingSaveTimer]);
+  }, [clearLocalSaveTimer, clearPendingSaveTimer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,8 +324,6 @@ export function useSyncedResource<T>({
     };
   }, []);
 
-  const saveLocalTimerRef = useRef<number | null>(null);
-
   useEffect(() => {
     if (!isLoaded) {
       return undefined;
@@ -327,9 +331,7 @@ export function useSyncedResource<T>({
 
     const generation = dataGenerationRef.current;
 
-    if (saveLocalTimerRef.current !== null) {
-      window.clearTimeout(saveLocalTimerRef.current);
-    }
+    clearLocalSaveTimer();
 
     saveLocalTimerRef.current = window.setTimeout(() => {
       saveLocalTimerRef.current = null;
@@ -351,8 +353,10 @@ export function useSyncedResource<T>({
 
     queueRemoteSave(data, generation, saveDelayMs);
 
-    return undefined;
-  }, [data, isLoaded, queueRemoteSave, saveDelayMs]);
+    return () => {
+      clearLocalSaveTimer();
+    };
+  }, [clearLocalSaveTimer, data, isLoaded, queueRemoteSave, saveDelayMs]);
 
   return {
     data,
