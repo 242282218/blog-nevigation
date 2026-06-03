@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -41,14 +42,14 @@ def goto_editor_page(page, path: str) -> None:
             page.goto("about:blank", timeout=10000)
 
 
-def seed_list_workflow_article(page, article: dict) -> None:
-    page.evaluate(
-        """(article) => {
-          window.localStorage.setItem('blog-local-articles', JSON.stringify([article]));
-        }""",
-        article,
+def create_article_list_context(browser, article: dict):
+    context = create_authenticated_context(browser, BASE_URL, {"width": 1440, "height": 960}, "local-dev-only-secret")
+    context.add_init_script(
+        f"""
+          window.localStorage.setItem('blog-local-articles', JSON.stringify([{json.dumps(article)}]));
+        """
     )
-    page.route(
+    context.route(
         "**/api/data/articles",
         lambda route: route.fulfill(
             status=503,
@@ -56,6 +57,10 @@ def seed_list_workflow_article(page, article: dict) -> None:
             body='{"message":"smoke list workflow uses local articles"}',
         ),
     )
+    page = context.new_page()
+    page.set_default_timeout(90000)
+    page.set_default_navigation_timeout(90000)
+    return context, page
 
 
 def main() -> None:
@@ -115,7 +120,9 @@ def main() -> None:
             "updatedAt": 1779820000000,
         }
 
-        seed_list_workflow_article(page, list_workflow_article)
+        context.close()
+
+        list_context, page = create_article_list_context(browser, list_workflow_article)
         goto_editor_page(page, "/editor/blog")
         expect(page.get_by_role("heading", name="博客管理")).to_be_visible()
         publish_draft_button = page.locator('button[aria-label="发布文章：Smoke Publish Draft"]').first
@@ -125,13 +132,12 @@ def main() -> None:
         page.get_by_role("button", name="去编辑").click()
         page.wait_for_url("**/editor/blog/new?edit=*")
         expect(page.get_by_role("heading", name="编辑文章")).to_be_visible()
-        goto_editor_page(page, "/editor/blog")
+        list_context.close()
 
-        page.unroute("**/api/data/articles")
         list_workflow_article["description"] = "A smoke test draft that can be published from the article list."
-        seed_list_workflow_article(page, list_workflow_article)
 
-        page.reload(wait_until="domcontentloaded", timeout=90000)
+        publish_context, page = create_article_list_context(browser, list_workflow_article)
+        goto_editor_page(page, "/editor/blog")
         expect(page.get_by_text("Smoke Publish Draft").first).to_be_visible()
         publish_button = page.locator('button[aria-label="发布文章：Smoke Publish Draft"]').first
         expect(publish_button).to_be_visible()
@@ -143,6 +149,7 @@ def main() -> None:
         expect(page.get_by_text("文章已改为草稿。")).to_be_visible()
 
         page.screenshot(path=str(SCREENSHOT_PATH), full_page=True)
+        publish_context.close()
 
         mobile_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "local-dev-only-secret")
         mobile_page = mobile_context.new_page()

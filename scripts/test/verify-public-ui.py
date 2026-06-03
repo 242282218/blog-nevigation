@@ -123,7 +123,7 @@ def main():
             if is_mobile:
                 assert_mobile_public_touch_targets(page)
                 assert_min_touch_target(page.get_by_role("button", name="全部").first, "navigation all filter")
-            page.get_by_placeholder("搜索工具、标签或域名").fill("MDN")
+            page.get_by_label("搜索导航链接").fill("MDN")
             if is_mobile:
                 assert_min_touch_target(page.get_by_label("清空搜索").first, "navigation clear search button")
             expect(page.get_by_text("MDN Web Docs").first).to_be_visible()
