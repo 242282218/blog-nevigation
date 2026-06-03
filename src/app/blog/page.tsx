@@ -4,15 +4,32 @@ import Link from 'next/link';
 import { format, parseISO } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { ArrowRight, CalendarDays, Clock3, FileText, Tag } from 'lucide-react';
-import { EmptyState, PageHero } from '@/app/components/ui';
+import { EmptyState, PageHero, PostCard } from '@/app/components/ui';
 import { ARTICLE_KIND_OPTIONS, getArticleKindLabel } from '@/lib/article-metadata';
+import { createOgImagePath } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
+    const title = '文章归档';
+    const description = '按时间收起这些工程笔记、项目复盘和资料整理。';
+    const ogImage = createOgImagePath({ title, description });
+
     return {
-        title: '文章归档',
-        description: '按时间收起这些工程笔记、项目复盘和资料整理。',
+        title,
+        description,
+        openGraph: {
+            title,
+            description,
+            type: 'website',
+            images: [ogImage],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title,
+            description,
+            images: [ogImage],
+        },
     };
 }
 
@@ -111,19 +128,14 @@ export default async function BlogPage({
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                         {featuredPosts.map((post) => (
-                            <Link
+                            <PostCard
                                 key={post.slug}
+                                title={post.title}
+                                description={post.description}
+                                date={post.updatedDate ? `更新 ${post.updatedDate}` : post.date}
                                 href={`/posts/${post.slug}`}
-                                className="rounded-token-card border border-border bg-surface p-4 shadow-token-card transition hover:border-accent-300 hover:bg-accent-50/40"
-                            >
-                                <p className="font-mono text-xs text-subtle">
-                                    {post.updatedDate ? `更新 ${post.updatedDate}` : post.date}
-                                </p>
-                                <h3 className="mt-2 line-clamp-2 font-semibold text-fg">{post.title}</h3>
-                                {post.description ? (
-                                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted">{post.description}</p>
-                                ) : null}
-                            </Link>
+                                className="h-full"
+                            />
                         ))}
                     </div>
                 </section>
@@ -170,6 +182,9 @@ export default async function BlogPage({
                         ))}
                     </div>
                 ) : null}
+                <p className="text-sm text-muted">
+                    共 {articlePosts.length} 篇{selectedKind || selectedCategory ? '（已筛选）' : ''}
+                </p>
             </section>
 
             {articlePosts.length === 0 ? (

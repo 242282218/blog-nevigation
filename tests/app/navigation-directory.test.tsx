@@ -143,4 +143,21 @@ describe('NavigationDirectory', () => {
       expect(button?.className).toContain('focus-visible:outline-focus');
     }
   });
+
+  it('focuses search when pressing slash outside editable fields', () => {
+    act(() => {
+      root.render(<NavigationDirectory categories={categories} totalLinkCount={1} />);
+    });
+
+    const searchInput = container.querySelector<HTMLInputElement>('input[aria-label="搜索导航链接"]');
+
+    expect(searchInput).toBeInstanceOf(HTMLInputElement);
+    expect(searchInput?.getAttribute('placeholder')).toBe('搜索链接... (按 / 聚焦)');
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }));
+    });
+
+    expect(searchInput).toBe(document.activeElement);
+  });
 });

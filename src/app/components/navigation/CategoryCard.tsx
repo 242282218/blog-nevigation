@@ -17,8 +17,19 @@ function getHostname(url: string): string {
     }
 }
 
+function getFaviconUrl(url: string): string | null {
+    try {
+        const hostname = new URL(url).hostname;
+
+        return `/api/favicon?domain=${encodeURIComponent(hostname)}`;
+    } catch {
+        return null;
+    }
+}
+
 export function CategoryCard({ title, description, url, tags, className }: CategoryCardProps) {
     const hostname = getHostname(url);
+    const faviconUrl = getFaviconUrl(url);
     const visibleTags = tags.slice(0, 2);
     const hiddenTagCount = Math.max(tags.length - visibleTags.length, 0);
 
@@ -34,8 +45,20 @@ export function CategoryCard({ title, description, url, tags, className }: Categ
         >
             <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                    <h4 className="truncate text-base font-semibold leading-snug tracking-token-normal text-fg transition-colors group-hover:text-accent-700">
-                        {title}
+                    <h4 className="flex min-w-0 items-center gap-2 text-base font-semibold leading-snug tracking-token-normal text-fg transition-colors group-hover:text-accent-700">
+                        {faviconUrl ? (
+                            <span
+                                aria-hidden="true"
+                                className="h-4 w-4 shrink-0 rounded-sm"
+                                style={{
+                                    backgroundImage: `url("${faviconUrl}")`,
+                                    backgroundPosition: 'center',
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundSize: 'contain',
+                                }}
+                            />
+                        ) : null}
+                        <span className="truncate">{title}</span>
                     </h4>
                     <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
                         <Link2 className="h-3 w-3 shrink-0 text-accent transition-colors group-hover:text-link" />

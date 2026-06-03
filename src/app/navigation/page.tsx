@@ -1,13 +1,30 @@
 import type { Metadata } from 'next';
 import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
 import { NavigationDirectory } from './NavigationDirectory';
+import { createOgImagePath } from '@/lib/site-url';
 
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
+    const title = '常用链接导航';
+    const description = '开发文档、写作资料和高频工具入口集中检索。';
+    const ogImage = createOgImagePath({ title, description });
+
     return {
-        title: '常用链接导航',
-        description: '开发文档、写作资料和高频工具入口集中检索。',
+        title,
+        description,
+        openGraph: {
+            title,
+            description,
+            type: 'website',
+            images: [ogImage],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title,
+            description,
+            images: [ogImage],
+        },
     };
 }
 

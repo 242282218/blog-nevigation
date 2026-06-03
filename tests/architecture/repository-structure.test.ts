@@ -87,9 +87,9 @@ describe('repository structure migration', () => {
     it('keeps production deployment and data migration boundaries explicit', () => {
         const dockerIgnore = fs.readFileSync(resolveRepoPath('.dockerignore'), 'utf8');
         const dockerfile = fs.readFileSync(resolveRepoPath('Dockerfile'), 'utf8');
-        const dockerEntrypoint = fs.readFileSync(resolveRepoPath('docker-entrypoint.sh'), 'utf8');
+        const dockerEntrypoint = fs.readFileSync(resolveRepoPath('deploy', 'docker-entrypoint.sh'), 'utf8');
         const localCompose = fs.readFileSync(resolveRepoPath('compose.yaml'), 'utf8');
-        const dockerDocs = fs.readFileSync(resolveRepoPath('DOCKER.md'), 'utf8');
+        const dockerDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'Docker补充说明.md'), 'utf8');
         const envExample = fs.readFileSync(resolveRepoPath('.env.example'), 'utf8');
         const nodeVersion = fs.readFileSync(resolveRepoPath('.nvmrc'), 'utf8').trim();
         const packageJson = JSON.parse(fs.readFileSync(resolveRepoPath('package.json'), 'utf8')) as {
@@ -101,9 +101,9 @@ describe('repository structure migration', () => {
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
         const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
-        const r2Docs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'cloudflare-r2.md'), 'utf8');
-        const serverDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'server.md'), 'utf8');
-        const migrationDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'migration.md'), 'utf8');
+        const r2Docs = fs.readFileSync(resolveRepoPath('docs', 'deploy', 'Cloudflare-R2备份.md'), 'utf8');
+        const serverDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', '服务器部署.md'), 'utf8');
+        const migrationDocs = fs.readFileSync(resolveRepoPath('docs', 'deploy', '数据迁移.md'), 'utf8');
 
         expect(dockerIgnore).toMatch(/^data$/m);
         expect(dockerIgnore).toMatch(/^output$/m);
@@ -137,6 +137,7 @@ describe('repository structure migration', () => {
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/public ./public');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/content/seeds ./content/seeds');
+        expect(dockerfile).toContain('COPY --chmod=755 deploy/docker-entrypoint.sh /usr/local/bin/');
         expect(dockerfile).toContain('ENTRYPOINT ["docker-entrypoint.sh"]');
         expect(dockerfile).toContain('CMD ["node", "server.js"]');
         expect(dockerEntrypoint).toContain('mkdir -p "$DATA_ROOT/articles" "$DATA_ROOT/navigation" "$DATA_ROOT/settings"');
@@ -211,21 +212,20 @@ describe('repository structure migration', () => {
         expect(migrationDocs).toContain('npm run data:verify -- /opt/blog-nevigation/data');
         expect(readme).toContain('data/settings/cloudflare-r2.json');
         expect(readme).toContain('完整优先于 `.env`');
-        expect(r2Docs).toContain('complete R2');
-        expect(r2Docs).toContain('configuration source');
-        expect(r2Docs).toContain('not used as field fallbacks');
+        expect(r2Docs).toContain('完整的 R2 配置来源');
+        expect(r2Docs).toContain('不会作为字段级 fallback');
+        expect(r2Docs).toContain('快速失败');
         expect(r2Docs).toContain('R2_BACKUP_ENCRYPTION_KEY');
-        expect(r2Docs).toContain('required by default');
+        expect(r2Docs).toContain('默认必须配置');
         expect(r2Docs).toContain('R2_ALLOW_PLAINTEXT_BACKUP=true');
-        expect(serverDocs).toContain('refuses to start if the build did not publish an immutable');
-        expect(serverDocs).toContain('then runs the same health check');
-        expect(serverDocs).toContain('same mounted data directory');
+        expect(serverDocs).toContain('构建没有发布不可变镜像 digest 时拒绝启动');
+        expect(serverDocs).toContain('执行同样的健康检查');
+        expect(serverDocs).toContain('同一个数据目录');
         expect(serverDocs).toContain('openssl rand -base64 32');
         expect(serverDocs).toContain('COOKIE_SECURE=true');
         expect(serverDocs).toContain('TRUSTED_PROXY_IPS');
         expect(serverDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
-        expect(migrationDocs).toContain('production tool URLs must be HTTPS');
-        expect(migrationDocs).toContain('Invalid backup packages fail before');
-        expect(migrationDocs).toContain('replacing the target runtime data');
+        expect(migrationDocs).toContain('生产工具 URL 必须是 HTTPS');
+        expect(migrationDocs).toContain('无效备份包会在替换目标运行时数据前失败');
     });
 });

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const repoRoot = process.cwd();
 const tempDirectories: string[] = [];
 const defaultIntroCardSettings = {
+  showIntroCard: true,
   introCardEyebrow: 'about this desk',
   introCardTitle: '你好，这里是我的公开工作日志',
   introCardDescription:

@@ -308,7 +308,7 @@ describe('EditorSettingsPage', () => {
     });
     await flushPromises();
 
-    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('#cloudflare-r2-form input[type="checkbox"]'));
 
     expect(checkboxes).toHaveLength(2);
 
@@ -321,6 +321,139 @@ describe('EditorSettingsPage', () => {
       expect(label?.className).toContain('focus-within:ring-2');
       expect(label?.className).toContain('focus-within:border-link');
     }
+  });
+
+  it('bootstraps Cloudflare R2 settings and clears the one-time global key', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            hasBackupEncryptionKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            hasEncryptionKey: false,
+            allowsPlaintextBackup: false,
+            source: 'default',
+            message: null,
+            securityWarning: null,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          bucketCreated: true,
+          tokenName: 'blog-navigation-r2-test',
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            hasBackupEncryptionKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: true,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: true,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            hasEncryptionKey: true,
+            allowsPlaintextBackup: false,
+            source: 'file',
+            message: null,
+            securityWarning: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const emailInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-auth-email');
+    const globalKeyInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key');
+    const accountInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-account-id');
+    const bucketInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-bucket');
+    const snapshotCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find((input) => input.closest('label')?.textContent?.includes('关闭时仅手动同步和恢复会写入时间快照。'));
+
+    await act(async () => {
+      if (emailInput) {
+        setInputValue(emailInput, 'owner@example.com');
+      }
+      if (globalKeyInput) {
+        setInputValue(globalKeyInput, 'global-key-should-clear');
+      }
+      if (accountInput) {
+        setInputValue(accountInput, '0123456789abcdef0123456789abcdef');
+      }
+      if (bucketInput) {
+        setInputValue(bucketInput, 'blog-data');
+      }
+      snapshotCheckbox?.click();
+    });
+
+    await act(async () => {
+      getButtonByText(container, '一键配置 R2').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/data/cloudflare-r2/bootstrap',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.any(String),
+      })
+    );
+
+    const body = JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string);
+
+    expect(body.bootstrap).toEqual(
+      expect.objectContaining({
+        authEmail: 'owner@example.com',
+        globalApiKey: 'global-key-should-clear',
+        accountId: '0123456789abcdef0123456789abcdef',
+        bucket: 'blog-data',
+        prefix: 'blog-navigation',
+        snapshotOnWrite: true,
+      })
+    );
+    expect(container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key')?.value).toBe('');
+    expect(container.querySelector<HTMLInputElement>('#r2-account-id')?.value).toBe('0123456789abcdef0123456789abcdef');
+    expect(container.querySelector<HTMLInputElement>('#r2-bucket')?.value).toBe('blog-data');
+    expect(container.textContent).toContain('Cloudflare R2 已自动配置完成。');
   });
 
   it('marks and focuses the first missing R2 settings field on submit', async () => {
@@ -388,7 +521,7 @@ describe('EditorSettingsPage', () => {
     });
 
     expect(accountInput?.getAttribute('aria-invalid')).toBe('false');
-    expect(container.querySelector('#r2-account-id-description')?.textContent).toBe('Cloudflare 账户 ID，用于生成默认 R2 endpoint。');
+    expect(container.querySelector('#r2-account-id-description')?.textContent).toBe('去 Cloudflare 账号概览页复制 Account ID；留空无法生成 R2 endpoint。');
   });
 
   it('disables site settings save when BLOG_DATA_ROOT is not configured', async () => {
@@ -565,11 +698,13 @@ describe('EditorSettingsPage', () => {
 
     const titleInput = container.querySelector<HTMLInputElement>('#settings-introCardTitle');
     const descriptionInput = container.querySelector<HTMLTextAreaElement>('#settings-introCardDescription');
+    const introCardToggle = container.querySelector<HTMLInputElement>('#settings-showIntroCard');
     const saveButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))
       .filter((button) => button.textContent?.includes('保存设置'));
 
     expect(saveButtons).toHaveLength(2);
     expect(saveButtons.every((button) => !button.disabled)).toBe(true);
+    expect(introCardToggle?.checked).toBe(true);
 
     await act(async () => {
       if (titleInput) {
@@ -579,6 +714,8 @@ describe('EditorSettingsPage', () => {
       if (descriptionInput) {
         setTextareaValue(descriptionInput, '  新的介绍说明  ');
       }
+
+      introCardToggle?.click();
     });
     await act(async () => {
       saveButtons.at(-1)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -601,6 +738,7 @@ describe('EditorSettingsPage', () => {
           introCardTitle: '新的介绍标题',
           introCardDescription: '新的介绍说明',
           introCardMetaOneLabel: DEFAULT_SITE_SETTINGS.introCardMetaOneLabel,
+          showIntroCard: false,
         }),
       })
     );

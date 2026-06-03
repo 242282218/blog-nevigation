@@ -1,7 +1,8 @@
 ﻿import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { POST as bootstrapR2 } from '@/app/api/data/cloudflare-r2/bootstrap/route';
 import { GET, PUT } from '@/app/api/data/cloudflare-r2/route';
 import {
   cleanupTempDirectories,
@@ -59,6 +60,8 @@ function writeText(filePath: string, value: string): void {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   resetEnv();
   cleanupTempDirectories(tempDirectories);
 });
@@ -337,6 +340,211 @@ describe('Cloudflare R2 settings API', () => {
         secretAccessKey: 'secret-key',
         prefix: 'next-prefix',
         snapshotOnWrite: true,
+      })
+    );
+  });
+
+  it('automatically configures R2 from a one-time Cloudflare global key without returning secrets', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const cloudflareFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef') && method === 'GET') {
+        return Response.json({
+          success: true,
+          result: {
+            id: '0123456789abcdef0123456789abcdef',
+            name: 'Test Account',
+          },
+        });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && method === 'GET') {
+        return Response.json({
+          success: true,
+          result: {
+            buckets: [
+              { name: 'blog-data' },
+            ],
+          },
+        });
+      }
+
+      if (url.endsWith('/user/tokens/permission_groups') && method === 'GET') {
+        return Response.json({
+          success: true,
+          result: [
+            { id: 'r2-read-group', name: 'Workers R2 Storage Bucket Item Read' },
+            { id: 'r2-write-group', name: 'Workers R2 Storage Bucket Item Write' },
+          ],
+        });
+      }
+
+      if (url.endsWith('/user/tokens') && method === 'POST') {
+        const body = JSON.parse(String(init?.body));
+
+        expect(body).toEqual(
+          expect.objectContaining({
+            policies: [
+              expect.objectContaining({
+                resources: {
+                  'com.cloudflare.edge.r2.bucket.0123456789abcdef0123456789abcdef_default_blog-data': '*',
+                },
+                permission_groups: [
+                  { id: 'r2-read-group' },
+                  { id: 'r2-write-group' },
+                ],
+              }),
+            ],
+          })
+        );
+
+        return Response.json({
+          success: true,
+          result: {
+            id: 'created-r2-access-key',
+            value: 'created-r2-token-value',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected Cloudflare request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal('fetch', cloudflareFetch);
+
+    const response = await bootstrapR2(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({
+          bootstrap: {
+            authEmail: 'owner@example.com',
+            globalApiKey: 'global-key-should-not-leak',
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            snapshotOnWrite: true,
+          },
+        }),
+      })
+    );
+    const payload = await response.json();
+    const settingsFile = getSettingsFile(process.env.BLOG_DATA_ROOT);
+    const storedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+    const responseText = JSON.stringify(payload);
+    const storedText = JSON.stringify(storedSettings);
+
+    expect(response.status).toBe(200);
+    expect(cloudflareFetch).toHaveBeenCalledTimes(4);
+    expect(responseText).not.toContain('global-key-should-not-leak');
+    expect(responseText).not.toContain('created-r2-token-value');
+    expect(responseText).not.toContain(storedSettings.secretAccessKey);
+    expect(storedText).not.toContain('global-key-should-not-leak');
+    expect(storedText).not.toContain('created-r2-token-value');
+    expect(storedSettings).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        accountId: '0123456789abcdef0123456789abcdef',
+        bucket: 'blog-data',
+        accessKeyId: 'created-r2-access-key',
+        secretAccessKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+        backupEncryptionKey: expect.any(String),
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: true,
+      })
+    );
+    expect(Buffer.from(storedSettings.backupEncryptionKey, 'base64')).toHaveLength(32);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        bucketCreated: false,
+        settings: expect.objectContaining({
+          enabled: true,
+          hasAccessKeyId: true,
+          hasSecretAccessKey: true,
+          hasBackupEncryptionKey: true,
+        }),
+        status: expect.objectContaining({
+          configured: true,
+          hasEncryptionKey: true,
+        }),
+      })
+    );
+  });
+
+  it('creates a missing R2 bucket during automatic configuration', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const cloudflareFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef') && method === 'GET') {
+        return Response.json({ success: true, result: { id: '0123456789abcdef0123456789abcdef' } });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && method === 'GET') {
+        return Response.json({ success: true, result: { buckets: [] } });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && method === 'POST') {
+        expect(JSON.parse(String(init?.body))).toEqual({ name: 'new-blog-data' });
+        return Response.json({ success: true, result: { name: 'new-blog-data' } });
+      }
+
+      if (url.endsWith('/user/tokens/permission_groups') && method === 'GET') {
+        return Response.json({
+          success: true,
+          result: [
+            { id: 'r2-read-group', name: 'Workers R2 Storage Bucket Item Read' },
+            { id: 'r2-write-group', name: 'Workers R2 Storage Bucket Item Write' },
+          ],
+        });
+      }
+
+      if (url.endsWith('/user/tokens') && method === 'POST') {
+        return Response.json({
+          success: true,
+          result: {
+            id: 'created-r2-access-key',
+            value: 'created-r2-token-value',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected Cloudflare request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal('fetch', cloudflareFetch);
+
+    const response = await bootstrapR2(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2/bootstrap', {
+        method: 'POST',
+        body: JSON.stringify({
+          bootstrap: {
+            authEmail: 'owner@example.com',
+            globalApiKey: 'global-key-should-not-leak',
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'new-blog-data',
+            prefix: 'blog-navigation',
+            snapshotOnWrite: false,
+          },
+        }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.bucketCreated).toBe(true);
+    expect(cloudflareFetch).toHaveBeenCalledWith(
+      'https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/r2/buckets',
+      expect.objectContaining({
+        method: 'POST',
       })
     );
   });

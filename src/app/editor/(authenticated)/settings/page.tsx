@@ -32,22 +32,33 @@ type SettingsResponse = {
     message?: string;
 };
 
+type TextSettingsKey = typeof SITE_SETTING_KEYS[number];
+type BooleanSettingsKey = 'showIntroCard';
+
 interface FieldProps {
-    id: keyof SiteSettings;
+    id: TextSettingsKey;
     label: string;
     help: string;
     value: string;
-    onChange: (id: keyof SiteSettings, value: string) => void;
+    onChange: (id: TextSettingsKey, value: string) => void;
     error?: string;
     multiline?: boolean;
 }
 
+interface ToggleProps {
+    id: BooleanSettingsKey;
+    label: string;
+    help: string;
+    checked: boolean;
+    onChange: (id: BooleanSettingsKey, value: boolean) => void;
+}
+
 type SettingsValidationError = {
-    field: keyof SiteSettings;
+    field: TextSettingsKey;
     message: string;
 };
 
-const REQUIRED_SETTING_ENTRIES: Array<[keyof SiteSettings, string]> = [
+const REQUIRED_SETTING_ENTRIES: Array<[TextSettingsKey, string]> = [
     ['siteName', '站点名称'],
     ['siteDescription', '站点描述'],
     ['workspaceLabel', '工作台标签'],
@@ -115,6 +126,39 @@ function SettingsField({
     );
 }
 
+function SettingsToggle({
+    id,
+    label,
+    help,
+    checked,
+    onChange,
+}: ToggleProps) {
+    const inputId = `settings-${id}`;
+    const descriptionId = `${inputId}-description`;
+
+    return (
+        <label
+            htmlFor={inputId}
+            className="flex items-start gap-3 rounded-token-card border border-border-soft bg-surface p-3 transition-colors focus-within:border-link focus-within:ring-2 focus-within:ring-focus"
+        >
+            <input
+                id={inputId}
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => onChange(id, event.target.checked)}
+                aria-describedby={descriptionId}
+                className="mt-0.5 h-5 w-5 shrink-0 rounded-token-sm border-border text-accent focus:ring-focus"
+            />
+            <span>
+                <span className="block text-sm font-medium text-fg">{label}</span>
+                <span id={descriptionId} className="mt-1 block text-xs leading-5 text-subtle">
+                    {help}
+                </span>
+            </span>
+        </label>
+    );
+}
+
 function validateSettings(settings: SiteSettings): SettingsValidationError | null {
     for (const [key, label] of REQUIRED_SETTING_ENTRIES) {
         if (!settings[key].trim()) {
@@ -129,7 +173,7 @@ function validateSettings(settings: SiteSettings): SettingsValidationError | nul
 }
 
 function trimSettings(settings: SiteSettings): SiteSettings {
-    const nextSettings = {} as SiteSettings;
+    const nextSettings = { ...settings };
 
     for (const key of SITE_SETTING_KEYS) {
         nextSettings[key] = settings[key].trim();
@@ -145,7 +189,7 @@ export default function EditorSettingsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<SettingsMessage | null>(null);
-    const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof SiteSettings, string>>>({});
+    const [fieldErrors, setFieldErrors] = useState<Partial<Record<TextSettingsKey, string>>>({});
     const canSaveSiteSettings = persistent && !isLoading && !isSaving;
     const saveSettingsLabel = isSaving ? '保存中...' : '保存设置';
 
@@ -191,7 +235,7 @@ export default function EditorSettingsPage() {
         };
     }, []);
 
-    const updateField = useCallback((id: keyof SiteSettings, value: string) => {
+    const updateField = useCallback((id: TextSettingsKey, value: string) => {
         setSettings((current) => ({
             ...current,
             [id]: value,
@@ -205,6 +249,13 @@ export default function EditorSettingsPage() {
             delete nextErrors[id];
             return nextErrors;
         });
+    }, []);
+
+    const updateToggle = useCallback((id: BooleanSettingsKey, value: boolean) => {
+        setSettings((current) => ({
+            ...current,
+            [id]: value,
+        }));
     }, []);
 
     const handleSubmit = useCallback(
@@ -397,6 +448,13 @@ export default function EditorSettingsPage() {
                                         value={settings.introCardEyebrow}
                                         onChange={updateField}
                                         error={fieldErrors.introCardEyebrow}
+                                    />
+                                    <SettingsToggle
+                                        id="showIntroCard"
+                                        label="显示介绍卡片"
+                                        help="关闭后首页首屏只保留标题、说明和主要入口。"
+                                        checked={settings.showIntroCard}
+                                        onChange={updateToggle}
                                     />
                                     <SettingsField
                                         id="introCardTitle"

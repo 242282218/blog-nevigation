@@ -76,11 +76,11 @@ Cloudflare R2 备份以服务器本地 `BLOG_DATA_ROOT` 为主数据源。`/edit
 
 详细文档：
 
-- [服务器部署](docs/deploy/server.md)
-- [数据迁移](docs/deploy/migration.md)
-- [Cloudflare R2 备份](docs/deploy/cloudflare-r2.md)
-- [GitHub 加密备份](docs/deploy/github-backup.md)
-- [Docker 补充说明](DOCKER.md)
+- [服务器部署](docs/deploy/服务器部署.md)
+- [数据迁移](docs/deploy/数据迁移.md)
+- [Cloudflare R2 备份](docs/deploy/Cloudflare-R2备份.md)
+- [GitHub 加密备份](docs/deploy/GitHub加密备份.md)
+- [Docker 补充说明](docs/deploy/Docker补充说明.md)
 
 ## 目录
 

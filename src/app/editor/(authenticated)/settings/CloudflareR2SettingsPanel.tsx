@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Cloud, CloudDownload, CloudUpload, Save } from 'lucide-react';
+import { Cloud, CloudDownload, CloudUpload, KeyRound, Save } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { loadCurrentBackupManifest } from '../../backup-current-manifest';
 import { createRestoreActionMessage } from '../../backup-action-message';
@@ -18,6 +18,7 @@ type CloudflareR2Settings = {
     bucket: string;
     hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
+    hasBackupEncryptionKey: boolean;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
@@ -32,8 +33,11 @@ type CloudflareR2Status = {
     snapshotOnWrite: boolean;
     hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
+    hasEncryptionKey: boolean;
+    allowsPlaintextBackup: boolean;
     source: 'file' | 'env' | 'default';
     message: string | null;
+    securityWarning: string | null;
 };
 
 type CloudflareR2Response = {
@@ -51,9 +55,18 @@ type RemoteBackupActionResponse = {
     };
 };
 
-type CloudflareR2Form = Omit<CloudflareR2Settings, 'hasSecretAccessKey' | 'hasAccessKeyId'> & {
+type CloudflareR2Form = Omit<CloudflareR2Settings, 'hasSecretAccessKey' | 'hasAccessKeyId' | 'hasBackupEncryptionKey'> & {
     accessKeyId: string;
     secretAccessKey: string;
+};
+
+type CloudflareR2BootstrapForm = {
+    authEmail: string;
+    globalApiKey: string;
+    accountId: string;
+    bucket: string;
+    prefix: string;
+    snapshotOnWrite: boolean;
 };
 
 type CloudflareMessage = {
@@ -62,9 +75,15 @@ type CloudflareMessage = {
 };
 
 type CloudflareR2ValidationField = 'accountId' | 'bucket' | 'accessKeyId' | 'secretAccessKey';
+type CloudflareR2BootstrapValidationField = 'authEmail' | 'globalApiKey' | 'accountId' | 'bucket';
 
 type CloudflareR2ValidationError = {
     field: CloudflareR2ValidationField;
+    message: string;
+};
+
+type CloudflareR2BootstrapValidationError = {
+    field: CloudflareR2BootstrapValidationField;
     message: string;
 };
 
@@ -130,6 +149,17 @@ function createEmptyCloudflareR2Form(): CloudflareR2Form {
     };
 }
 
+function createEmptyCloudflareR2BootstrapForm(): CloudflareR2BootstrapForm {
+    return {
+        authEmail: '',
+        globalApiKey: '',
+        accountId: '',
+        bucket: '',
+        prefix: 'blog-navigation',
+        snapshotOnWrite: false,
+    };
+}
+
 function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
     return {
         enabled: Boolean(settings?.enabled),
@@ -139,6 +169,16 @@ function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
         secretAccessKey: '',
         prefix: settings?.prefix ?? 'blog-navigation',
         endpoint: settings?.endpoint ?? '',
+        snapshotOnWrite: Boolean(settings?.snapshotOnWrite),
+    };
+}
+
+function toCloudflareR2BootstrapForm(settings?: CloudflareR2Settings): CloudflareR2BootstrapForm {
+    return {
+        ...createEmptyCloudflareR2BootstrapForm(),
+        accountId: settings?.accountId ?? '',
+        bucket: settings?.bucket ?? '',
+        prefix: settings?.prefix ?? 'blog-navigation',
         snapshotOnWrite: Boolean(settings?.snapshotOnWrite),
     };
 }
@@ -170,11 +210,37 @@ function validateCloudflareR2Form(
     return null;
 }
 
+function validateCloudflareR2BootstrapForm(form: CloudflareR2BootstrapForm): CloudflareR2BootstrapValidationError | null {
+    if (!form.authEmail.trim()) {
+        return { field: 'authEmail', message: '请填写 Cloudflare 登录邮箱。' };
+    }
+
+    if (!form.globalApiKey.trim()) {
+        return { field: 'globalApiKey', message: '请填写 Cloudflare Global API Key。' };
+    }
+
+    if (!form.accountId.trim()) {
+        return { field: 'accountId', message: '请填写 Cloudflare Account ID。' };
+    }
+
+    if (!form.bucket.trim()) {
+        return { field: 'bucket', message: '请填写 R2 Bucket。' };
+    }
+
+    return null;
+}
+
 const CLOUDFLARE_R2_FIELD_IDS: Record<CloudflareR2ValidationField, string> = {
     accountId: 'r2-account-id',
     bucket: 'r2-bucket',
     accessKeyId: 'r2-access-key-id',
     secretAccessKey: 'r2-secret-access-key',
+};
+const CLOUDFLARE_R2_BOOTSTRAP_FIELD_IDS: Record<CloudflareR2BootstrapValidationField, string> = {
+    authEmail: 'r2-bootstrap-auth-email',
+    globalApiKey: 'r2-bootstrap-global-api-key',
+    accountId: 'r2-bootstrap-account-id',
+    bucket: 'r2-bootstrap-bucket',
 };
 
 function isCloudflareR2ValidationField(id: keyof CloudflareR2Form): id is CloudflareR2ValidationField {
@@ -183,15 +249,18 @@ function isCloudflareR2ValidationField(id: keyof CloudflareR2Form): id is Cloudf
 
 export function CloudflareR2SettingsPanel() {
     const [form, setForm] = useState<CloudflareR2Form>(createEmptyCloudflareR2Form);
+    const [bootstrapForm, setBootstrapForm] = useState<CloudflareR2BootstrapForm>(createEmptyCloudflareR2BootstrapForm);
     const [status, setStatus] = useState<CloudflareR2Status | null>(null);
     const [hasSecretAccessKey, setHasSecretAccessKey] = useState(false);
     const [persistent, setPersistent] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [isBootstrapping, setIsBootstrapping] = useState(false);
     const [isRemoteBusy, setIsRemoteBusy] = useState(false);
     const [message, setMessage] = useState<CloudflareMessage | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Partial<Record<CloudflareR2ValidationField, string>>>({});
-    const canRunRemoteAction = Boolean(status?.configured) && !isLoading && !isRemoteBusy && !isSaving;
+    const [bootstrapFieldErrors, setBootstrapFieldErrors] = useState<Partial<Record<CloudflareR2BootstrapValidationField, string>>>({});
+    const canRunRemoteAction = Boolean(status?.configured) && !isLoading && !isRemoteBusy && !isSaving && !isBootstrapping;
 
     useEffect(() => {
         let isMounted = true;
@@ -211,6 +280,7 @@ export function CloudflareR2SettingsPanel() {
                 if (isMounted) {
                     setPersistent(Boolean(payload?.persistent));
                     setForm(toCloudflareR2Form(payload?.settings));
+                    setBootstrapForm(toCloudflareR2BootstrapForm(payload?.settings));
                     setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
                     setStatus(payload?.status ?? null);
                 }
@@ -258,6 +328,77 @@ export function CloudflareR2SettingsPanel() {
         },
         []
     );
+
+    const updateBootstrapField = useCallback(
+        <Key extends keyof CloudflareR2BootstrapForm>(id: Key, value: CloudflareR2BootstrapForm[Key]) => {
+            setBootstrapForm((current) => ({
+                ...current,
+                [id]: value,
+            }));
+            setBootstrapFieldErrors((current) => {
+                if (!(id in current)) {
+                    return current;
+                }
+
+                const nextErrors = { ...current };
+                delete nextErrors[id as CloudflareR2BootstrapValidationField];
+                return nextErrors;
+            });
+        },
+        []
+    );
+
+    const handleBootstrap = useCallback(async () => {
+        const validationError = validateCloudflareR2BootstrapForm(bootstrapForm);
+
+        if (validationError) {
+            const field = validationError.field as CloudflareR2BootstrapValidationField;
+            setBootstrapFieldErrors({ [field]: validationError.message });
+            setMessage({ tone: 'danger', text: validationError.message });
+            window.requestAnimationFrame(() => {
+                document.getElementById(CLOUDFLARE_R2_BOOTSTRAP_FIELD_IDS[field])?.focus();
+            });
+            return;
+        }
+
+        setBootstrapFieldErrors({});
+        setIsBootstrapping(true);
+        setMessage({ tone: 'loading', text: '正在自动配置 Cloudflare R2...' });
+
+        try {
+            const response = await fetch('/api/data/cloudflare-r2/bootstrap', {
+                method: 'POST',
+                credentials: 'include',
+                headers: createEditorCsrfHeaders({
+                    'Content-Type': 'application/json',
+                }),
+                body: JSON.stringify({ bootstrap: bootstrapForm }),
+            });
+            const payload = (await response.json().catch(() => null)) as CloudflareR2Response | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.message || 'Cloudflare R2 自动配置失败。');
+            }
+
+            setForm(toCloudflareR2Form(payload?.settings));
+            setBootstrapForm({
+                ...toCloudflareR2BootstrapForm(payload?.settings),
+                authEmail: bootstrapForm.authEmail,
+                globalApiKey: '',
+            });
+            setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
+            setStatus(payload?.status ?? null);
+            setMessage({ tone: 'success', text: 'Cloudflare R2 已自动配置完成。' });
+        } catch (error) {
+            console.error('Failed to bootstrap Cloudflare R2 settings:', error);
+            setMessage({
+                tone: 'danger',
+                text: error instanceof Error ? error.message : 'Cloudflare R2 自动配置失败。',
+            });
+        } finally {
+            setIsBootstrapping(false);
+        }
+    }, [bootstrapForm]);
 
     const handleSubmit = useCallback(
         async (event: React.FormEvent<HTMLFormElement>) => {
@@ -357,12 +498,7 @@ export function CloudflareR2SettingsPanel() {
     }, []);
 
     return (
-        <form
-            id="cloudflare-r2-form"
-            onSubmit={handleSubmit}
-            className="lg:col-span-2"
-        >
-            <EditorPanel className="p-4">
+        <EditorPanel className="p-4 lg:col-span-2">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="flex items-start gap-3">
                         <div className="rounded-token-card border border-accent-200 bg-accent-50 p-2 text-accent">
@@ -427,6 +563,17 @@ export function CloudflareR2SettingsPanel() {
                     </div>
                 </div>
 
+                <div className="mb-4 rounded-token-card border border-border-soft bg-background p-3 text-sm leading-6 text-muted">
+                    <p className="font-medium text-fg">字段来源说明</p>
+                    <ul className="mt-2 list-disc space-y-1 pl-5">
+                        <li>去 Cloudflare 找：Account ID、Bucket、Access Key ID、Secret Access Key。</li>
+                        <li>一键配置只会临时使用 Global API Key，最终只保存 bucket 专用 R2 凭证。</li>
+                        <li>本站自定义：对象前缀、是否每次写入创建 snapshot；对象前缀可保留默认值。</li>
+                        <li>通常留空：自定义 Endpoint。留空时系统会按 Account ID 自动生成 R2 endpoint。</li>
+                        <li>服务器环境配置：BLOG_DATA_ROOT 用于保存本页配置；手动配置时仍需提供 R2_BACKUP_ENCRYPTION_KEY，除非明确允许明文备份。</li>
+                    </ul>
+                </div>
+
                 {status?.message ? (
                     <div className="mb-4">
                         <StatusMessage tone="info">{status.message}</StatusMessage>
@@ -434,102 +581,182 @@ export function CloudflareR2SettingsPanel() {
                 ) : null}
 
                 <div className="grid gap-4">
-                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
-                        <input
-                            type="checkbox"
-                            checked={form.enabled}
-                            onChange={(event) => updateField('enabled', event.target.checked)}
-                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
-                        />
-                        <span>
-                            <span className="block font-medium text-fg">启用 R2 远端备份</span>
-                            保存文章、导航或站点设置后，会按当前配置同步 latest 备份。
-                        </span>
-                    </label>
-
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <TextField
-                            id="r2-account-id"
-                            label="Account ID"
-                            help="Cloudflare 账户 ID，用于生成默认 R2 endpoint。"
-                            value={form.accountId}
-                            error={fieldErrors.accountId}
-                            onChange={(value) => updateField('accountId', value)}
-                        />
-                        <TextField
-                            id="r2-bucket"
-                            label="Bucket"
-                            help="保存 backup.json 和 snapshots 的 R2 bucket。"
-                            value={form.bucket}
-                            error={fieldErrors.bucket}
-                            onChange={(value) => updateField('bucket', value)}
-                        />
-                        <TextField
-                            id="r2-access-key-id"
-                            label="Access Key ID"
-                            help="R2 S3 API Token 的 Access Key ID。"
-                            value={form.accessKeyId}
-                            error={fieldErrors.accessKeyId}
-                            onChange={(value) => updateField('accessKeyId', value)}
-                        />
-                        <TextField
-                            id="r2-secret-access-key"
-                            label="Secret Access Key"
-                            help={hasSecretAccessKey ? '留空会保留已保存的 Secret。' : '首次启用时必须填写。'}
-                            value={form.secretAccessKey}
-                            type="password"
-                            placeholder={hasSecretAccessKey ? '已保存，留空不变' : ''}
-                            error={fieldErrors.secretAccessKey}
-                            onChange={(value) => updateField('secretAccessKey', value)}
-                        />
-                        <TextField
-                            id="r2-prefix"
-                            label="对象前缀"
-                            help="例如 blog-navigation，会写入 prefix/latest/backup.json。"
-                            value={form.prefix}
-                            onChange={(value) => updateField('prefix', value)}
-                        />
-                        <TextField
-                            id="r2-endpoint"
-                            label="自定义 Endpoint"
-                            help="一般留空；需要 S3 兼容服务或自定义 R2 endpoint 时再填写。"
-                            value={form.endpoint}
-                            onChange={(value) => updateField('endpoint', value)}
-                        />
+                    <div className="grid gap-4 rounded-token-card border border-border-soft bg-background p-3">
+                        <div>
+                            <h3 className="text-sm font-semibold text-fg">一键配置</h3>
+                            <p className="mt-1 text-xs leading-5 text-subtle">
+                                Global API Key 不会写入服务器配置；配置完成后会自动生成备份加密密钥。
+                            </p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <TextField
+                                id="r2-bootstrap-auth-email"
+                                label="Cloudflare 邮箱"
+                                help="用于本次 Cloudflare API 鉴权。"
+                                value={bootstrapForm.authEmail}
+                                error={bootstrapFieldErrors.authEmail}
+                                onChange={(value) => updateBootstrapField('authEmail', value)}
+                            />
+                            <TextField
+                                id="r2-bootstrap-global-api-key"
+                                label="Global API Key"
+                                help="只用于本次创建 bucket 和 R2 专用凭证，不会保存。"
+                                value={bootstrapForm.globalApiKey}
+                                type="password"
+                                error={bootstrapFieldErrors.globalApiKey}
+                                onChange={(value) => updateBootstrapField('globalApiKey', value)}
+                            />
+                            <TextField
+                                id="r2-bootstrap-account-id"
+                                label="Account ID"
+                                help="Cloudflare 账号概览页中的 32 位 Account ID。"
+                                value={bootstrapForm.accountId}
+                                error={bootstrapFieldErrors.accountId}
+                                onChange={(value) => updateBootstrapField('accountId', value)}
+                            />
+                            <TextField
+                                id="r2-bootstrap-bucket"
+                                label="Bucket"
+                                help="不存在时会自动创建；存在时会复用。"
+                                value={bootstrapForm.bucket}
+                                error={bootstrapFieldErrors.bucket}
+                                onChange={(value) => updateBootstrapField('bucket', value)}
+                            />
+                            <TextField
+                                id="r2-bootstrap-prefix"
+                                label="对象前缀"
+                                help="可保留 blog-navigation。"
+                                value={bootstrapForm.prefix}
+                                onChange={(value) => updateBootstrapField('prefix', value)}
+                            />
+                            <label className="flex items-start gap-3 rounded-token-card border border-border-soft px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
+                                <input
+                                    type="checkbox"
+                                    checked={bootstrapForm.snapshotOnWrite}
+                                    onChange={(event) => updateBootstrapField('snapshotOnWrite', event.target.checked)}
+                                    className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
+                                />
+                                <span>
+                                    <span className="block font-medium text-fg">每次写入都创建 snapshot</span>
+                                    关闭时仅手动同步和恢复会写入时间快照。
+                                </span>
+                            </label>
+                        </div>
+                        <div className="flex justify-end">
+                            <EditorButton
+                                type="button"
+                                variant="primary"
+                                disabled={!persistent || isLoading || isSaving || isRemoteBusy || isBootstrapping}
+                                className="w-full sm:w-auto"
+                                onClick={handleBootstrap}
+                            >
+                                <KeyRound className="h-4 w-4" />
+                                {isBootstrapping ? '配置中...' : '一键配置 R2'}
+                            </EditorButton>
+                        </div>
                     </div>
 
-                    <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
-                        <input
-                            type="checkbox"
-                            checked={form.snapshotOnWrite}
-                            onChange={(event) => updateField('snapshotOnWrite', event.target.checked)}
-                            className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
-                        />
-                        <span>
-                            <span className="block font-medium text-fg">每次写入都创建 snapshot</span>
-                            关闭时仅手动同步和恢复会写入时间快照，日常保存只更新 latest。
-                        </span>
-                    </label>
+                    <form
+                        id="cloudflare-r2-form"
+                        onSubmit={handleSubmit}
+                        className="grid gap-4"
+                    >
+                        <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
+                            <input
+                                type="checkbox"
+                                checked={form.enabled}
+                                onChange={(event) => updateField('enabled', event.target.checked)}
+                                className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
+                            />
+                            <span>
+                                <span className="block font-medium text-fg">启用 R2 远端备份</span>
+                                保存文章、导航或站点设置后，会按当前配置同步 latest 备份。
+                            </span>
+                        </label>
 
-                    {!persistent ? (
-                        <StatusMessage tone="info" className="px-3 py-2">
-                            未配置 BLOG_DATA_ROOT，R2 配置无法保存到服务器。
-                        </StatusMessage>
-                    ) : null}
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <TextField
+                                id="r2-account-id"
+                                label="Account ID"
+                                help="去 Cloudflare 账号概览页复制 Account ID；留空无法生成 R2 endpoint。"
+                                value={form.accountId}
+                                error={fieldErrors.accountId}
+                                onChange={(value) => updateField('accountId', value)}
+                            />
+                            <TextField
+                                id="r2-bucket"
+                                label="Bucket"
+                                help="去 Cloudflare R2 创建或选择 bucket，填写 bucket 名称。"
+                                value={form.bucket}
+                                error={fieldErrors.bucket}
+                                onChange={(value) => updateField('bucket', value)}
+                            />
+                            <TextField
+                                id="r2-access-key-id"
+                                label="Access Key ID"
+                                help="去 Cloudflare 创建 R2 API Token 后复制 Access Key ID。"
+                                value={form.accessKeyId}
+                                error={fieldErrors.accessKeyId}
+                                onChange={(value) => updateField('accessKeyId', value)}
+                            />
+                            <TextField
+                                id="r2-secret-access-key"
+                                label="Secret Access Key"
+                                help={hasSecretAccessKey ? '已保存 Secret；留空会继续使用已保存值。' : '去 Cloudflare 创建 R2 API Token 后复制 Secret Access Key，首次启用必填。'}
+                                value={form.secretAccessKey}
+                                type="password"
+                                placeholder={hasSecretAccessKey ? '已保存，留空不变' : ''}
+                                error={fieldErrors.secretAccessKey}
+                                onChange={(value) => updateField('secretAccessKey', value)}
+                            />
+                            <TextField
+                                id="r2-prefix"
+                                label="对象前缀"
+                                help="本站自定义的 R2 目录前缀；可保留 blog-navigation，会写入 blog-navigation/latest/backup.json。"
+                                value={form.prefix}
+                                onChange={(value) => updateField('prefix', value)}
+                            />
+                            <TextField
+                                id="r2-endpoint"
+                                label="自定义 Endpoint"
+                                help="通常留空；系统会按 Account ID 自动生成 Cloudflare R2 endpoint。"
+                                value={form.endpoint}
+                                onChange={(value) => updateField('endpoint', value)}
+                            />
+                        </div>
 
-                    <div className="flex justify-end">
-                        <EditorButton
-                            type="submit"
-                            variant="primary"
-                            disabled={!persistent || isLoading || isSaving || isRemoteBusy}
-                            className="w-full sm:w-auto"
-                        >
-                            <Save className="h-4 w-4" />
-                            {isSaving ? '保存中...' : '保存 R2 配置'}
-                        </EditorButton>
-                    </div>
+                        <label className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
+                            <input
+                                type="checkbox"
+                                checked={form.snapshotOnWrite}
+                                onChange={(event) => updateField('snapshotOnWrite', event.target.checked)}
+                                className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
+                            />
+                            <span>
+                                <span className="block font-medium text-fg">每次写入都创建 snapshot</span>
+                                关闭时仅手动同步和恢复会写入时间快照，日常保存只更新 latest。
+                            </span>
+                        </label>
+
+                        {!persistent ? (
+                            <StatusMessage tone="info" className="px-3 py-2">
+                                未配置 BLOG_DATA_ROOT，R2 配置无法保存到服务器。
+                            </StatusMessage>
+                        ) : null}
+
+                        <div className="flex justify-end">
+                            <EditorButton
+                                type="submit"
+                                variant="primary"
+                                disabled={!persistent || isLoading || isSaving || isRemoteBusy || isBootstrapping}
+                                className="w-full sm:w-auto"
+                            >
+                                <Save className="h-4 w-4" />
+                                {isSaving ? '保存中...' : '保存 R2 配置'}
+                            </EditorButton>
+                        </div>
+                    </form>
                 </div>
             </EditorPanel>
-        </form>
     );
 }

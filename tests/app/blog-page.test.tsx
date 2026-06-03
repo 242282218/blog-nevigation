@@ -35,6 +35,7 @@ describe('BlogPage', () => {
     expect(html).toContain('文章归档');
     expect(html).toContain('全部类型');
     expect(html).toContain('全部分类');
+    expect(html).toContain('共 1 篇');
     expect(html).toContain('min-h-[44px]');
     expect(html).toContain('focus-visible:outline-2');
     expect(html).toContain('focus-visible:outline-focus');

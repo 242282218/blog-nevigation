@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Grid2X2, Search, X } from 'lucide-react';
 import { CategoryCard } from '@/app/components/navigation';
 import { EmptyState } from '@/app/components/ui';
@@ -15,9 +15,18 @@ function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+        return false;
+    }
+
+    return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable;
+}
+
 export function NavigationDirectory({ categories, totalLinkCount }: NavigationDirectoryProps) {
     const [activeSlug, setActiveSlug] = useState('all');
     const [query, setQuery] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
     const normalizedQuery = query.trim().toLowerCase();
     const activeCategory = categories.find((category) => category.slug === activeSlug);
     const filteredCategories = useMemo(() => {
@@ -39,6 +48,20 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
     const visibleToolCount = filteredCategories.reduce((total, category) => total + category.tools.length, 0);
     const activeLabel = activeCategory ? activeCategory.name : '全部分类';
 
+    useEffect(() => {
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.key !== '/' || isEditableTarget(event.target)) {
+                return;
+            }
+
+            event.preventDefault();
+            inputRef.current?.focus();
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
     return (
         <div className="space-y-4">
             <section className="rounded-token-card border border-border bg-surface-elevated p-2.5 md:p-3">
@@ -46,9 +69,10 @@ export function NavigationDirectory({ categories, totalLinkCount }: NavigationDi
                     <label className="flex min-h-[44px] items-center gap-2.5 rounded-token-input border border-border bg-bg px-3 py-0 transition-colors duration-token-fast focus-within:border-link focus-within:bg-white">
                         <Search className="h-4 w-4 text-accent" />
                         <input
+                            ref={inputRef}
                             value={query}
                             onChange={(event) => setQuery(event.target.value)}
-                            placeholder="搜索工具、标签或域名"
+                            placeholder="搜索链接... (按 / 聚焦)"
                             aria-label="搜索导航链接"
                             className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-subtle"
                         />

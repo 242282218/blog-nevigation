@@ -44,6 +44,7 @@ __pycache__/
 # Codex (local development files)
 .codex/
 .claude/
+.playwright-mcp/
 blog-nevigation/
 
 # Misc

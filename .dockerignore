@@ -4,6 +4,7 @@
 .trae
 .vscode
 .codex
+.playwright-mcp
 node_modules
 coverage
 dist
@@ -34,7 +35,6 @@ design-system
 .editorconfig
 .nvmrc
 AGENTS.md
-DOCKER.md
 
 Dockerfile
 compose.yaml

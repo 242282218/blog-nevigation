@@ -60,6 +60,8 @@ describe('Home page', () => {
     expect(html).toContain('Editable desk description');
     expect(html).toContain('Editable focus value');
     expect(html).toContain('begin here');
+    expect(html).toContain('(1)');
+    expect(html).not.toContain('我会优先写这些');
     expect(html).not.toContain('你好，这里是我的公开工作日志');
   });
 });

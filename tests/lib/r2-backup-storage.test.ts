@@ -221,6 +221,7 @@ describe('R2 backup configuration', () => {
       bucket: 'blog-data',
       hasAccessKeyId: true,
       hasSecretAccessKey: true,
+      hasBackupEncryptionKey: true,
       prefix: 'custom-prefix',
       endpoint: '',
       snapshotOnWrite: true,
@@ -350,6 +351,7 @@ describe('R2 backup configuration', () => {
         bucket: '',
         hasAccessKeyId: false,
         hasSecretAccessKey: false,
+        hasBackupEncryptionKey: false,
       })
     );
     expect(getR2BackupStatus()).toEqual(
@@ -622,6 +624,7 @@ describe('R2 backup configuration', () => {
       expect.objectContaining({
         enabled: false,
         hasSecretAccessKey: false,
+        hasBackupEncryptionKey: false,
       })
     );
     expect(storedSettings.secretAccessKey).toBe('');

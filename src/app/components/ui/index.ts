@@ -4,5 +4,7 @@ export { PostCard } from './PostCard';
 export { EmptyState } from './EmptyState';
 export { MetricCard } from './MetricCard';
 export { PageHero } from './PageHero';
+export { ReadingProgress } from './ReadingProgress';
 export { SectionHeading } from './SectionHeading';
 export { StatusMessage } from './StatusMessage';
+export { TableOfContents } from './TableOfContents';

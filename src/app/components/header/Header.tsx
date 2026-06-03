@@ -15,7 +15,9 @@ export function Header() {
 
                 <div className="flex items-center gap-2 sm:gap-3">
                     <CommandInput compact className="lg:hidden" />
-                    <StatusIndicator />
+                    <div className="hidden sm:block">
+                        <StatusIndicator />
+                    </div>
                     <Navigation />
                 </div>
             </div>

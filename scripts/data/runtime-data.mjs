@@ -12,6 +12,7 @@ export const DEFAULT_SITE_SETTINGS = {
   heroTitleLineTwo: '整理成下次还能用的笔记',
   heroDescription:
     '这里记录我在前端体验、工程效率、AI 工具和个人知识管理里的真实问题：背景、判断、试错和最后留下的做法。它不是教程合集，更像一份持续校准的工作日志。',
+  showIntroCard: true,
   introCardEyebrow: 'about this desk',
   introCardTitle: '你好，这里是我的公开工作日志',
   introCardDescription:
@@ -222,6 +223,14 @@ export function normalizeSiteSettings(value) {
     }
 
     settings[key] = value[key].trim();
+  }
+
+  if (value.showIntroCard === undefined) {
+    settings.showIntroCard = DEFAULT_SITE_SETTINGS.showIntroCard;
+  } else if (typeof value.showIntroCard === 'boolean') {
+    settings.showIntroCard = value.showIntroCard;
+  } else {
+    throw new Error('Site settings showIntroCard must be a boolean when present.');
   }
 
   return settings;

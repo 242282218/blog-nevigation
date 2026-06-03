@@ -41,4 +41,9 @@ describe('site settings parser', () => {
     it('rejects blank intro card values when they are present', () => {
         expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, introCardTitle: ' ' })).toBeNull();
     });
+
+    it('accepts the optional intro card visibility flag only as a boolean', () => {
+        expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, showIntroCard: false })?.showIntroCard).toBe(false);
+        expect(parseSiteSettings({ ...DEFAULT_SITE_SETTINGS, showIntroCard: 'false' })).toBeNull();
+    });
 });

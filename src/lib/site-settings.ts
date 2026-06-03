@@ -7,6 +7,7 @@ export interface SiteSettings {
     heroTitleLineOne: string;
     heroTitleLineTwo: string;
     heroDescription: string;
+    showIntroCard: boolean;
     introCardEyebrow: string;
     introCardTitle: string;
     introCardDescription: string;
@@ -27,6 +28,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     heroTitleLineTwo: '整理成下次还能用的笔记',
     heroDescription:
         '这里记录我在前端体验、工程效率、AI 工具和个人知识管理里的真实问题：背景、判断、试错和最后留下的做法。它不是教程合集，更像一份持续校准的工作日志。',
+    showIntroCard: true,
     introCardEyebrow: 'about this desk',
     introCardTitle: '你好，这里是我的公开工作日志',
     introCardDescription:
@@ -98,6 +100,14 @@ function normalizeStringWithDefault(value: unknown, defaultValue: string): strin
     return normalizeString(value);
 }
 
+function normalizeBooleanWithDefault(value: unknown, defaultValue: boolean): boolean | null {
+    if (value === undefined) {
+        return defaultValue;
+    }
+
+    return typeof value === 'boolean' ? value : null;
+}
+
 export function parseSiteSettings(value: unknown): SiteSettings | null {
     if (!isRecord(value)) {
         return null;
@@ -124,6 +134,14 @@ export function parseSiteSettings(value: unknown): SiteSettings | null {
 
         nextSettings[key] = normalized;
     }
+
+    const showIntroCard = normalizeBooleanWithDefault(value.showIntroCard, DEFAULT_SITE_SETTINGS.showIntroCard);
+
+    if (showIntroCard === null) {
+        return null;
+    }
+
+    nextSettings.showIntroCard = showIntroCard;
 
     return nextSettings;
 }

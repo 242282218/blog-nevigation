@@ -48,14 +48,16 @@ export interface EditableR2BackupSettings {
     bucket: string;
     accessKeyId: string;
     secretAccessKey: string;
+    backupEncryptionKey?: string;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
 }
 
-export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId'> {
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId' | 'backupEncryptionKey'> {
     hasSecretAccessKey: boolean;
     hasAccessKeyId: boolean;
+    hasBackupEncryptionKey: boolean;
 }
 
 interface EncryptedR2BackupPayload {
@@ -131,6 +133,9 @@ function parseStoredR2BackupSettings(value: unknown, filePath: string): Editable
         bucket: value.bucket.trim(),
         accessKeyId: value.accessKeyId.trim(),
         secretAccessKey: value.secretAccessKey.trim(),
+        backupEncryptionKey: typeof value.backupEncryptionKey === 'string'
+            ? value.backupEncryptionKey.trim()
+            : '',
         prefix: value.prefix.trim() || DEFAULT_R2_PREFIX,
         endpoint: value.endpoint.trim(),
         snapshotOnWrite: value.snapshotOnWrite,
@@ -249,6 +254,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
             bucket: stored.bucket,
             hasAccessKeyId: Boolean(stored.accessKeyId),
             hasSecretAccessKey: Boolean(stored.secretAccessKey),
+            hasBackupEncryptionKey: Boolean(stored.backupEncryptionKey || getEnv('R2_BACKUP_ENCRYPTION_KEY')),
             prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
             endpoint: stored.endpoint,
             snapshotOnWrite: stored.snapshotOnWrite,
@@ -266,6 +272,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
         bucket: getEnv('R2_BUCKET'),
         hasAccessKeyId: Boolean(getEnv('R2_ACCESS_KEY_ID')),
         hasSecretAccessKey: Boolean(secretAccessKey),
+        hasBackupEncryptionKey: Boolean(getEnv('R2_BACKUP_ENCRYPTION_KEY')),
         prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         endpoint,
         snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
@@ -301,6 +308,7 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         bucket: input.bucket.trim(),
         accessKeyId: input.accessKeyId.trim(),
         secretAccessKey: trimmedSecretAccessKey || existing?.secretAccessKey || (input.enabled ? getEnv('R2_SECRET_ACCESS_KEY') : ''),
+        backupEncryptionKey: input.backupEncryptionKey?.trim() || existing?.backupEncryptionKey || '',
         prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
         endpoint: input.endpoint.trim(),
         snapshotOnWrite: input.snapshotOnWrite,
@@ -503,7 +511,8 @@ async function bodyToString(body: unknown): Promise<string> {
 }
 
 function getR2BackupEncryptionKey(): Buffer | null {
-    const rawKey = getEnv('R2_BACKUP_ENCRYPTION_KEY');
+    const stored = readStoredR2BackupSettings();
+    const rawKey = stored?.backupEncryptionKey?.trim() || getEnv('R2_BACKUP_ENCRYPTION_KEY');
 
     if (!rawKey) {
         return null;
