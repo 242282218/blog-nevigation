@@ -19,7 +19,7 @@ set -eu
 APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
-APP_PORT=3000
+APP_PORT=7199
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请切换 root 后重新执行。"
@@ -74,11 +74,18 @@ detect_public_ip() {
   fi
 }
 
+sync_existing_site_url_port() {
+  if grep -q '^NEXT_PUBLIC_SITE_URL=http://.*:3000$' "${APP_DIR}/.env"; then
+    sed -i "s#^\(NEXT_PUBLIC_SITE_URL=http://.*\):3000\$#\1:${APP_PORT}#" "${APP_DIR}/.env"
+  fi
+}
+
 create_env_file() {
   mkdir -p "${APP_DIR}/data"
 
   if [ -f "${APP_DIR}/.env" ]; then
     chmod 600 "${APP_DIR}/.env"
+    sync_existing_site_url_port
     return
   fi
 
@@ -136,10 +143,10 @@ EOF
 默认访问地址是：
 
 ```text
-http://服务器公网IP:3000
+http://服务器公网IP:7199
 ```
 
-安全组或防火墙需要放行 `3000/tcp`。
+安全组或防火墙需要放行 `7199/tcp`。
 
 ## 更新 latest
 
@@ -152,7 +159,7 @@ set -eu
 APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
-APP_PORT=3000
+APP_PORT=7199
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请切换 root 后重新执行。"
@@ -162,6 +169,10 @@ fi
 if [ ! -f "${APP_DIR}/.env" ]; then
   echo "缺少 ${APP_DIR}/.env，请先执行一键部署。"
   exit 1
+fi
+
+if grep -q '^NEXT_PUBLIC_SITE_URL=http://.*:3000$' "${APP_DIR}/.env"; then
+  sed -i "s#^\(NEXT_PUBLIC_SITE_URL=http://.*\):3000\$#\1:${APP_PORT}#" "${APP_DIR}/.env"
 fi
 
 mkdir -p "${APP_DIR}/data"
@@ -198,7 +209,7 @@ docker ps --filter name=blog-navigation
 docker logs --tail=100 blog-navigation
 docker restart blog-navigation
 docker inspect --format '{{.Config.Image}} {{.Image}}' blog-navigation
-curl -I http://127.0.0.1:3000/
+curl -I http://127.0.0.1:7199/
 ```
 
 停止服务：

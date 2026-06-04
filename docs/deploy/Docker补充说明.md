@@ -25,7 +25,7 @@ docker build -t blog-navigation .
 ```bash
 EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
 
-docker run -p 127.0.0.1:3000:3000 \
+docker run -p 127.0.0.1:7199:3000 \
   -e EDITOR_ACCESS_TOKEN="${EDITOR_ACCESS_TOKEN}" \
   -e BLOG_DATA_ROOT=/var/lib/blog-navigation \
   -e COOKIE_SECURE=false \

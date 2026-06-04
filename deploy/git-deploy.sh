@@ -58,7 +58,7 @@ ensure_env_file() {
   umask 077
   cat > "${ENV_FILE}" <<'EOF'
 EDITOR_ACCESS_TOKEN=replace-with-a-long-random-secret
-APP_PORT=3000
+APP_PORT=7199
 NEXT_PUBLIC_SITE_URL=
 COOKIE_SECURE=true
 R2_BACKUP_ENABLED=false
@@ -132,7 +132,7 @@ current_container_image() {
 
 healthcheck_url() {
   port="$(compose port app 3000 2>/dev/null | awk -F: 'END {print $NF}')"
-  printf 'http://127.0.0.1:%s/\n' "${port:-3000}"
+  printf 'http://127.0.0.1:%s/\n' "${port:-7199}"
 }
 
 wait_for_healthcheck() {

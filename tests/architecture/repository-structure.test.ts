@@ -145,7 +145,7 @@ describe('repository structure migration', () => {
         expect(dockerEntrypoint).toContain('chown -R nextjs:nodejs "$DATA_ROOT"');
         expect(dockerEntrypoint).toContain('exec su-exec nextjs "$@"');
         expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
-        expect(localCompose).toContain('127.0.0.1:${APP_PORT:-3000}:3000');
+        expect(localCompose).toContain('127.0.0.1:${APP_PORT:-7199}:3000');
         expect(localCompose).toContain('NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}');
         expect(localCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
         expect(localCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
@@ -154,7 +154,7 @@ describe('repository structure migration', () => {
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
         expect(envExample).toContain('COOKIE_SECURE=false');
         expect(envExample).toContain('TRUSTED_PROXY_IPS=');
-        expect(envExample).toContain('NEXT_PUBLIC_SITE_URL=http://localhost:3000');
+        expect(envExample).toContain('NEXT_PUBLIC_SITE_URL=http://localhost:7199');
         expect(envExample).toContain('R2_BACKUP_ENCRYPTION_KEY=');
         expect(envExample).toContain('R2_ALLOW_PLAINTEXT_BACKUP=false');
         expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');

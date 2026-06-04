@@ -18,7 +18,7 @@ services:
     container_name: blog-navigation
     init: true
     ports:
-      - "127.0.0.1:${APP_PORT:-3000}:3000"
+      - "127.0.0.1:${APP_PORT:-7199}:3000"
     environment:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0

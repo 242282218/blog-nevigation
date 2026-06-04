@@ -222,7 +222,7 @@ jobs:
             echo '  --restart unless-stopped \'
             echo '  --init \'
             echo '  --env-file "${APP_DIR}/.env" \'
-            echo '  -p 127.0.0.1:3000:3000 \'
+            echo '  -p 127.0.0.1:7199:3000 \'
             echo '  -v "${APP_DIR}/data:/var/lib/blog-navigation" \'
             echo '  "${IMAGE}"'
             echo '```'
@@ -290,7 +290,7 @@ jobs:
             get_healthcheck_url() {
               local port
               port=$(docker compose -f compose.prod.yaml port app 3000 | awk -F: 'END {print $NF}')
-              echo "http://127.0.0.1:${port:-3000}/"
+              echo "http://127.0.0.1:${port:-7199}/"
             }
 
             wait_for_healthcheck() {
