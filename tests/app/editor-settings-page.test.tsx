@@ -117,6 +117,7 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
+            hasBackupEncryptionKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -130,8 +131,11 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
+            hasEncryptionKey: true,
+            allowsPlaintextBackup: false,
             source: 'file',
             message: null,
+            securityWarning: null,
           },
         })
       )
@@ -149,6 +153,7 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
+            hasBackupEncryptionKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -162,8 +167,11 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
+            hasEncryptionKey: true,
+            allowsPlaintextBackup: false,
             source: 'file',
             message: null,
+            securityWarning: null,
           },
         })
       );
@@ -215,6 +223,7 @@ describe('EditorSettingsPage', () => {
         bucket: 'blog-data',
         accessKeyId: 'access-key',
         secretAccessKey: '',
+        backupEncryptionKey: '',
       })
     );
   });

@@ -53,6 +53,10 @@ function getTrustedForwardedClientId(request: NextRequest, trustedProxyIps: Set<
 
     const forwardedForParts = getForwardedForParts(request);
 
+    if (forwardedForParts.length === 1) {
+        return forwardedForParts[0];
+    }
+
     if (forwardedForParts.length >= 2 && trustedProxyIps.has(forwardedForParts[forwardedForParts.length - 1])) {
         return forwardedForParts[0];
     }

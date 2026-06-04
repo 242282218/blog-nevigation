@@ -1,4 +1,5 @@
 ﻿import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,6 +41,29 @@ function createTempDirectory(): string {
 function writeJson(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  const entries = Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+
+  return `{${entries.join(',')}}`;
+}
+
+function hashJson(value: unknown): string {
+  return createHash('sha256')
+    .update(stableStringify(value))
+    .digest('hex');
 }
 
 afterEach(() => {
@@ -170,7 +194,12 @@ describe('runtime data migration scripts', () => {
         secretAccessKey: 'target-secret-key',
       })
     );
-    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'))).toEqual(
+    const importedArticles = JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'));
+    const importedNavigation = JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'));
+    const importedSettings = JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'));
+    const importedManifest = JSON.parse(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8'));
+
+    expect(importedManifest).toEqual(
       expect.objectContaining({
         version: 1,
         resources: expect.objectContaining({
@@ -180,6 +209,9 @@ describe('runtime data migration scripts', () => {
         }),
       })
     );
+    expect(importedManifest.resources.articles.hash).toBe(hashJson(importedArticles));
+    expect(importedManifest.resources.navigation.hash).toBe(hashJson(importedNavigation));
+    expect(importedManifest.resources.settings.hash).toBe(hashJson(importedSettings));
 
     const verifyOutput = execFileSync(
       process.execPath,

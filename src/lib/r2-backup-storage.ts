@@ -302,13 +302,16 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     }
 
     const trimmedSecretAccessKey = input.secretAccessKey.trim();
+    const trimmedBackupEncryptionKey = input.backupEncryptionKey?.trim() ?? '';
+    validateOptionalR2BackupEncryptionKey(trimmedBackupEncryptionKey);
+
     const nextSettings: EditableR2BackupSettings = {
         enabled: input.enabled,
         accountId: input.accountId.trim(),
         bucket: input.bucket.trim(),
         accessKeyId: input.accessKeyId.trim(),
         secretAccessKey: trimmedSecretAccessKey || existing?.secretAccessKey || (input.enabled ? getEnv('R2_SECRET_ACCESS_KEY') : ''),
-        backupEncryptionKey: input.backupEncryptionKey?.trim() || existing?.backupEncryptionKey || '',
+        backupEncryptionKey: trimmedBackupEncryptionKey || existing?.backupEncryptionKey || '',
         prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
         endpoint: input.endpoint.trim(),
         snapshotOnWrite: input.snapshotOnWrite,
@@ -518,19 +521,36 @@ function getR2BackupEncryptionKey(): Buffer | null {
         return null;
     }
 
-    const base64Key = Buffer.from(rawKey, 'base64');
+    return parseR2BackupEncryptionKey(rawKey, 'R2_BACKUP_ENCRYPTION_KEY');
+}
 
-    if (base64Key.length === 32) {
+function parseR2BackupEncryptionKey(rawKey: string, label: string): Buffer {
+    const trimmedKey = rawKey.trim();
+    const base64Key = Buffer.from(trimmedKey, 'base64');
+
+    if (base64Key.length === 32 && base64Key.toString('base64') === trimmedKey) {
         return base64Key;
     }
 
-    const hexKey = Buffer.from(rawKey, 'hex');
+    const hexKey = Buffer.from(trimmedKey, 'hex');
 
-    if (hexKey.length === 32) {
+    if (hexKey.length === 32 && hexKey.toString('hex').toLowerCase() === trimmedKey.toLowerCase()) {
         return hexKey;
     }
 
-    throw new Error('R2_BACKUP_ENCRYPTION_KEY must be a 32-byte base64 or hex value.');
+    throw new Error(`${label} must be a 32-byte base64 or hex value.`);
+}
+
+function validateOptionalR2BackupEncryptionKey(rawKey: string): void {
+    if (!rawKey.trim()) {
+        return;
+    }
+
+    try {
+        parseR2BackupEncryptionKey(rawKey, 'R2 backup encryption key');
+    } catch {
+        throw new Error('R2 备份加密密钥必须是 32 字节 base64 或 hex 值。');
+    }
 }
 
 function encryptBackupBody(body: string, key: Buffer): string {
@@ -585,7 +605,9 @@ function createR2BackupBody(payload: EditorBackupPayload): string {
     assertR2BackupBodyTextSize(body);
 
     if (key) {
-        return encryptBackupBody(body, key);
+        const encryptedBody = encryptBackupBody(body, key);
+        assertR2BackupBodyTextSize(encryptedBody);
+        return encryptedBody;
     }
 
     if (isPlaintextBackupAllowed()) {

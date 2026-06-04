@@ -101,6 +101,7 @@ describe('EditorLoginForm', () => {
     expect(loginInput).toBeNull();
     expect(setupTokenInput).toBeNull();
     expect(setupInput?.disabled).toBe(false);
+    expect(setupInput?.placeholder).toBe('至少 12 个字符');
     expect(confirmInput?.disabled).toBe(false);
     expect(submitButton?.disabled).toBe(true);
   });
@@ -134,9 +135,9 @@ describe('EditorLoginForm', () => {
     await act(async () => {
       valueSetter?.call(setupTokenInput, 'setup-token');
       setupTokenInput?.dispatchEvent(new Event('input', { bubbles: true }));
-      valueSetter?.call(setupInput, 'new-secret');
+      valueSetter?.call(setupInput, 'new-secret-12');
       setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
-      valueSetter?.call(confirmInput, 'new-secret');
+      valueSetter?.call(confirmInput, 'new-secret-12');
       confirmInput?.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
@@ -149,8 +150,8 @@ describe('EditorLoginForm', () => {
       expect.objectContaining({
         method: 'PUT',
         body: JSON.stringify({
-          secret: 'new-secret',
-          confirmSecret: 'new-secret',
+          secret: 'new-secret-12',
+          confirmSecret: 'new-secret-12',
           setupToken: 'setup-token',
         }),
       })
@@ -190,10 +191,10 @@ describe('EditorLoginForm', () => {
     expect(setupInput).toBe(document.activeElement);
     expect(setupInput?.getAttribute('aria-invalid')).toBe('true');
     expect(setupInput?.getAttribute('aria-describedby')).toBe('editor-setup-error');
-    expect(container.textContent).toContain('编辑口令至少需要 8 个字符。');
+    expect(container.textContent).toContain('编辑口令至少需要 12 个字符。');
 
     await act(async () => {
-      valueSetter?.call(setupInput, 'long-enough');
+      valueSetter?.call(setupInput, 'long-enough-12');
       setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
@@ -220,9 +221,9 @@ describe('EditorLoginForm', () => {
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
 
     await act(async () => {
-      valueSetter?.call(setupInput, 'new-secret');
+      valueSetter?.call(setupInput, 'new-secret-12');
       setupInput?.dispatchEvent(new Event('input', { bubbles: true }));
-      valueSetter?.call(confirmInput, 'new-secret');
+      valueSetter?.call(confirmInput, 'new-secret-12');
       confirmInput?.dispatchEvent(new Event('input', { bubbles: true }));
     });
 

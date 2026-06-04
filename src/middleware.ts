@@ -3,6 +3,7 @@ import {
     EDITOR_SESSION_COOKIE,
     getSafeEditorNextPath,
 } from '@/lib/editor-auth';
+import { getPublicRequestOrigin } from '@/lib/request-origin';
 
 const CSP_NONCE_HEADER = 'x-nonce';
 
@@ -85,7 +86,7 @@ export function middleware(request: NextRequest) {
     const sessionCookie = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
 
     if (!sessionCookie) {
-        const loginUrl = new URL('/editor/login', request.url);
+        const loginUrl = new URL('/editor/login', getPublicRequestOrigin(request));
         loginUrl.searchParams.set('next', getSafeEditorNextPath(`${pathname}${search}`));
         return setSecurityHeaders(NextResponse.redirect(loginUrl), securityHeaders);
     }

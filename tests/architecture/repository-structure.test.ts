@@ -98,6 +98,7 @@ describe('repository structure migration', () => {
         };
         const nextConfig = fs.readFileSync(resolveRepoPath('next.config.mjs'), 'utf8');
         const deployCompose = fs.readFileSync(resolveRepoPath('deploy', 'compose.prod.yaml'), 'utf8');
+        const deployScript = fs.readFileSync(resolveRepoPath('deploy', 'git-deploy.sh'), 'utf8');
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
         const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
@@ -145,6 +146,7 @@ describe('repository structure migration', () => {
         expect(dockerEntrypoint).toContain('exec su-exec nextjs "$@"');
         expect(localCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
         expect(localCompose).toContain('127.0.0.1:${APP_PORT:-3000}:3000');
+        expect(localCompose).toContain('NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}');
         expect(localCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
         expect(localCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
         expect(localCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
@@ -152,6 +154,7 @@ describe('repository structure migration', () => {
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
         expect(envExample).toContain('COOKIE_SECURE=false');
         expect(envExample).toContain('TRUSTED_PROXY_IPS=');
+        expect(envExample).toContain('NEXT_PUBLIC_SITE_URL=http://localhost:3000');
         expect(envExample).toContain('R2_BACKUP_ENCRYPTION_KEY=');
         expect(envExample).toContain('R2_ALLOW_PLAINTEXT_BACKUP=false');
         expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
@@ -178,11 +181,13 @@ describe('repository structure migration', () => {
         expect(nextConfig).not.toContain('unoptimized: true');
         expect(deployCompose).toContain('BLOG_DATA_ROOT: /var/lib/blog-navigation');
         expect(deployCompose).toContain('./data:/var/lib/blog-navigation');
+        expect(deployCompose).toContain('NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}');
         expect(deployCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
         expect(deployCompose).not.toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
         expect(deployCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
         expect(deployCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
         expect(deployCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
+        expect(deployScript).toContain('NEXT_PUBLIC_SITE_URL=');
         expect(deployWorkflow).toContain('# actions/checkout@v6');
         expect(deployWorkflow).toContain('# actions/setup-node@v6');
         expect(deployWorkflow).toContain('npm run check:env');
@@ -223,6 +228,8 @@ describe('repository structure migration', () => {
         expect(serverDocs).toContain('同一个数据目录');
         expect(serverDocs).toContain('openssl rand -base64 32');
         expect(serverDocs).toContain('COOKIE_SECURE=true');
+        expect(serverDocs).toContain('NEXT_PUBLIC_SITE_URL=https://your-domain.example');
+        expect(serverDocs).toContain('生成 metadata、robots 和 sitemap');
         expect(serverDocs).toContain('TRUSTED_PROXY_IPS');
         expect(serverDocs).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(migrationDocs).toContain('生产工具 URL 必须是 HTTPS');

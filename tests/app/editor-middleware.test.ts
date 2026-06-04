@@ -3,8 +3,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { config, middleware } from '@/middleware';
 import { EDITOR_SESSION_COOKIE } from '@/lib/editor-auth';
 
-function createEditorRequest(path: string, session?: string): NextRequest {
-  const headers = new Headers();
+const ORIGINAL_ENV = {
+  TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
+};
+
+function restoreEnv(): void {
+  if (ORIGINAL_ENV.TRUSTED_PROXY_IPS === undefined) {
+    delete process.env.TRUSTED_PROXY_IPS;
+  } else {
+    process.env.TRUSTED_PROXY_IPS = ORIGINAL_ENV.TRUSTED_PROXY_IPS;
+  }
+}
+
+function createEditorRequest(path: string, session?: string, headersInit?: HeadersInit): NextRequest {
+  const headers = new Headers(headersInit);
 
   if (session) {
     headers.set('Cookie', `${EDITOR_SESSION_COOKIE}=${session}`);
@@ -16,6 +28,7 @@ function createEditorRequest(path: string, session?: string): NextRequest {
 }
 
 afterEach(() => {
+  restoreEnv();
   vi.unstubAllGlobals();
 });
 
@@ -44,6 +57,38 @@ describe('editor middleware', () => {
     expect(response.status).toBe(307);
     expect(location).toBe('http://localhost/editor/login?next=%2Feditor%2Fsettings%3Ftab%3Dr2');
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
+  });
+
+  it('redirects unauthenticated editor requests to the public host header', () => {
+    const response = middleware(createEditorRequest(
+      '/editor/settings?tab=r2',
+      undefined,
+      { Host: 'public.example.com' }
+    ));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'http://public.example.com/editor/login?next=%2Feditor%2Fsettings%3Ftab%3Dr2'
+    );
+  });
+
+  it('redirects unauthenticated editor requests to trusted forwarded host and proto', () => {
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+
+    const response = middleware(createEditorRequest(
+      '/editor/settings?tab=r2',
+      undefined,
+      {
+        Host: 'localhost:3000',
+        'X-Forwarded-Host': 'public.example.com',
+        'X-Forwarded-Proto': 'https',
+      }
+    ));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://public.example.com/editor/login?next=%2Feditor%2Fsettings%3Ftab%3Dr2'
+    );
   });
 
   it('allows editor requests with a session cookie without internal HTTP calls', () => {

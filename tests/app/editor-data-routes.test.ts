@@ -24,6 +24,7 @@ const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
+  TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
 };
 const tempDirectories: string[] = [];
 
@@ -146,6 +147,34 @@ describe('editor data write APIs', () => {
 
     expect(response.status).toBe(403);
     expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('accepts authenticated writes from the trusted forwarded public origin', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const current = await (await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'))).json();
+    const authedRequest = await createAuthedEditorRequest('http://localhost/api/data/articles');
+    const headers = new Headers(authedRequest.headers);
+
+    headers.set('Origin', 'https://public.example.com');
+    headers.set('X-Forwarded-Host', 'public.example.com');
+    headers.set('X-Forwarded-Proto', 'https');
+    headers.set('Content-Type', 'application/json');
+
+    const response = await putArticles(new NextRequest('http://localhost/api/data/articles', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: current.revision,
+        articles: [createArticle('article-2', 'Forwarded Origin Article')],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledOnce();
   });
 
   it('adds a CSRF header to authenticated test write requests', async () => {

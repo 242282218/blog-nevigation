@@ -8,6 +8,7 @@ services:
     environment:
       NODE_ENV: production
       BLOG_DATA_ROOT: /var/lib/blog-navigation
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}

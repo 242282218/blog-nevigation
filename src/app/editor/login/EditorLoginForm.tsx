@@ -131,10 +131,10 @@ export function EditorLoginForm({
 
         const normalizedSecret = setupSecret.trim();
 
-        if (normalizedSecret.length < 8) {
+        if (normalizedSecret.length < 12) {
             const validationError = {
                 field: 'secret',
-                message: '编辑口令至少需要 8 个字符。',
+                message: '编辑口令至少需要 12 个字符。',
             } satisfies SetupValidationError;
 
             setSetupValidationError(validationError);
@@ -296,7 +296,7 @@ export function EditorLoginForm({
                                 aria-describedby={setupValidationError?.field === 'secret' ? 'editor-setup-error' : undefined}
                                 aria-invalid={setupValidationError?.field === 'secret'}
                                 className={`${editorInputClassName} px-4 py-3`}
-                                placeholder="至少 8 个字符"
+                                placeholder="至少 12 个字符"
                             />
                         </div>
 

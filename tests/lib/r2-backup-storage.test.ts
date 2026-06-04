@@ -11,6 +11,7 @@ import {
   getR2BackupConfig,
   getR2BackupStatus,
   R2BackupSettingsInvalidError,
+  R2BackupPayloadTooLargeError,
   saveEditableR2BackupSettings,
   uploadBackupPayloadToR2,
 } from '@/lib/r2-backup-storage';
@@ -321,6 +322,70 @@ describe('R2 backup configuration', () => {
     );
   });
 
+  it('persists and keeps a manually configured backup encryption key', () => {
+    clearR2Env();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const nextEncryptionKey = Buffer.alloc(32, 2).toString('base64');
+
+    saveEditableR2BackupSettings({
+      enabled: true,
+      accountId: '0123456789abcdef0123456789abcdef',
+      bucket: 'blog-data',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      backupEncryptionKey: nextEncryptionKey,
+      prefix: 'blog-navigation',
+      endpoint: '',
+      snapshotOnWrite: false,
+    });
+    saveEditableR2BackupSettings({
+      enabled: true,
+      accountId: '0123456789abcdef0123456789abcdef',
+      bucket: 'blog-data',
+      accessKeyId: 'next-access-key',
+      secretAccessKey: '',
+      backupEncryptionKey: '',
+      prefix: 'next-prefix',
+      endpoint: '',
+      snapshotOnWrite: false,
+    });
+
+    const settingsFile = getSettingsFile(process.env.BLOG_DATA_ROOT);
+    const storedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+
+    expect(storedSettings.backupEncryptionKey).toBe(nextEncryptionKey);
+    expect(getEditableR2BackupSettings()).toEqual(
+      expect.objectContaining({
+        hasBackupEncryptionKey: true,
+      })
+    );
+    expect(getR2BackupStatus()).toEqual(
+      expect.objectContaining({
+        configured: true,
+        hasEncryptionKey: true,
+      })
+    );
+  });
+
+  it('rejects malformed manually configured backup encryption keys before writing settings', () => {
+    clearR2Env();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    expect(() => saveEditableR2BackupSettings({
+      enabled: true,
+      accountId: '0123456789abcdef0123456789abcdef',
+      bucket: 'blog-data',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      backupEncryptionKey: 'not-a-valid-key',
+      prefix: 'blog-navigation',
+      endpoint: '',
+      snapshotOnWrite: false,
+    })).toThrow('R2 备份加密密钥');
+
+    expect(fs.existsSync(getSettingsFile(process.env.BLOG_DATA_ROOT))).toBe(false);
+  });
+
   it('does not copy the env secret into disabled file settings', () => {
     clearR2Env();
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
@@ -466,6 +531,50 @@ describe('R2 backup configuration', () => {
     expect(latestUploadedBody).not.toContain('Sensitive Draft');
     expect(latestUploadedBody).not.toContain('Private settings');
     await expect(downloadLatestBackupPayloadFromR2()).resolves.toEqual(payload);
+  });
+
+  it('rejects encrypted backup bodies that exceed the final R2 object size limit', async () => {
+    clearR2Env();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
+    process.env.R2_BUCKET = 'blog-data';
+    process.env.R2_ACCESS_KEY_ID = 'access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
+    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
+    const payload: EditorBackupPayload = {
+      version: 1,
+      exportedAt: '2026-05-26T00:00:00.000Z',
+      source: 'local',
+      persistent: true,
+      dataRoot: '/var/lib/blog-navigation',
+      data: {
+        articles: [
+          {
+            id: 'large-article',
+            title: 'Large Article',
+            date: '2026-05-26',
+            description: 'Large enough to exceed the encrypted envelope limit.',
+            tags: ['backup'],
+            content: 'x'.repeat(4 * 1024 * 1024),
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+        navigation: [],
+        settings: createDefaultSiteSettings(),
+      },
+      manifest: {
+        version: 1,
+        updatedAt: '2026-05-26T00:00:00.000Z',
+        resources: {},
+      },
+    };
+
+    await expect(uploadBackupPayloadToR2(payload, {
+      reason: 'manual-sync',
+      writeSnapshot: false,
+    })).rejects.toBeInstanceOf(R2BackupPayloadTooLargeError);
+    expect(sentCommands).toHaveLength(0);
   });
 
   it('uploads immutable snapshots before updating latest', async () => {

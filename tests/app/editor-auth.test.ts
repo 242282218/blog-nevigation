@@ -31,6 +31,7 @@ const ORIGINAL_ENV = {
   EDITOR_ALLOW_RUNTIME_AUTH_SETUP: process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP,
   EDITOR_RUNTIME_AUTH_SETUP_TOKEN: process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
+  COOKIE_SECURE: process.env.COOKIE_SECURE,
   TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
   SKIP_IP_VALIDATION: process.env.SKIP_IP_VALIDATION,
 };
@@ -400,6 +401,24 @@ describe('editor auth API', () => {
     expect(setCookie).not.toContain(legacySession);
   });
 
+  it('honors COOKIE_SECURE=false for production HTTP deployments', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    process.env.COOKIE_SECURE = 'false';
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+
+    const response = await POST(createJsonRequest(
+      { secret: 'correct-secret' },
+      { 'X-Forwarded-For': '198.51.100.10' }
+    ));
+    const setCookie = response.headers.get('set-cookie') ?? '';
+
+    expect(response.status).toBe(200);
+    expect(setCookie).toContain(`${EDITOR_SESSION_COOKIE}=`);
+    expect(setCookie).toContain(`${EDITOR_CSRF_COOKIE}=`);
+    expect(setCookie).not.toContain('Secure');
+  });
+
   it('rotates environment-token sessions and rejects legacy deterministic sessions', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
     const legacySession = await createLegacyEditorSessionValue('correct-secret');
@@ -522,6 +541,34 @@ describe('editor auth API', () => {
     const otherClientResponse = await POST(createJsonRequest(
       { secret: 'correct-secret' },
       { 'X-Forwarded-For': '198.51.100.200, 203.0.113.1' }
+    ));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(blockedResponse.headers.get('set-cookie')).toBeNull();
+    expect(otherClientResponse.status).toBe(200);
+    expect(otherClientResponse.headers.get('set-cookie')).toContain(`${EDITOR_SESSION_COOKIE}=`);
+  });
+
+  it('isolates login rate limiting with a single forwarded client IP behind a trusted proxy', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const response = await POST(createJsonRequest(
+        { secret: 'wrong-secret' },
+        { 'X-Forwarded-For': '198.51.100.10' }
+      ));
+
+      expect(response.status).toBe(401);
+    }
+
+    const blockedResponse = await POST(createJsonRequest(
+      { secret: 'correct-secret' },
+      { 'X-Forwarded-For': '198.51.100.10' }
+    ));
+    const otherClientResponse = await POST(createJsonRequest(
+      { secret: 'correct-secret' },
+      { 'X-Forwarded-For': '198.51.100.200' }
     ));
 
     expect(blockedResponse.status).toBe(429);

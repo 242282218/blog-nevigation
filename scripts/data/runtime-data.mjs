@@ -354,9 +354,25 @@ export function normalizeNavigation(navigation) {
   });
 }
 
+export function stableStringify(value) {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+
+  const entries = Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`);
+
+  return `{${entries.join(',')}}`;
+}
+
 export function hashJson(value) {
   return createHash('sha256')
-    .update(JSON.stringify(value))
+    .update(stableStringify(value))
     .digest('hex');
 }
 

@@ -40,6 +40,7 @@ function parseSettings(value: CloudflareR2RequestBody['settings']): EditableR2Ba
         bucket: asString(value.bucket),
         accessKeyId: asString(value.accessKeyId),
         secretAccessKey: asString(value.secretAccessKey),
+        backupEncryptionKey: asString(value.backupEncryptionKey),
         prefix: asString(value.prefix),
         endpoint: asString(value.endpoint),
         snapshotOnWrite: value.snapshotOnWrite === true,
@@ -139,6 +140,7 @@ export async function PUT(request: NextRequest) {
         const knownPrefixes = [
             '启用 R2 备份时必须填写',
             'Cloudflare R2 Endpoint',
+            'R2 备份加密密钥',
         ];
         const message = error instanceof Error && knownPrefixes.some((prefix) => error.message.startsWith(prefix))
             ? error.message

@@ -59,6 +59,7 @@ ensure_env_file() {
   cat > "${ENV_FILE}" <<'EOF'
 EDITOR_ACCESS_TOKEN=replace-with-a-long-random-secret
 APP_PORT=3000
+NEXT_PUBLIC_SITE_URL=
 COOKIE_SECURE=true
 R2_BACKUP_ENABLED=false
 EOF

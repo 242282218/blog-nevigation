@@ -58,6 +58,7 @@ type RemoteBackupActionResponse = {
 type CloudflareR2Form = Omit<CloudflareR2Settings, 'hasSecretAccessKey' | 'hasAccessKeyId' | 'hasBackupEncryptionKey'> & {
     accessKeyId: string;
     secretAccessKey: string;
+    backupEncryptionKey: string;
 };
 
 type CloudflareR2BootstrapForm = {
@@ -74,7 +75,7 @@ type CloudflareMessage = {
     text: string;
 };
 
-type CloudflareR2ValidationField = 'accountId' | 'bucket' | 'accessKeyId' | 'secretAccessKey';
+type CloudflareR2ValidationField = 'accountId' | 'bucket' | 'accessKeyId' | 'secretAccessKey' | 'backupEncryptionKey';
 type CloudflareR2BootstrapValidationField = 'authEmail' | 'globalApiKey' | 'accountId' | 'bucket';
 
 type CloudflareR2ValidationError = {
@@ -143,6 +144,7 @@ function createEmptyCloudflareR2Form(): CloudflareR2Form {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
+        backupEncryptionKey: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
@@ -167,6 +169,7 @@ function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
         bucket: settings?.bucket ?? '',
         accessKeyId: '',
         secretAccessKey: '',
+        backupEncryptionKey: '',
         prefix: settings?.prefix ?? 'blog-navigation',
         endpoint: settings?.endpoint ?? '',
         snapshotOnWrite: Boolean(settings?.snapshotOnWrite),
@@ -185,7 +188,9 @@ function toCloudflareR2BootstrapForm(settings?: CloudflareR2Settings): Cloudflar
 
 function validateCloudflareR2Form(
     form: CloudflareR2Form,
-    hasSecretAccessKey: boolean
+    hasSecretAccessKey: boolean,
+    hasBackupEncryptionKey: boolean,
+    allowsPlaintextBackup: boolean
 ): CloudflareR2ValidationError | null {
     if (!form.enabled) {
         return null;
@@ -205,6 +210,10 @@ function validateCloudflareR2Form(
 
     if (!form.secretAccessKey.trim() && !hasSecretAccessKey) {
         return { field: 'secretAccessKey', message: '请填写 R2 Secret Access Key。' };
+    }
+
+    if (!form.backupEncryptionKey.trim() && !hasBackupEncryptionKey && !allowsPlaintextBackup) {
+        return { field: 'backupEncryptionKey', message: '请填写或生成 R2 备份加密密钥。' };
     }
 
     return null;
@@ -235,6 +244,7 @@ const CLOUDFLARE_R2_FIELD_IDS: Record<CloudflareR2ValidationField, string> = {
     bucket: 'r2-bucket',
     accessKeyId: 'r2-access-key-id',
     secretAccessKey: 'r2-secret-access-key',
+    backupEncryptionKey: 'r2-backup-encryption-key',
 };
 const CLOUDFLARE_R2_BOOTSTRAP_FIELD_IDS: Record<CloudflareR2BootstrapValidationField, string> = {
     authEmail: 'r2-bootstrap-auth-email',
@@ -244,7 +254,15 @@ const CLOUDFLARE_R2_BOOTSTRAP_FIELD_IDS: Record<CloudflareR2BootstrapValidationF
 };
 
 function isCloudflareR2ValidationField(id: keyof CloudflareR2Form): id is CloudflareR2ValidationField {
-    return id === 'accountId' || id === 'bucket' || id === 'accessKeyId' || id === 'secretAccessKey';
+    return id === 'accountId' || id === 'bucket' || id === 'accessKeyId' || id === 'secretAccessKey' || id === 'backupEncryptionKey';
+}
+
+function createBackupEncryptionKey(): string {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+
+    return window.btoa(binary);
 }
 
 export function CloudflareR2SettingsPanel() {
@@ -252,6 +270,7 @@ export function CloudflareR2SettingsPanel() {
     const [bootstrapForm, setBootstrapForm] = useState<CloudflareR2BootstrapForm>(createEmptyCloudflareR2BootstrapForm);
     const [status, setStatus] = useState<CloudflareR2Status | null>(null);
     const [hasSecretAccessKey, setHasSecretAccessKey] = useState(false);
+    const [hasBackupEncryptionKey, setHasBackupEncryptionKey] = useState(false);
     const [persistent, setPersistent] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -282,6 +301,7 @@ export function CloudflareR2SettingsPanel() {
                     setForm(toCloudflareR2Form(payload?.settings));
                     setBootstrapForm(toCloudflareR2BootstrapForm(payload?.settings));
                     setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
+                    setHasBackupEncryptionKey(Boolean(payload?.settings?.hasBackupEncryptionKey));
                     setStatus(payload?.status ?? null);
                 }
             } catch (error) {
@@ -348,6 +368,10 @@ export function CloudflareR2SettingsPanel() {
         []
     );
 
+    const handleGenerateBackupEncryptionKey = useCallback(() => {
+        updateField('backupEncryptionKey', createBackupEncryptionKey());
+    }, [updateField]);
+
     const handleBootstrap = useCallback(async () => {
         const validationError = validateCloudflareR2BootstrapForm(bootstrapForm);
 
@@ -387,6 +411,7 @@ export function CloudflareR2SettingsPanel() {
                 globalApiKey: '',
             });
             setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
+            setHasBackupEncryptionKey(Boolean(payload?.settings?.hasBackupEncryptionKey));
             setStatus(payload?.status ?? null);
             setMessage({ tone: 'success', text: 'Cloudflare R2 已自动配置完成。' });
         } catch (error) {
@@ -404,7 +429,12 @@ export function CloudflareR2SettingsPanel() {
         async (event: React.FormEvent<HTMLFormElement>) => {
             event.preventDefault();
 
-            const validationError = validateCloudflareR2Form(form, hasSecretAccessKey);
+            const validationError = validateCloudflareR2Form(
+                form,
+                hasSecretAccessKey,
+                hasBackupEncryptionKey,
+                Boolean(status?.allowsPlaintextBackup)
+            );
 
             if (validationError) {
                 setFieldErrors({ [validationError.field]: validationError.message });
@@ -436,6 +466,7 @@ export function CloudflareR2SettingsPanel() {
 
                 setForm(toCloudflareR2Form(payload?.settings));
                 setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
+                setHasBackupEncryptionKey(Boolean(payload?.settings?.hasBackupEncryptionKey));
                 setStatus(payload?.status ?? null);
                 setMessage({ tone: 'success', text: 'Cloudflare R2 配置已保存。' });
             } catch (error) {
@@ -448,7 +479,7 @@ export function CloudflareR2SettingsPanel() {
                 setIsSaving(false);
             }
         },
-        [form, hasSecretAccessKey]
+        [form, hasBackupEncryptionKey, hasSecretAccessKey, status?.allowsPlaintextBackup]
     );
 
     const handleRemoteAction = useCallback(async (action: 'sync' | 'restore') => {
@@ -540,7 +571,7 @@ export function CloudflareR2SettingsPanel() {
                     </div>
                 ) : null}
 
-                <div className="mb-4 grid grid-cols-2 gap-3 rounded-token-card border border-border-soft bg-background p-3 text-sm md:grid-cols-4">
+                <div className="mb-4 grid grid-cols-2 gap-3 rounded-token-card border border-border-soft bg-background p-3 text-sm md:grid-cols-5">
                     <div>
                         <p className="font-mono text-xs text-subtle">status</p>
                         <p className="mt-1 text-muted">
@@ -561,6 +592,10 @@ export function CloudflareR2SettingsPanel() {
                         <p className="font-mono text-xs text-subtle">secret</p>
                         <p className="mt-1 text-muted">{hasSecretAccessKey ? '已保存' : '未保存'}</p>
                     </div>
+                    <div>
+                        <p className="font-mono text-xs text-subtle">encryption</p>
+                        <p className="mt-1 text-muted">{hasBackupEncryptionKey ? '已保存' : status?.allowsPlaintextBackup ? '明文模式' : '未保存'}</p>
+                    </div>
                 </div>
 
                 <div className="mb-4 rounded-token-card border border-border-soft bg-background p-3 text-sm leading-6 text-muted">
@@ -570,7 +605,7 @@ export function CloudflareR2SettingsPanel() {
                         <li>一键配置只会临时使用 Global API Key，最终只保存 bucket 专用 R2 凭证。</li>
                         <li>本站自定义：对象前缀、是否每次写入创建 snapshot；对象前缀可保留默认值。</li>
                         <li>通常留空：自定义 Endpoint。留空时系统会按 Account ID 自动生成 R2 endpoint。</li>
-                        <li>服务器环境配置：BLOG_DATA_ROOT 用于保存本页配置；手动配置时仍需提供 R2_BACKUP_ENCRYPTION_KEY，除非明确允许明文备份。</li>
+                        <li>服务器环境配置：BLOG_DATA_ROOT 用于保存本页配置；手动配置可在本页生成 R2 备份加密密钥。</li>
                     </ul>
                 </div>
 
@@ -709,6 +744,40 @@ export function CloudflareR2SettingsPanel() {
                                 error={fieldErrors.secretAccessKey}
                                 onChange={(value) => updateField('secretAccessKey', value)}
                             />
+                            <div>
+                                <label htmlFor="r2-backup-encryption-key" className="block text-sm font-medium text-fg">
+                                    备份加密密钥
+                                </label>
+                                <div className="mt-2 flex gap-2">
+                                    <input
+                                        id="r2-backup-encryption-key"
+                                        type="password"
+                                        value={form.backupEncryptionKey}
+                                        placeholder={hasBackupEncryptionKey ? '已保存，留空不变' : ''}
+                                        onChange={(event) => updateField('backupEncryptionKey', event.target.value)}
+                                        aria-invalid={Boolean(fieldErrors.backupEncryptionKey)}
+                                        aria-describedby="r2-backup-encryption-key-description"
+                                        className={editorInputClassName}
+                                    />
+                                    <EditorButton
+                                        type="button"
+                                        onClick={handleGenerateBackupEncryptionKey}
+                                        disabled={isLoading || isSaving || isRemoteBusy || isBootstrapping}
+                                        className="shrink-0"
+                                    >
+                                        生成
+                                    </EditorButton>
+                                </div>
+                                <p
+                                    id="r2-backup-encryption-key-description"
+                                    className={`mt-1.5 text-xs leading-5 ${fieldErrors.backupEncryptionKey ? 'text-error-600' : 'text-subtle'}`}
+                                    role={fieldErrors.backupEncryptionKey ? 'alert' : undefined}
+                                >
+                                    {fieldErrors.backupEncryptionKey || (hasBackupEncryptionKey
+                                        ? '已保存加密密钥；留空会继续使用已保存值。'
+                                        : '点击生成 32 字节 base64 密钥，或粘贴 32 字节 base64/hex 密钥。')}
+                                </p>
+                            </div>
                             <TextField
                                 id="r2-prefix"
                                 label="对象前缀"

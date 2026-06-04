@@ -178,6 +178,35 @@ describe('search API', () => {
     expect(otherClientResponse.status).toBe(200);
   });
 
+  it('rate limits search scans with a single forwarded client IP behind a trusted proxy', async () => {
+    process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
+    mockedGetPostsAsync.mockResolvedValue([
+      createPost({
+        slug: 'search-post',
+        slugArray: ['search-post'],
+        title: 'Search Post',
+      }),
+    ]);
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([]);
+
+    for (let index = 0; index < 30; index += 1) {
+      const response = await GET(createRequest('search', {
+        'X-Forwarded-For': '198.51.100.10',
+      }));
+      expect(response.status).toBe(200);
+    }
+
+    const blockedResponse = await GET(createRequest('search', {
+      'X-Forwarded-For': '198.51.100.10',
+    }));
+    const otherClientResponse = await GET(createRequest('search', {
+      'X-Forwarded-For': '198.51.100.200',
+    }));
+
+    expect(blockedResponse.status).toBe(429);
+    expect(otherClientResponse.status).toBe(200);
+  });
+
   it('requires trusted proxy configuration for search rate limiting in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     delete process.env.TRUSTED_PROXY_IPS;

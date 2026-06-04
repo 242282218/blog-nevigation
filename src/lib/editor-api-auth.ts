@@ -14,6 +14,7 @@ import {
     EditorDataFileInvalidError,
     EditorDataLockTimeoutError,
 } from '@/lib/editor-data-storage';
+import { getPublicRequestOrigin } from '@/lib/request-origin';
 
 export const EDITOR_AUTH_CONFIG_INVALID_MESSAGE = '编辑口令配置文件损坏，请修复或删除后重试。';
 
@@ -33,7 +34,7 @@ function isSameOriginEditorRequest(request: NextRequest): boolean {
         return false;
     }
 
-    return origin === request.nextUrl.origin;
+    return origin === getPublicRequestOrigin(request);
 }
 
 function isValidEditorCsrfToken(request: NextRequest): boolean {
