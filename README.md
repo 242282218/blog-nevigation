@@ -2,135 +2,196 @@
 
 [![Docker Build & Publish](https://github.com/242282218/blog-nevigation/actions/workflows/docker-deploy.yml/badge.svg?branch=main)](https://github.com/242282218/blog-nevigation/actions/workflows/docker-deploy.yml)
 
-本项目生产发布只依赖 Docker 镜像。推送 `main` 后，GitHub Actions 会构建并发布镜像到 GHCR；服务器后续只需要 `docker pull` 和 `docker run` 获取版本更新。
-
-## 镜像
-
-默认使用最新稳定镜像：
-
-```text
-ghcr.io/242282218/blog-nevigation:latest
-```
-
-推送 `main` 后，GitHub Actions 会写入这些日常更新标签：
-
-```text
-ghcr.io/242282218/blog-nevigation:latest
-ghcr.io/242282218/blog-nevigation:main
-ghcr.io/242282218/blog-nevigation:main-<7-char-sha>
-ghcr.io/242282218/blog-nevigation:v<package-version>-build.<run-number>
-```
-
-推送 Git tag `v<package-version>` 后，才会发布稳定版本标签：
-
-```text
-ghcr.io/242282218/blog-nevigation:v<package-version>
-```
-
-日常更新用 `latest`。需要回滚或锁定生产版本时，改用 `v<package-version>`、`main-<sha>`、`v<package-version>-build.<run-number>` 或镜像 digest。
-
-## 首次部署
-
-服务器需要 Docker、`curl`、`openssl`，以及一个反向代理负责公网 HTTPS。下面命令默认只监听本机 `127.0.0.1:3000`，适合放在 Nginx、Caddy 或 Cloudflare Tunnel 后面。
+GHCR 镜像已公开，可以直接拉取：
 
 ```bash
+docker pull ghcr.io/242282218/blog-nevigation:latest
+```
+
+下面命令在 Linux 服务器用 `root` 复制粘贴执行即可。脚本会自动安装 Docker、拉取 `latest` 镜像、生成登录口令、创建数据目录，并用 `docker run` 启动服务。
+
+## 一键部署
+
+```bash
+sh -s <<'EOF'
+set -eu
+
 APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
+APP_PORT=3000
 
-mkdir -p "${APP_DIR}/data"
-cd "${APP_DIR}"
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请切换 root 后重新执行。"
+  exit 1
+fi
 
-EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
+install_base_tools() {
+  if command -v curl >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+    return
+  fi
 
-cat > "${APP_DIR}/.env" <<EOF
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y curl openssl ca-certificates
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y curl openssl ca-certificates
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y curl openssl ca-certificates
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache curl openssl ca-certificates
+  else
+    echo "请先安装 curl、openssl、ca-certificates。"
+    exit 1
+  fi
+}
+
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    return
+  fi
+
+  curl -fsSL https://get.docker.com | sh
+}
+
+start_docker() {
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now docker >/dev/null 2>&1 || true
+  elif command -v service >/dev/null 2>&1; then
+    service docker start >/dev/null 2>&1 || true
+  fi
+}
+
+detect_public_ip() {
+  PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org || true)"
+
+  if [ -z "${PUBLIC_IP}" ]; then
+    PUBLIC_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+  fi
+
+  if [ -z "${PUBLIC_IP}" ]; then
+    PUBLIC_IP=127.0.0.1
+  fi
+}
+
+create_env_file() {
+  mkdir -p "${APP_DIR}/data"
+
+  if [ -f "${APP_DIR}/.env" ]; then
+    chmod 600 "${APP_DIR}/.env"
+    return
+  fi
+
+  EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32 | tr -d '\n')"
+  SITE_URL="http://${PUBLIC_IP}:${APP_PORT}"
+
+  cat > "${APP_DIR}/.env" <<ENVEOF
 EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
-NEXT_PUBLIC_SITE_URL=https://your-domain.example
-COOKIE_SECURE=true
+NEXT_PUBLIC_SITE_URL=${SITE_URL}
+COOKIE_SECURE=false
 TRUSTED_PROXY_IPS=
 R2_BACKUP_ENABLED=false
+ENVEOF
+  chmod 600 "${APP_DIR}/.env"
+}
+
+run_container() {
+  docker pull "${IMAGE}"
+  docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker run -d \
+    --name "${CONTAINER_NAME}" \
+    --restart unless-stopped \
+    --init \
+    --env-file "${APP_DIR}/.env" \
+    -p "${APP_PORT}:3000" \
+    -v "${APP_DIR}/data:/var/lib/blog-navigation" \
+    "${IMAGE}"
+}
+
+print_result() {
+  SITE_URL="$(grep '^NEXT_PUBLIC_SITE_URL=' "${APP_DIR}/.env" | cut -d= -f2-)"
+  EDITOR_ACCESS_TOKEN="$(grep '^EDITOR_ACCESS_TOKEN=' "${APP_DIR}/.env" | cut -d= -f2-)"
+
+  echo
+  echo "部署完成"
+  echo "访问地址：${SITE_URL}"
+  echo "编辑器地址：${SITE_URL}/editor"
+  echo "编辑器登录口令：${EDITOR_ACCESS_TOKEN}"
+  echo "配置文件：${APP_DIR}/.env"
+  echo "数据目录：${APP_DIR}/data"
+  echo
+  docker ps --filter "name=${CONTAINER_NAME}"
+}
+
+install_base_tools
+install_docker
+start_docker
+detect_public_ip
+create_env_file
+run_container
+print_result
 EOF
-chmod 600 "${APP_DIR}/.env"
-
-docker pull "${IMAGE}"
-docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
-docker run -d \
-  --name "${CONTAINER_NAME}" \
-  --restart unless-stopped \
-  --init \
-  --env-file "${APP_DIR}/.env" \
-  -p 127.0.0.1:3000:3000 \
-  -v "${APP_DIR}/data:/var/lib/blog-navigation" \
-  "${IMAGE}"
 ```
 
-如果要直接暴露端口，不走本机反向代理，把端口参数改成：
+默认访问地址是：
 
-```bash
--p 3000:3000
+```text
+http://服务器公网IP:3000
 ```
 
-如果 GHCR 包不是 public，先登录：
+安全组或防火墙需要放行 `3000/tcp`。
+
+## 更新 latest
+
+后续更新直接复制粘贴执行下面整段，会保留 `/opt/blog-nevigation/.env` 和 `/opt/blog-nevigation/data`：
 
 ```bash
-echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-```
+sh -s <<'EOF'
+set -eu
 
-## 更新到最新版本
-
-重复执行下面命令即可拉取最新 `latest` 并重建容器。`data/` 挂载目录不会被删除。
-
-```bash
 APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
+APP_PORT=3000
 
+if [ "$(id -u)" -ne 0 ]; then
+  echo "请切换 root 后重新执行。"
+  exit 1
+fi
+
+if [ ! -f "${APP_DIR}/.env" ]; then
+  echo "缺少 ${APP_DIR}/.env，请先执行一键部署。"
+  exit 1
+fi
+
+mkdir -p "${APP_DIR}/data"
 docker pull "${IMAGE}"
-docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --restart unless-stopped \
   --init \
   --env-file "${APP_DIR}/.env" \
-  -p 127.0.0.1:3000:3000 \
+  -p "${APP_PORT}:3000" \
   -v "${APP_DIR}/data:/var/lib/blog-navigation" \
   "${IMAGE}"
 
 docker image prune -f
+docker ps --filter "name=${CONTAINER_NAME}"
+EOF
 ```
 
-## 固定版本或回滚
-
-把 `IMAGE` 改成目标版本即可。
+## 查看口令
 
 ```bash
-IMAGE=ghcr.io/242282218/blog-nevigation:v2.0.1
+grep '^EDITOR_ACCESS_TOKEN=' /opt/blog-nevigation/.env
 ```
 
-也可以使用 GitHub Actions 输出的 digest：
+## R2 备份
 
-```bash
-IMAGE=ghcr.io/242282218/blog-nevigation@sha256:<digest>
-```
+R2 备份启动后在 `/editor/settings` 里配置。保存后配置文件位于 `/opt/blog-nevigation/data/settings/cloudflare-r2.json`，它会完整优先于 `.env` 中的 R2 变量。
 
-然后重新执行“更新到最新版本”里的 `docker pull`、`docker rm -f`、`docker run` 命令。
-
-## 发布稳定版本
-
-普通 `main` 提交只更新 `latest` 和构建标签。需要发布稳定版本时，确保 `package.json` 版本号已经是目标版本，然后推送同名 Git tag：
-
-```bash
-git tag v2.0.1
-git push origin v2.0.1
-```
-
-GitHub Actions 会校验 Git tag 必须匹配 `package.json` 版本号。校验通过后才发布：
-
-```text
-ghcr.io/242282218/blog-nevigation:v2.0.1
-```
-
-## 常用管理命令
+## 常用管理
 
 ```bash
 docker ps --filter name=blog-navigation
@@ -146,56 +207,37 @@ curl -I http://127.0.0.1:3000/
 docker rm -f blog-navigation
 ```
 
-备份运行时数据：
+备份数据和配置：
 
 ```bash
 tar -C /opt/blog-nevigation -czf blog-navigation-data.tgz data .env
 ```
 
-## 环境变量
+恢复数据和配置：
 
-必须按生产环境修改：
-
-```env
-EDITOR_ACCESS_TOKEN=<long-random-secret>
-NEXT_PUBLIC_SITE_URL=https://your-domain.example
-COOKIE_SECURE=true
-TRUSTED_PROXY_IPS=
-R2_BACKUP_ENABLED=false
+```bash
+mkdir -p /opt/blog-nevigation
+tar -C /opt/blog-nevigation -xzf blog-navigation-data.tgz
 ```
 
-`NEXT_PUBLIC_SITE_URL` 填公网访问地址，用于 metadata、robots 和 sitemap。公网 HTTPS 环境保持 `COOKIE_SECURE=true`；只有本地或临时 HTTP 测试才设为 `false`。
+## 固定版本
 
-`TRUSTED_PROXY_IPS` 填直接连接应用容器的反向代理 IP。配置后，登录和搜索限流才会信任 `X-Forwarded-*` 请求头。
+默认使用：
 
-## 可选 R2 备份
-
-R2 只是远端灾备镜像，服务器本地 `/opt/blog-nevigation/data` 仍是主数据源。需要用环境变量启用时，把下面内容追加到 `.env`：
-
-```env
-R2_BACKUP_ENABLED=true
-R2_ACCOUNT_ID=<cloudflare-account-id>
-R2_BUCKET=<bucket>
-R2_ACCESS_KEY_ID=<r2-access-key-id>
-R2_SECRET_ACCESS_KEY=<r2-secret-access-key>
-R2_PREFIX=blog-navigation
-R2_SNAPSHOT_ON_WRITE=false
-R2_BACKUP_ENCRYPTION_KEY=<32-byte-base64-or-hex-key>
-R2_ALLOW_PLAINTEXT_BACKUP=false
+```text
+ghcr.io/242282218/blog-nevigation:latest
 ```
 
-也可以在 `/editor/settings` 保存 R2 配置。保存后，`/opt/blog-nevigation/data/settings/cloudflare-r2.json` 会完整优先于 `.env` 中的 R2 变量。
+如果要固定版本，把部署脚本或更新脚本里的 `IMAGE` 改成指定标签或 digest：
 
-## 发布入口
+```bash
+IMAGE=ghcr.io/242282218/blog-nevigation:v2.0.1
+IMAGE=ghcr.io/242282218/blog-nevigation@sha256:<digest>
+```
 
-Docker 发布记录查看：
+## 发布记录
 
 ```text
 https://github.com/242282218/blog-nevigation/actions/workflows/docker-deploy.yml
-```
-
-镜像包地址：
-
-```text
 https://github.com/242282218/blog-nevigation/pkgs/container/blog-nevigation
 ```
