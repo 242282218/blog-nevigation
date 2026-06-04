@@ -10,6 +10,16 @@ docker pull ghcr.io/242282218/blog-nevigation:latest
 
 下面命令在 Linux 服务器用 `root` 复制粘贴执行即可。脚本会自动安装 Docker、拉取 `latest` 镜像、生成登录口令、创建数据目录，并用 `docker run` 启动服务。
 
+端口规则固定为：
+
+```text
+服务器对外端口：7199
+容器内部端口：3000
+docker run 映射：-p 7199:3000
+```
+
+不要使用旧命令 `-p 3000:3000`。如果 Docker 报 `Bind for 0.0.0.0:3000 failed: port is already allocated`，说明运行的还是旧端口命令，直接复制下面“一键部署”或“更新 latest”脚本重新执行。
+
 ## 一键部署
 
 ```bash
@@ -210,6 +220,59 @@ docker logs --tail=100 blog-navigation
 docker restart blog-navigation
 docker inspect --format '{{.Config.Image}} {{.Image}}' blog-navigation
 curl -I http://127.0.0.1:7199/
+```
+
+## 端口冲突修复
+
+如果出现下面错误：
+
+```text
+Bind for 0.0.0.0:3000 failed: port is already allocated
+```
+
+原因是运行了旧命令 `-p 3000:3000`。本项目现在固定使用宿主机 `7199`，容器内部仍是 `3000`。直接复制执行：
+
+```bash
+set -eu
+
+APP_DIR=/opt/blog-nevigation
+CONTAINER_NAME=blog-navigation
+IMAGE=ghcr.io/242282218/blog-nevigation:latest
+APP_PORT=7199
+
+mkdir -p "${APP_DIR}/data"
+
+if [ ! -f "${APP_DIR}/.env" ]; then
+  EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32 | tr -d '\n')"
+  PUBLIC_IP="$(curl -fsS --max-time 5 https://api.ipify.org || hostname -I | awk '{print $1}')"
+
+  cat > "${APP_DIR}/.env" <<EOF
+EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
+NEXT_PUBLIC_SITE_URL=http://${PUBLIC_IP}:${APP_PORT}
+COOKIE_SECURE=false
+TRUSTED_PROXY_IPS=
+R2_BACKUP_ENABLED=false
+EOF
+  chmod 600 "${APP_DIR}/.env"
+fi
+
+if grep -q '^NEXT_PUBLIC_SITE_URL=http://.*:3000$' "${APP_DIR}/.env"; then
+  sed -i "s#^\(NEXT_PUBLIC_SITE_URL=http://.*\):3000\$#\1:${APP_PORT}#" "${APP_DIR}/.env"
+fi
+
+docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+docker pull "${IMAGE}"
+docker run -d \
+  --name "${CONTAINER_NAME}" \
+  --restart unless-stopped \
+  --init \
+  --env-file "${APP_DIR}/.env" \
+  -p "${APP_PORT}:3000" \
+  -v "${APP_DIR}/data:/var/lib/blog-navigation" \
+  "${IMAGE}"
+
+docker ps --filter "name=${CONTAINER_NAME}"
+curl -I "http://127.0.0.1:${APP_PORT}/"
 ```
 
 停止服务：
