@@ -68,11 +68,108 @@ npm run data:import -- ./output/blog-navigation-backup.json ./data
 npm run data:verify -- ./data
 ```
 
-## 部署与备份
+## Docker 部署教程
 
-推荐部署方式是推送 `main` 后由 GitHub Actions 构建并发布 GHCR 镜像，服务器通过 `deploy/git-deploy.sh` 拉取部署文件和镜像。服务器不需要执行 `npm install`、`npm run build` 或 `docker build`。
+生产发布以 Docker 镜像为准。推送 `main` 后，GitHub Actions 构建镜像并发布到 GHCR；服务器只执行 `docker compose pull` 和 `docker compose up -d`。生产服务器不需要安装 Node.js 依赖，也不需要执行 `npm run build` 或 `docker build`。
 
-Cloudflare R2 备份以服务器本地 `BLOG_DATA_ROOT` 为主数据源。`/editor/settings` 中的 `data/settings/cloudflare-r2.json` 一旦存在，会完整优先于 `.env` 中的 R2 变量。启用 R2 时默认要求配置 `R2_BACKUP_ENCRYPTION_KEY`。
+发布链路：
+
+```text
+git push origin main
+  -> GitHub Actions: Docker Build & Publish
+  -> ghcr.io/242282218/blog-nevigation
+  -> server: docker compose pull
+  -> server: docker compose up -d
+```
+
+### 1. GitHub 发布 Docker 镜像
+
+推送到 `main` 后，等待 GitHub Actions 的 `Docker Build & Publish` 成功。成功后 GHCR 会发布这些标签：
+
+```text
+ghcr.io/242282218/blog-nevigation:latest
+ghcr.io/242282218/blog-nevigation:main
+ghcr.io/242282218/blog-nevigation:main-<7-char-sha>
+ghcr.io/242282218/blog-nevigation:v<package-version>
+ghcr.io/242282218/blog-nevigation:v<package-version>-build.<run-number>
+```
+
+简单部署可以使用 `latest` 或 `main`。更稳妥的生产部署建议把 `.env` 里的 `DEPLOY_IMAGE` 固定为 `v<package-version>`、`main-<7-char-sha>` 或 `@sha256:<digest>`，避免镜像标签漂移。
+
+### 2. 首次 Docker 部署
+
+服务器只需要 Docker、Docker Compose plugin，以及 `curl` 或 `wget`。
+
+```bash
+mkdir -p /opt/blog-nevigation/data
+cd /opt/blog-nevigation
+
+curl -fsSL https://raw.githubusercontent.com/242282218/blog-nevigation/main/deploy/compose.prod.yaml \
+  -o compose.yaml
+
+EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32)"
+
+cat > .env <<EOF
+DEPLOY_IMAGE=ghcr.io/242282218/blog-nevigation:latest
+EDITOR_ACCESS_TOKEN=${EDITOR_ACCESS_TOKEN}
+APP_PORT=3000
+NEXT_PUBLIC_SITE_URL=https://your-domain.example
+COOKIE_SECURE=true
+TRUSTED_PROXY_IPS=
+R2_BACKUP_ENABLED=false
+EOF
+
+docker compose --env-file .env -f compose.yaml pull
+docker compose --env-file .env -f compose.yaml up -d
+```
+
+如果 GHCR package 不是 public，先在服务器登录 GHCR：
+
+```bash
+echo "YOUR_GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+`NEXT_PUBLIC_SITE_URL` 必须填写生产公网地址，用于 metadata、robots 和 sitemap。本地或纯 HTTP 内网测试可以临时设置 `COOKIE_SECURE=false`，公网 HTTPS 环境必须保持 `COOKIE_SECURE=true`。
+
+`TRUSTED_PROXY_IPS` 填应用前一层反向代理的直接来源 IP。配置后，登录和搜索限流才会信任 `X-Forwarded-*` 头。只有容器直接接收客户端流量时才留空。
+
+### 3. 发布新 Docker 版本
+
+如果 `.env` 使用 `latest` 或 `main` 浮动标签，更新流程是：
+
+```bash
+cd /opt/blog-nevigation
+docker compose --env-file .env -f compose.yaml pull
+docker compose --env-file .env -f compose.yaml up -d --force-recreate
+docker image prune -f
+```
+
+如果 `.env` 固定了版本标签，先改 `DEPLOY_IMAGE`，再拉取和重启：
+
+```bash
+cd /opt/blog-nevigation
+sed -i 's#^DEPLOY_IMAGE=.*#DEPLOY_IMAGE=ghcr.io/242282218/blog-nevigation:v2.0.1#' .env
+docker compose --env-file .env -f compose.yaml pull
+docker compose --env-file .env -f compose.yaml up -d --force-recreate
+```
+
+### 4. 部署后检查
+
+```bash
+cd /opt/blog-nevigation
+docker compose --env-file .env -f compose.yaml ps
+docker compose --env-file .env -f compose.yaml logs --tail=100 app
+HEALTHCHECK_PORT=$(docker compose --env-file .env -f compose.yaml port app 3000 | awk -F: 'END {print $NF}')
+curl -I "http://127.0.0.1:${HEALTHCHECK_PORT:-3000}/"
+```
+
+成功标准：容器处于运行状态，日志没有持续重启或配置错误，公开页面可访问，`/editor` 可登录。
+
+### 5. 数据和备份
+
+生产运行时数据在服务器部署目录的 `./data`，容器内路径是 `/var/lib/blog-navigation`。迁移服务器时，至少备份 `.env` 和 `data/`。
+
+Cloudflare R2 只是远端灾备镜像，本地 `BLOG_DATA_ROOT` 仍是主数据源。`/editor/settings` 保存的 `data/settings/cloudflare-r2.json` 一旦存在，会完整优先于 `.env` 中的 R2 变量。启用 R2 时默认要求配置 `R2_BACKUP_ENCRYPTION_KEY`，或在设置页生成/保存备份加密密钥。
 
 详细文档：
 
