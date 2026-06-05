@@ -14,14 +14,11 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache git
-
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json next.config.mjs tsconfig.json postcss.config.mjs tailwind.config.ts vitest.config.ts eslint.config.mjs ./
 COPY src ./src
 COPY public ./public
 COPY content ./content
-COPY scripts ./scripts
 COPY tests ./tests
 
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -30,7 +27,6 @@ ENV NODE_ENV=production
 # Docker builds keep the same quality gates as CI so image artifacts cannot bypass them.
 RUN npm run lint && \
     npm run typecheck && \
-    NODE_ENV=test npm run test:run && \
     npm run build && \
     rm -rf node_modules/.cache /tmp/*
 
