@@ -54,7 +54,38 @@ jobs:
           set -euo pipefail
 
           mkdir -p output
-          PORT=3210 HOSTNAME=127.0.0.1 EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false TRUSTED_PROXY_IPS='*' setsid npm run start > output/ui-smoke-server.log 2>&1 &
+          SMOKE_DATA_ROOT="${PWD}/.tmp/ui-smoke-data"
+          export SMOKE_DATA_ROOT
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const root = process.env.SMOKE_DATA_ROOT;
+          const now = new Date().toISOString();
+
+          fs.mkdirSync(path.join(root, 'articles'), { recursive: true });
+          fs.mkdirSync(path.join(root, 'navigation'), { recursive: true });
+          fs.mkdirSync(path.join(root, 'settings'), { recursive: true });
+          fs.writeFileSync(
+            path.join(root, 'settings', 'app-runtime.json'),
+            `${JSON.stringify({
+              version: 1,
+              setupCompletedAt: now,
+              publicSiteUrl: 'http://127.0.0.1:3210',
+              cookieSecure: false,
+              trustedProxyIps: ['*'],
+              dataRoot: {
+                path: root,
+                pendingPath: null,
+                requiresRestart: false,
+              },
+              updatedAt: now,
+            }, null, 2)}\n`,
+            'utf8'
+          );
+          NODE
+
+          PORT=3210 HOSTNAME=127.0.0.1 BLOG_DATA_ROOT="${SMOKE_DATA_ROOT}" EDITOR_ACCESS_TOKEN=ci-smoke-secret COOKIE_SECURE=false TRUSTED_PROXY_IPS='*' setsid npm run start > output/ui-smoke-server.log 2>&1 &
           server_pid=$!
 
           cleanup() {
