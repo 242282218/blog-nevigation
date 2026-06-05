@@ -27,7 +27,7 @@ ENV NODE_ENV=production
 # Docker builds keep the same quality gates as CI so image artifacts cannot bypass them.
 RUN npm run lint && \
     npm run typecheck && \
-    npm run test:run && \
+    NODE_ENV=test npm run test:run && \
     npm run build && \
     rm -rf node_modules/.cache /tmp/*
 
