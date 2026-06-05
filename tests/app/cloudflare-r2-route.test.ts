@@ -24,6 +24,7 @@ const ORIGINAL_ENV = {
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
   R2_BACKUP_ENCRYPTION_KEY: process.env.R2_BACKUP_ENCRYPTION_KEY,
 };
+const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
 
 function resetEnv(): void {
@@ -65,6 +66,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   resetEnv();
+  process.chdir(ORIGINAL_CWD);
   cleanupTempDirectories(tempDirectories);
 });
 
@@ -90,10 +92,13 @@ describe('Cloudflare R2 settings API', () => {
     expect(putResponse.status).toBe(401);
   });
 
-  it('requires BLOG_DATA_ROOT before saving settings', async () => {
+  it('saves settings to the default data directory when BLOG_DATA_ROOT is missing', async () => {
     clearR2Env();
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     delete process.env.BLOG_DATA_ROOT;
+    const tempProjectRoot = createTempDirectory('blog-navigation-r2-default-root-');
+    tempDirectories.push(tempProjectRoot);
+    process.chdir(tempProjectRoot);
 
     const response = await PUT(
       await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
@@ -113,12 +118,16 @@ describe('Cloudflare R2 settings API', () => {
       })
     );
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     expect(await response.json()).toEqual(
       expect.objectContaining({
-        message: expect.stringContaining('BLOG_DATA_ROOT'),
+        success: true,
+        settings: expect.objectContaining({
+          enabled: false,
+        }),
       })
     );
+    expect(fs.existsSync(path.join(tempProjectRoot, 'data', 'settings', 'cloudflare-r2.json'))).toBe(true);
   });
 
   it('rejects malformed or non-object settings without writing a settings file', async () => {

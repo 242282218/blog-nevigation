@@ -11,6 +11,7 @@ import {
     parseSiteSettings,
     type SiteSettings,
 } from '@/lib/site-settings';
+import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 import { resetEditorRuntimeCaches } from '@/lib/editor-runtime-cache';
 import {
     EditorDataLockTimeoutError,
@@ -59,7 +60,7 @@ export type EditorDataResourceWriteResult<T> =
 
 export class EditorDataRootNotConfiguredError extends Error {
     constructor() {
-        super('BLOG_DATA_ROOT is not configured.');
+        super('Runtime data root is not configured.');
         this.name = 'EditorDataRootNotConfiguredError';
     }
 }
@@ -708,12 +709,11 @@ function getManifestProblems(
 }
 
 export function getEditorDataRoot(): string | null {
-    const configured = process.env.BLOG_DATA_ROOT?.trim();
-    return configured && configured.length > 0 ? configured : null;
+    return getRuntimeDataRootPath();
 }
 
 export function isEditorDataRootConfigured(): boolean {
-    return Boolean(getEditorDataRoot());
+    return true;
 }
 
 export function getArticlesDataFilePath(): string | null {

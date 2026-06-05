@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createArticleSlug } from '@/lib/article-data';
 import {
     EditorDataFileInvalidError,
-    EditorDataRootNotConfiguredError,
     getDefaultNavigationSeedFilePath,
     getEditorDataRoot,
     getEditorDataResourceManifest,
@@ -27,6 +26,7 @@ import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 import type { Article } from '@/app/types/article';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
+const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
 
 function createTempDataRoot(): string {
@@ -74,17 +74,22 @@ afterEach(() => {
         process.env.BLOG_DATA_ROOT = ORIGINAL_BLOG_DATA_ROOT;
     }
 
+    process.chdir(ORIGINAL_CWD);
+
     while (tempDirectories.length > 0) {
         fs.rmSync(tempDirectories.pop() as string, { recursive: true, force: true });
     }
 });
 
 describe('editor data storage configuration', () => {
-    it('does not bind to an external absolute directory when BLOG_DATA_ROOT is missing', () => {
+    it('uses project data as the default runtime directory when BLOG_DATA_ROOT is missing', () => {
         delete process.env.BLOG_DATA_ROOT;
+        const tempProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-default-root-'));
+        tempDirectories.push(tempProjectRoot);
+        process.chdir(tempProjectRoot);
 
-        expect(getEditorDataRoot()).toBeNull();
-        expect(isEditorDataRootConfigured()).toBe(false);
+        expect(getEditorDataRoot()).toBe(path.join(tempProjectRoot, 'data'));
+        expect(isEditorDataRootConfigured()).toBe(true);
     });
 
     it('keeps committed navigation seed data under content/seeds', () => {
@@ -93,10 +98,15 @@ describe('editor data storage configuration', () => {
         expect(getDefaultNavigationSeedFilePath()).toContain('navigation');
     });
 
-    it('fails writes explicitly when BLOG_DATA_ROOT is missing', async () => {
+    it('writes to the default runtime directory when BLOG_DATA_ROOT is missing', async () => {
         delete process.env.BLOG_DATA_ROOT;
+        const tempProjectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-default-write-'));
+        tempDirectories.push(tempProjectRoot);
+        process.chdir(tempProjectRoot);
 
-        await expect(writeArticlesToDisk([])).rejects.toThrow(EditorDataRootNotConfiguredError);
+        await writeArticlesToDisk([]);
+
+        expect(fs.existsSync(path.join(tempProjectRoot, 'data', 'articles', 'articles.json'))).toBe(true);
     });
 
     it('falls back to default site settings when runtime settings are missing', () => {

@@ -605,7 +605,7 @@ export function CloudflareR2SettingsPanel() {
                         <li>一键配置只会临时使用 Global API Key，最终只保存 bucket 专用 R2 凭证。</li>
                         <li>本站自定义：对象前缀、是否每次写入创建 snapshot；对象前缀可保留默认值。</li>
                         <li>通常留空：自定义 Endpoint。留空时系统会按 Account ID 自动生成 R2 endpoint。</li>
-                        <li>服务器环境配置：BLOG_DATA_ROOT 用于保存本页配置；手动配置可在本页生成 R2 备份加密密钥。</li>
+                        <li>运行时数据目录用于保存本页配置；手动配置可在本页生成 R2 备份加密密钥。</li>
                     </ul>
                 </div>
 
@@ -809,7 +809,7 @@ export function CloudflareR2SettingsPanel() {
 
                         {!persistent ? (
                             <StatusMessage tone="info" className="px-3 py-2">
-                                未配置 BLOG_DATA_ROOT，R2 配置无法保存到服务器。
+                                运行时数据目录不可用，R2 配置无法保存到服务器。
                             </StatusMessage>
                         ) : null}
 

@@ -22,6 +22,7 @@ const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
 };
+const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
 
 function resetEnv(): void {
@@ -78,6 +79,7 @@ async function readCurrentManifest(): Promise<unknown> {
 }
 
 beforeEach(() => {
+  process.chdir(createTempDataRoot());
   vi.clearAllMocks();
   mockedSyncCurrentBackupToRemote.mockResolvedValue({
     enabled: false,
@@ -88,6 +90,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetEnv();
+  process.chdir(ORIGINAL_CWD);
   cleanupTempDirectories(tempDirectories);
 });
 
@@ -166,7 +169,7 @@ describe('backup API', () => {
     });
   }, 10000);
 
-  it('requires BLOG_DATA_ROOT before restoring a backup', async () => {
+  it('uses the default data directory before validating restore preconditions', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     delete process.env.BLOG_DATA_ROOT;
 
@@ -177,7 +180,7 @@ describe('backup API', () => {
       })
     );
 
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(409);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 

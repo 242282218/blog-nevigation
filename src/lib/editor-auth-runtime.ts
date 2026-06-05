@@ -6,13 +6,12 @@ import {
     SESSION_NAMESPACE,
     getEditorAccessToken,
 } from '@/lib/editor-auth';
-import { getEditorDataRoot } from '@/lib/editor-data-storage';
+import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 
 const AUTH_CONFIG_VERSION = 1;
 const AUTH_PASSWORD_NAMESPACE = 'blog-navigation-editor-password:v1';
 const AUTH_ENV_TOKEN_NAMESPACE = 'blog-navigation-editor-env-token:v1';
 const AUTH_CONFIG_FILE_NAME = 'editor-auth.json';
-const AUTH_CONFIG_DIRECTORY_NAME = 'settings';
 const MIN_EDITOR_SECRET_LENGTH = 12;
 const RUNTIME_SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
 const scryptAsync = promisify(scrypt);
@@ -56,8 +55,9 @@ function getEnvironmentEditorSessionGlobalState(): EnvironmentEditorSessionGloba
 }
 
 function getEnvironmentEditorSessionFilePath(): string | null {
-    const dataRoot = getEditorDataRoot();
-    return dataRoot ? path.join(dataRoot, AUTH_CONFIG_DIRECTORY_NAME, 'editor-env-session.json') : null;
+    return process.env.BLOG_DATA_ROOT?.trim()
+        ? getRuntimeSettingsFilePath('editor-env-session.json')
+        : null;
 }
 
 let environmentEditorSessionState: EnvironmentEditorSessionState | null = null;
@@ -80,13 +80,6 @@ export class RuntimeEditorAuthConfigInvalidError extends Error {
     constructor(public readonly filePath: string) {
         super('Stored editor auth config is invalid.');
         this.name = 'RuntimeEditorAuthConfigInvalidError';
-    }
-}
-
-export class RuntimeEditorAuthSetupTokenRequiredError extends Error {
-    constructor() {
-        super('EDITOR_RUNTIME_AUTH_SETUP_TOKEN is required when runtime editor auth setup is enabled in production.');
-        this.name = 'RuntimeEditorAuthSetupTokenRequiredError';
     }
 }
 
@@ -191,8 +184,7 @@ export function getRuntimeEditorAuthConfigFilePath(): string {
         return path.resolve(configuredPath);
     }
 
-    const dataRoot = getEditorDataRoot() ?? path.join(process.cwd(), 'data');
-    return path.join(dataRoot, AUTH_CONFIG_DIRECTORY_NAME, AUTH_CONFIG_FILE_NAME);
+    return getRuntimeSettingsFilePath(AUTH_CONFIG_FILE_NAME);
 }
 
 export function readRuntimeEditorAuthConfig(): RuntimeEditorAuthConfig | null {
@@ -505,64 +497,31 @@ export function getRuntimeEditorAuthSetupToken(): string | null {
     return token ? token : null;
 }
 
-export function getRuntimeEditorAuthSetupConfigurationError(): RuntimeEditorAuthSetupTokenRequiredError | null {
-    if (
-        process.env.NODE_ENV === 'production' &&
-        process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' &&
-        !getRuntimeEditorAuthSetupToken()
-    ) {
-        return new RuntimeEditorAuthSetupTokenRequiredError();
-    }
-
-    return null;
-}
-
 function isRuntimeEditorAuthAlreadyInitialized(): boolean {
     return Boolean(getEditorAccessToken() || readRuntimeEditorAuthConfig());
 }
 
 export function isRuntimeEditorAuthSetupEnabled(): boolean {
-    if (getRuntimeEditorAuthSetupConfigurationError()) {
+    if (isRuntimeEditorAuthAlreadyInitialized()) {
         return false;
     }
 
-    if (
-        process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
-        getRuntimeEditorAuthSetupToken()
-    ) {
+    if (getRuntimeEditorAuthSetupToken()) {
         return true;
     }
 
-    if (process.env.NODE_ENV === 'production') {
-        return false;
-    }
-
-    return !isRuntimeEditorAuthAlreadyInitialized();
+    return true;
 }
 
 export function isRuntimeEditorAuthSetupTokenRequired(): boolean {
-    if (getRuntimeEditorAuthSetupConfigurationError()) {
-        return true;
-    }
-
     return Boolean(getRuntimeEditorAuthSetupToken());
 }
 
 export function isValidRuntimeEditorAuthSetupToken(candidate: string): boolean {
-    if (getRuntimeEditorAuthSetupConfigurationError()) {
-        return false;
-    }
-
     const setupToken = getRuntimeEditorAuthSetupToken();
 
     if (!setupToken) {
-        return (
-            process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP === 'true' ||
-            (
-                process.env.NODE_ENV !== 'production' &&
-                !isRuntimeEditorAuthAlreadyInitialized()
-            )
-        );
+        return !isRuntimeEditorAuthAlreadyInitialized();
     }
 
     return safeEqual(candidate.trim(), setupToken);

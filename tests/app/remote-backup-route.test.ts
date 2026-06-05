@@ -54,6 +54,7 @@ const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
 };
+const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
 
 function resetEnv(): void {
@@ -81,6 +82,7 @@ async function readCurrentManifest(): Promise<unknown> {
 }
 
 beforeEach(() => {
+  process.chdir(createTempDataRoot());
   vi.clearAllMocks();
   mockedGetR2BackupStatus.mockReturnValue({
     enabled: false,
@@ -101,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetEnv();
+  process.chdir(ORIGINAL_CWD);
   cleanupTempDirectories(tempDirectories);
 });
 
@@ -151,9 +154,14 @@ describe('remote backup API', () => {
     );
   });
 
-  it('requires BLOG_DATA_ROOT before mutating remote backups', async () => {
+  it('uses the default data directory before running remote backup actions', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     delete process.env.BLOG_DATA_ROOT;
+    mockedSyncCurrentBackupToRemote.mockResolvedValueOnce({
+      enabled: false,
+      success: false,
+      message: 'R2 backup is disabled.',
+    });
 
     const response = await POST(
       await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
@@ -162,8 +170,19 @@ describe('remote backup API', () => {
       })
     );
 
-    expect(response.status).toBe(503);
-    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        success: false,
+        remoteBackup: expect.objectContaining({
+          enabled: false,
+        }),
+      })
+    );
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledWith({
+      reason: 'manual-sync',
+      writeSnapshot: true,
+    });
   });
 
   it('rejects unknown actions without running a sync fallback', async () => {

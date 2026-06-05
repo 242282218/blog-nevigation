@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DELETE,
   GET,
@@ -35,6 +35,7 @@ const ORIGINAL_ENV = {
   TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
   SKIP_IP_VALIDATION: process.env.SKIP_IP_VALIDATION,
 };
+const ORIGINAL_CWD = process.cwd();
 const TEMP_DIRECTORIES: string[] = [];
 
 async function createLegacyEditorSessionValue(secret: string): Promise<string> {
@@ -117,8 +118,13 @@ function createLogoutRequest(response: Response, headersInit?: HeadersInit): Nex
   });
 }
 
+beforeEach(() => {
+  process.chdir(createTempDirectoryWithCleanup('editor-auth-cwd-'));
+});
+
 afterEach(() => {
   resetEnv();
+  process.chdir(ORIGINAL_CWD);
   resetEditorAuthRateLimitForTests();
   resetEnvironmentEditorSessionForTests();
   cleanupTempDirectories(TEMP_DIRECTORIES);
@@ -176,7 +182,7 @@ describe('editor auth API', () => {
     expect(await sessionResponse.json()).toEqual({
       configured: true,
       authenticated: true,
-      setupEnabled: true,
+      setupEnabled: false,
       setupTokenRequired: true,
     });
 
@@ -259,11 +265,12 @@ describe('editor auth API', () => {
     });
   });
 
-  it('rejects first-use initialization in production without an explicit setup token or opt-in', async () => {
+  it('allows first-use initialization in production without external setup variables', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
     delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
     delete process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP;
     vi.stubEnv('NODE_ENV', 'production');
+    process.env.SKIP_IP_VALIDATION = 'true';
     process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
       createTempDirectoryWithCleanup('editor-auth-production-setup-'),
       'editor-auth.json'
@@ -278,22 +285,19 @@ describe('editor auth API', () => {
     expect(await statusBeforeSetup.json()).toEqual({
       configured: false,
       authenticated: false,
-      setupEnabled: false,
+      setupEnabled: true,
       setupTokenRequired: false,
     });
-    expect(setupResponse.status).toBe(403);
-    expect(await setupResponse.json()).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining('首次初始化未启用'),
-      })
-    );
+    expect(setupResponse.status).toBe(200);
+    expect(await setupResponse.json()).toEqual({ success: true });
   });
 
-  it('returns a configuration error when production runtime setup is enabled without a setup token', async () => {
+  it('does not require a setup token when production runtime setup opt-in is present without a token', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
     delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
     vi.stubEnv('NODE_ENV', 'production');
     process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP = 'true';
+    process.env.SKIP_IP_VALIDATION = 'true';
     process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
       createTempDirectoryWithCleanup('editor-auth-production-missing-setup-token-'),
       'editor-auth.json'
@@ -305,18 +309,15 @@ describe('editor auth API', () => {
       confirmSecret: 'new-secret-12chars',
     }));
 
-    expect(statusResponse.status).toBe(500);
-    expect(await statusResponse.json()).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining('EDITOR_RUNTIME_AUTH_SETUP_TOKEN'),
-      })
-    );
-    expect(setupResponse.status).toBe(500);
-    expect(await setupResponse.json()).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining('EDITOR_RUNTIME_AUTH_SETUP_TOKEN'),
-      })
-    );
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toEqual({
+      configured: false,
+      authenticated: false,
+      setupEnabled: true,
+      setupTokenRequired: false,
+    });
+    expect(setupResponse.status).toBe(200);
+    expect(await setupResponse.json()).toEqual({ success: true });
   });
 
   it('rejects first-use initialization when the setup token is wrong', async () => {

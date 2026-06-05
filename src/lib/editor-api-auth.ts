@@ -102,7 +102,7 @@ export async function ensureEditorWriteRequest(request: NextRequest): Promise<Ne
 export function createEditorDataRootRequiredResponse(): NextResponse {
     return NextResponse.json(
         {
-            message: '未配置 BLOG_DATA_ROOT，编辑数据仅保存在当前浏览器，无法写入服务器。',
+            message: '运行时数据目录不可用，无法写入服务器。',
         },
         { status: 503 }
     );

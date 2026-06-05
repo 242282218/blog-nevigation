@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@/lib/article-data';
 import type { EditorBackupPayload } from '@/lib/editor-data-backup';
+import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 
 const DEFAULT_R2_PREFIX = 'blog-navigation';
 const LATEST_BACKUP_FILE_NAME = 'backup.json';
@@ -104,9 +105,7 @@ function isPlaintextBackupAllowed(): boolean {
 }
 
 function getR2SettingsFilePath(): string | null {
-    const root = process.env.BLOG_DATA_ROOT?.trim();
-
-    return root ? path.join(root, 'settings', R2_SETTINGS_FILE_NAME) : null;
+    return getRuntimeSettingsFilePath(R2_SETTINGS_FILE_NAME);
 }
 
 function parseStoredR2BackupSettings(value: unknown, filePath: string): EditableR2BackupSettings {
@@ -283,7 +282,7 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     const filePath = getR2SettingsFilePath();
 
     if (!filePath) {
-        throw new Error('BLOG_DATA_ROOT is not configured.');
+        throw new Error('Runtime data root is not configured.');
     }
 
     let existing: EditableR2BackupSettings | null = null;

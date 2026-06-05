@@ -23,7 +23,6 @@ import {
     RuntimeEditorAuthAlreadyConfiguredError,
     RuntimeEditorAuthInvalidSecretError,
     createRuntimeEditorSession,
-    getRuntimeEditorAuthSetupConfigurationError,
     initializeRuntimeEditorAuth,
     isRuntimeEditorAuthConfigured,
     isRuntimeEditorAuthSetupEnabled,
@@ -39,18 +38,6 @@ import {
     getEditorAuthRateLimitResponse,
     recordEditorAuthFailure,
 } from '@/lib/editor-auth-rate-limit';
-
-const EDITOR_RUNTIME_AUTH_SETUP_CONFIG_ERROR_MESSAGE =
-    '生产环境开启运行时编辑口令初始化时，必须配置 EDITOR_RUNTIME_AUTH_SETUP_TOKEN。';
-
-function createRuntimeAuthSetupConfigurationErrorResponse(): NextResponse {
-    return NextResponse.json(
-        {
-            message: EDITOR_RUNTIME_AUTH_SETUP_CONFIG_ERROR_MESSAGE,
-        },
-        { status: 500 }
-    );
-}
 
 function createSessionResponse(sessionValue: string): NextResponse {
     const csrfToken = randomBytes(32).toString('hex');
@@ -85,12 +72,6 @@ function clearSessionCookie(response: NextResponse): NextResponse {
 
 export async function GET(request: NextRequest) {
     try {
-        const setupConfigurationError = getRuntimeEditorAuthSetupConfigurationError();
-
-        if (setupConfigurationError) {
-            return createRuntimeAuthSetupConfigurationErrorResponse();
-        }
-
         const session = request.cookies.get(EDITOR_SESSION_COOKIE)?.value;
 
         return NextResponse.json({
@@ -188,12 +169,6 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
     try {
-        const setupConfigurationError = getRuntimeEditorAuthSetupConfigurationError();
-
-        if (setupConfigurationError) {
-            return createRuntimeAuthSetupConfigurationErrorResponse();
-        }
-
         if (!getEditorAccessToken()) {
             readRuntimeEditorAuthConfig();
         }
@@ -234,6 +209,15 @@ export async function PUT(request: NextRequest) {
     const secret = typeof body?.secret === 'string' ? body.secret : '';
     const confirmSecret = typeof body?.confirmSecret === 'string' ? body.confirmSecret : '';
     const setupToken = typeof body?.setupToken === 'string' ? body.setupToken : '';
+
+    if (isRuntimeEditorAuthConfigured()) {
+        return NextResponse.json(
+            {
+                message: '编辑口令已初始化，请直接登录。',
+            },
+            { status: 409 }
+        );
+    }
 
     if (!isRuntimeEditorAuthSetupEnabled()) {
         return NextResponse.json(

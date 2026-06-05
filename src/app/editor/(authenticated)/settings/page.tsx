@@ -276,7 +276,7 @@ export default function EditorSettingsPage() {
             setFieldErrors({});
 
             if (!persistent) {
-                setMessage({ tone: 'danger', text: '未配置 BLOG_DATA_ROOT，站点设置无法保存到服务器。' });
+                setMessage({ tone: 'danger', text: '运行时数据目录不可用，站点设置无法保存到服务器。' });
                 return;
             }
 
@@ -543,7 +543,7 @@ export default function EditorSettingsPage() {
                                     <div>
                                         <p className="text-sm font-medium text-fg">站点设置</p>
                                         <p className="mt-1 text-xs leading-5 text-subtle">
-                                            {persistent ? '保存后刷新公开页面生效。' : '未配置持久化目录，当前无法保存。'}
+                                            {persistent ? '保存后刷新公开页面生效。' : '运行时数据目录不可用，当前无法保存。'}
                                         </p>
                                     </div>
                                     <EditorButton
@@ -569,7 +569,7 @@ export default function EditorSettingsPage() {
                                     <div>
                                         <dt className="font-mono text-xs text-subtle">status</dt>
                                         <dd className="mt-1 text-muted">
-                                            {persistent ? '已启用 BLOG_DATA_ROOT' : '未配置持久化目录'}
+                                            {persistent ? '已启用运行时数据目录' : '运行时数据目录不可用'}
                                         </dd>
                                     </div>
                                     <div>

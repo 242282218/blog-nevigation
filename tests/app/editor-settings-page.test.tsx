@@ -533,7 +533,7 @@ describe('EditorSettingsPage', () => {
     expect(container.querySelector('#r2-account-id-description')?.textContent).toBe('去 Cloudflare 账号概览页复制 Account ID；留空无法生成 R2 endpoint。');
   });
 
-  it('disables site settings save when BLOG_DATA_ROOT is not configured', async () => {
+  it('disables site settings save when the runtime data directory is unavailable', async () => {
     fetchMock
       .mockResolvedValueOnce(
         createJsonResponse({
@@ -575,13 +575,13 @@ describe('EditorSettingsPage', () => {
     });
     await flushPromises();
 
-    expect(container.textContent).toContain('未配置持久化目录');
+    expect(container.textContent).toContain('运行时数据目录不可用');
     const saveButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button[type="submit"]'))
       .filter((button) => button.textContent?.includes('保存设置'));
 
     expect(saveButtons).toHaveLength(2);
     expect(saveButtons.every((button) => button.disabled)).toBe(true);
-    expect(container.textContent).toContain('未配置持久化目录，当前无法保存。');
+    expect(container.textContent).toContain('运行时数据目录不可用，当前无法保存。');
   });
 
   it('syncs remote backups from settings through the resource endpoint', async () => {
