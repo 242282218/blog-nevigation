@@ -435,7 +435,7 @@ export function CommandInput({ compact = false, className }: CommandInputProps) 
                                         type="button"
                                         onClick={() => {
                                             closeSearch();
-                                            router.push('/editor/login');
+                                            router.push('/setup');
                                         }}
                                         className="flex min-h-[44px] w-full cursor-pointer items-start gap-3 rounded-token-card px-3 py-2.5 transition-colors duration-token-fast hover:bg-surface"
                                     >

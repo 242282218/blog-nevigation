@@ -12,6 +12,7 @@ import {
     isRuntimeEditorAuthSetupTokenRequired,
     isValidRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
+import { isApplicationSetupComplete } from '@/lib/setup-state';
 import { EditorLoginForm } from './EditorLoginForm';
 
 interface EditorLoginPageProps {
@@ -32,6 +33,10 @@ export default async function EditorLoginPage({
     const session = cookieStore.get(EDITOR_SESSION_COOKIE)?.value;
 
     try {
+        if (!isApplicationSetupComplete()) {
+            redirect(`/setup?next=${encodeURIComponent(nextPath)}`);
+        }
+
         if (await isValidRuntimeEditorSession(session)) {
             redirect(nextPath);
         }

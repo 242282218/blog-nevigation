@@ -170,6 +170,11 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.version=${{ steps.package-version.outputs.build_tag }}
+            org.opencontainers.image.title=blog-navigation
+            org.opencontainers.image.description=Developer blog and navigation site built with Next.js
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=MIT
 
       - name: Build and push Docker image
         id: build
@@ -184,6 +189,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          provenance: true
+          sbom: true
 
       - name: Write Docker release summary
         shell: bash

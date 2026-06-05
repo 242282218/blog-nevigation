@@ -1,0 +1,388 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { KeyRound, Save, ShieldCheck } from 'lucide-react';
+import { StatusMessage } from '@/app/components/ui';
+import { createEditorCsrfHeaders } from '../../../editor-csrf';
+import { LogoutButton } from '../../../components/LogoutButton';
+import {
+    EditorButton,
+    EditorMain,
+    EditorPage,
+    EditorPanel,
+    EditorTopBar,
+    editorInputClassName,
+} from '../../../components/EditorShell';
+
+type RuntimeConfigResponse = {
+    editable?: RuntimeFormPayload;
+    config?: {
+        dataRoot?: {
+            pendingPath?: string | null;
+            requiresRestart?: boolean;
+        };
+    };
+    message?: string;
+};
+
+type RuntimeForm = {
+    publicSiteUrl: string;
+    cookieSecure: boolean;
+    trustedProxyIps: string;
+    dataRootPath: string;
+    editorSecret: string;
+    confirmEditorSecret: string;
+};
+
+type RuntimeFormPayload = {
+    publicSiteUrl: string;
+    cookieSecure: boolean;
+    trustedProxyIps: string[];
+    dataRootPath: string;
+};
+
+type RuntimeMessage = {
+    tone: 'success' | 'danger' | 'loading' | 'info';
+    text: string;
+};
+
+function createEmptyRuntimeForm(): RuntimeForm {
+    return {
+        publicSiteUrl: '',
+        cookieSecure: true,
+        trustedProxyIps: '',
+        dataRootPath: '',
+        editorSecret: '',
+        confirmEditorSecret: '',
+    };
+}
+
+function RuntimeField({
+    id,
+    label,
+    help,
+    value,
+    onChange,
+    type = 'text',
+    multiline = false,
+}: {
+    id: string;
+    label: string;
+    help: string;
+    value: string;
+    onChange: (value: string) => void;
+    type?: 'text' | 'password';
+    multiline?: boolean;
+}) {
+    const descriptionId = `${id}-description`;
+
+    return (
+        <div>
+            <label htmlFor={id} className="block text-sm font-medium text-fg">
+                {label}
+            </label>
+            {multiline ? (
+                <textarea
+                    id={id}
+                    value={value}
+                    rows={4}
+                    onChange={(event) => onChange(event.target.value)}
+                    aria-describedby={descriptionId}
+                    className={`${editorInputClassName} mt-2 resize-y leading-6`}
+                />
+            ) : (
+                <input
+                    id={id}
+                    type={type}
+                    value={value}
+                    onChange={(event) => onChange(event.target.value)}
+                    aria-describedby={descriptionId}
+                    className={`${editorInputClassName} mt-2`}
+                />
+            )}
+            <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-subtle">
+                {help}
+            </p>
+        </div>
+    );
+}
+
+function RuntimeToggle({
+    id,
+    label,
+    help,
+    checked,
+    onChange,
+}: {
+    id: string;
+    label: string;
+    help: string;
+    checked: boolean;
+    onChange: (value: boolean) => void;
+}) {
+    const descriptionId = `${id}-description`;
+
+    return (
+        <label
+            htmlFor={id}
+            className="flex items-start gap-3 rounded-token-card border border-border-soft bg-background p-3 text-sm text-muted transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20"
+        >
+            <input
+                id={id}
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => onChange(event.target.checked)}
+                aria-describedby={descriptionId}
+                className="mt-0.5 h-5 w-5 shrink-0 rounded border-border text-accent focus:ring-link"
+            />
+            <span>
+                <span className="block font-medium text-fg">{label}</span>
+                <span id={descriptionId} className="mt-1 block text-xs leading-5 text-subtle">
+                    {help}
+                </span>
+            </span>
+        </label>
+    );
+}
+
+export default function RuntimeSettingsPage() {
+    const [form, setForm] = useState<RuntimeForm>(createEmptyRuntimeForm);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [requiresRestart, setRequiresRestart] = useState(false);
+    const [message, setMessage] = useState<RuntimeMessage | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        async function loadRuntimeConfig() {
+            try {
+                const response = await fetch('/api/runtime-config', {
+                    credentials: 'include',
+                    cache: 'no-store',
+                });
+                const payload = (await response.json().catch(() => null)) as RuntimeConfigResponse | null;
+
+                if (!response.ok) {
+                    throw new Error(payload?.message || '运行时配置加载失败。');
+                }
+
+                if (!isMounted) {
+                    return;
+                }
+
+                setForm({
+                    publicSiteUrl: payload?.editable?.publicSiteUrl ?? '',
+                    cookieSecure: payload?.editable?.cookieSecure ?? true,
+                    trustedProxyIps: payload?.editable?.trustedProxyIps.join('\n') ?? '',
+                    dataRootPath: payload?.editable?.dataRootPath ?? '',
+                    editorSecret: '',
+                    confirmEditorSecret: '',
+                });
+                setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+            } catch (error) {
+                if (isMounted) {
+                    setMessage({
+                        tone: 'danger',
+                        text: error instanceof Error ? error.message : '运行时配置加载失败。',
+                    });
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        }
+
+        loadRuntimeConfig();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const updateField = useCallback(<Key extends keyof RuntimeForm>(key: Key, value: RuntimeForm[Key]) => {
+        setForm((current) => ({
+            ...current,
+            [key]: value,
+        }));
+    }, []);
+
+    const handleSubmit = useCallback(async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+
+        if (form.editorSecret.trim() && form.editorSecret.trim() !== form.confirmEditorSecret.trim()) {
+            setMessage({ tone: 'danger', text: '两次输入的编辑口令不一致。' });
+            return;
+        }
+
+        setIsSaving(true);
+        setMessage({ tone: 'loading', text: '正在保存运行时配置...' });
+
+        try {
+            const response = await fetch('/api/runtime-config', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: createEditorCsrfHeaders({
+                    'Content-Type': 'application/json',
+                }),
+                body: JSON.stringify({
+                    config: {
+                        publicSiteUrl: form.publicSiteUrl,
+                        cookieSecure: form.cookieSecure,
+                        trustedProxyIps: form.trustedProxyIps,
+                        dataRootPath: form.dataRootPath,
+                    },
+                    editorSecret: form.editorSecret.trim(),
+                    confirmEditorSecret: form.confirmEditorSecret.trim(),
+                }),
+            });
+            const payload = (await response.json().catch(() => null)) as RuntimeConfigResponse | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.message || '运行时配置保存失败。');
+            }
+
+            setForm((current) => ({
+                ...current,
+                editorSecret: '',
+                confirmEditorSecret: '',
+            }));
+            setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+            setMessage({
+                tone: 'success',
+                text: payload?.config?.dataRoot?.requiresRestart
+                    ? '运行时配置已保存；数据目录变更需要重启后生效。'
+                    : '运行时配置已保存。',
+            });
+        } catch (error) {
+            setMessage({
+                tone: 'danger',
+                text: error instanceof Error ? error.message : '运行时配置保存失败。',
+            });
+        } finally {
+            setIsSaving(false);
+        }
+    }, [form]);
+
+    return (
+        <EditorPage className="pb-12">
+            <EditorTopBar
+                title="运行时配置"
+                description="管理环境变量对应的前端配置入口"
+                eyebrow="editor.runtime"
+                backHref="/editor/settings"
+                width="lg"
+                actions={(
+                    <>
+                        <LogoutButton />
+                        <EditorButton
+                            type="submit"
+                            form="runtime-config-form"
+                            variant="primary"
+                            disabled={isLoading || isSaving}
+                        >
+                            <Save className="h-4 w-4" />
+                            {isSaving ? '保存中...' : '保存配置'}
+                        </EditorButton>
+                    </>
+                )}
+            />
+
+            <EditorMain width="lg" className="space-y-4">
+                {message ? (
+                    <StatusMessage tone={message.tone}>{message.text}</StatusMessage>
+                ) : null}
+
+                {requiresRestart ? (
+                    <StatusMessage tone="info">
+                        数据目录存在待生效变更，请确认服务器重启和目录迁移安排。
+                    </StatusMessage>
+                ) : null}
+
+                {isLoading ? (
+                    <EditorPanel className="p-4">
+                        <div className="animate-pulse text-sm text-subtle">加载运行时配置...</div>
+                    </EditorPanel>
+                ) : (
+                    <form id="runtime-config-form" onSubmit={handleSubmit} className="grid gap-4">
+                        <EditorPanel className="p-4">
+                            <div className="mb-4 flex items-start gap-3">
+                                <ShieldCheck className="mt-1 h-5 w-5 text-accent" />
+                                <div>
+                                    <h2 className="text-lg font-semibold text-fg">基础变量</h2>
+                                    <p className="mt-1 text-sm leading-6 text-muted">
+                                        对应 NEXT_PUBLIC_SITE_URL、COOKIE_SECURE、TRUSTED_PROXY_IPS 和 BLOG_DATA_ROOT。
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <RuntimeField
+                                    id="runtime-public-site-url"
+                                    label="公开站点 URL"
+                                    help="保存后服务端生成 metadata、robots 和 sitemap 时使用。"
+                                    value={form.publicSiteUrl}
+                                    onChange={(value) => updateField('publicSiteUrl', value)}
+                                />
+                                <RuntimeField
+                                    id="runtime-data-root"
+                                    label="运行时数据目录"
+                                    help="变更会进入待生效状态，不会在当前进程中热切数据目录。"
+                                    value={form.dataRootPath}
+                                    onChange={(value) => updateField('dataRootPath', value)}
+                                />
+                                <div className="md:col-span-2">
+                                    <RuntimeField
+                                        id="runtime-trusted-proxy-ips"
+                                        label="可信代理 IP"
+                                        help="每行一个 IP；生产环境登录和搜索限流会用它识别真实客户端。"
+                                        value={form.trustedProxyIps}
+                                        onChange={(value) => updateField('trustedProxyIps', value)}
+                                        multiline
+                                    />
+                                </div>
+                                <RuntimeToggle
+                                    id="runtime-cookie-secure"
+                                    label="启用安全 Cookie"
+                                    help="关闭后适合 HTTP 部署；修改后下一次登录设置 Cookie 时生效。"
+                                    checked={form.cookieSecure}
+                                    onChange={(value) => updateField('cookieSecure', value)}
+                                />
+                            </div>
+                        </EditorPanel>
+
+                        <EditorPanel className="p-4">
+                            <div className="mb-4 flex items-start gap-3">
+                                <KeyRound className="mt-1 h-5 w-5 text-accent" />
+                                <div>
+                                    <h2 className="text-lg font-semibold text-fg">编辑口令</h2>
+                                    <p className="mt-1 text-sm leading-6 text-muted">
+                                        对应 EDITOR_ACCESS_TOKEN；留空表示不修改当前口令。
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <RuntimeField
+                                    id="runtime-editor-secret"
+                                    label="新的编辑口令"
+                                    help="至少 12 个字符；保存后会刷新当前会话。"
+                                    value={form.editorSecret}
+                                    onChange={(value) => updateField('editorSecret', value)}
+                                    type="password"
+                                />
+                                <RuntimeField
+                                    id="runtime-confirm-editor-secret"
+                                    label="确认编辑口令"
+                                    help="再次输入新的编辑口令。"
+                                    value={form.confirmEditorSecret}
+                                    onChange={(value) => updateField('confirmEditorSecret', value)}
+                                    type="password"
+                                />
+                            </div>
+                        </EditorPanel>
+                    </form>
+                )}
+            </EditorMain>
+        </EditorPage>
+    );
+}

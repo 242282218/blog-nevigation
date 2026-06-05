@@ -27,6 +27,7 @@ ENV NODE_ENV=production
 # Docker builds keep the same quality gates as CI so image artifacts cannot bypass them.
 RUN npm run lint && \
     npm run typecheck && \
+    npm run test:run && \
     npm run build && \
     rm -rf node_modules/.cache /tmp/*
 
@@ -40,10 +41,10 @@ ENV HOSTNAME=0.0.0.0
 ENV BLOG_DATA_ROOT=/var/lib/blog-navigation
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN apk add --no-cache su-exec && \
+RUN apk add --no-cache curl su-exec && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs && \
-    mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation && \
+    mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation /var/lib/blog-navigation/settings && \
     chown -R nextjs:nodejs /var/lib/blog-navigation && \
     rm -rf /var/cache/apk/* /tmp/*
 
@@ -53,6 +54,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/content/seeds ./content/seeds
 COPY --chmod=755 deploy/docker-entrypoint.sh /usr/local/bin/
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/ || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 

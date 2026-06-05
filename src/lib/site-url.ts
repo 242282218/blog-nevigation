@@ -1,13 +1,10 @@
-const DEFAULT_SITE_URL = 'http://localhost:3000';
+import { getRuntimePublicSiteUrl } from '@/lib/app-runtime-config';
 
 export function getSiteUrl(): URL {
-    const rawUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-        (process.env.VERCEL_URL?.trim() ? `https://${process.env.VERCEL_URL.trim()}` : DEFAULT_SITE_URL);
-
     try {
-        return new URL(rawUrl);
+        return new URL(getRuntimePublicSiteUrl());
     } catch {
-        return new URL(DEFAULT_SITE_URL);
+        return new URL('http://localhost:3000');
     }
 }
 

@@ -28,7 +28,15 @@ function pruneExpiredAuthFailureBuckets(): void {
 }
 
 function pruneOldestAuthFailureBucket(): void {
-    const oldestKey = authFailureBuckets.keys().next().value as string | undefined;
+    let oldestKey: string | undefined;
+    let oldestResetAt = Infinity;
+
+    for (const [key, bucket] of authFailureBuckets) {
+        if (bucket.resetAt < oldestResetAt) {
+            oldestResetAt = bucket.resetAt;
+            oldestKey = key;
+        }
+    }
 
     if (oldestKey) {
         authFailureBuckets.delete(oldestKey);

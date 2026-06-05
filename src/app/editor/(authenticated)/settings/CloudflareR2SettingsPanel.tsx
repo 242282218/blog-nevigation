@@ -22,6 +22,7 @@ type CloudflareR2Settings = {
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
+    allowPlaintextBackup: boolean;
 };
 
 type CloudflareR2Status = {
@@ -148,6 +149,7 @@ function createEmptyCloudflareR2Form(): CloudflareR2Form {
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
+        allowPlaintextBackup: false,
     };
 }
 
@@ -173,6 +175,7 @@ function toCloudflareR2Form(settings?: CloudflareR2Settings): CloudflareR2Form {
         prefix: settings?.prefix ?? 'blog-navigation',
         endpoint: settings?.endpoint ?? '',
         snapshotOnWrite: Boolean(settings?.snapshotOnWrite),
+        allowPlaintextBackup: Boolean(settings?.allowPlaintextBackup),
     };
 }
 
@@ -212,7 +215,7 @@ function validateCloudflareR2Form(
         return { field: 'secretAccessKey', message: '请填写 R2 Secret Access Key。' };
     }
 
-    if (!form.backupEncryptionKey.trim() && !hasBackupEncryptionKey && !allowsPlaintextBackup) {
+    if (!form.backupEncryptionKey.trim() && !hasBackupEncryptionKey && !form.allowPlaintextBackup && !allowsPlaintextBackup) {
         return { field: 'backupEncryptionKey', message: '请填写或生成 R2 备份加密密钥。' };
     }
 
@@ -804,6 +807,19 @@ export function CloudflareR2SettingsPanel() {
                             <span>
                                 <span className="block font-medium text-fg">每次写入都创建 snapshot</span>
                                 关闭时仅手动同步和恢复会写入时间快照，日常保存只更新 latest。
+                            </span>
+                        </label>
+
+                        <label className="flex items-start gap-3 rounded-token-card border border-error-light bg-error-50 px-3 py-3 text-sm text-error-600 transition focus-within:border-link focus-within:ring-2 focus-within:ring-link/20">
+                            <input
+                                type="checkbox"
+                                checked={form.allowPlaintextBackup}
+                                onChange={(event) => updateField('allowPlaintextBackup', event.target.checked)}
+                                className="mt-0.5 h-5 w-5 shrink-0 rounded border-error-light text-error-600 focus:ring-link"
+                            />
+                            <span>
+                                <span className="block font-medium text-error-600">允许明文 R2 备份</span>
+                                仅在无法保存备份加密密钥时启用；备份内容会以明文写入 R2。
                             </span>
                         </label>
 

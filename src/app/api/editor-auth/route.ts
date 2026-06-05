@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomBytes } from 'node:crypto';
 import {
     createJsonBodyParseErrorResponse,
     createJsonBodyTooLargeResponse,
@@ -9,11 +8,8 @@ import {
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
 import {
-    EDITOR_CSRF_COOKIE,
     EDITOR_SESSION_COOKIE,
     getEditorAccessToken,
-    getEditorCsrfCookieOptions,
-    getEditorCookieOptions,
 } from '@/lib/editor-auth';
 import {
     createEditorAuthConfigInvalidResponse,
@@ -34,41 +30,14 @@ import {
     revokeRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
 import {
+    clearEditorSessionCookie,
+    createEditorSessionResponse,
+} from '@/lib/editor-session-response';
+import {
     clearEditorAuthFailures,
     getEditorAuthRateLimitResponse,
     recordEditorAuthFailure,
 } from '@/lib/editor-auth-rate-limit';
-
-function createSessionResponse(sessionValue: string): NextResponse {
-    const csrfToken = randomBytes(32).toString('hex');
-    const response = NextResponse.json({ success: true });
-
-    response.cookies.set(
-        EDITOR_SESSION_COOKIE,
-        sessionValue,
-        getEditorCookieOptions()
-    );
-    response.cookies.set(
-        EDITOR_CSRF_COOKIE,
-        csrfToken,
-        getEditorCsrfCookieOptions()
-    );
-
-    return response;
-}
-
-function clearSessionCookie(response: NextResponse): NextResponse {
-    response.cookies.set(EDITOR_SESSION_COOKIE, '', {
-        ...getEditorCookieOptions(),
-        maxAge: 0,
-    });
-    response.cookies.set(EDITOR_CSRF_COOKIE, '', {
-        ...getEditorCsrfCookieOptions(),
-        maxAge: 0,
-    });
-
-    return response;
-}
 
 export async function GET(request: NextRequest) {
     try {
@@ -155,7 +124,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        return createSessionResponse(sessionValue);
+        return createEditorSessionResponse(sessionValue);
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
 
@@ -257,7 +226,7 @@ export async function PUT(request: NextRequest) {
     try {
         const sessionValue = await initializeRuntimeEditorAuth(secret);
         clearEditorAuthFailures(request, 'setup');
-        return createSessionResponse(sessionValue);
+        return createEditorSessionResponse(sessionValue);
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
 
@@ -307,11 +276,11 @@ export async function DELETE(request: NextRequest) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
 
         if (invalidResponse) {
-            return clearSessionCookie(invalidResponse);
+            return clearEditorSessionCookie(invalidResponse);
         }
 
         throw error;
     }
 
-    return clearSessionCookie(NextResponse.json({ success: true }));
+    return clearEditorSessionCookie(NextResponse.json({ success: true }));
 }

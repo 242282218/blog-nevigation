@@ -5,6 +5,7 @@ import {
     getSafeEditorNextPath,
 } from '@/lib/editor-auth';
 import { isValidRuntimeEditorSession } from '@/lib/editor-auth-runtime';
+import { isApplicationSetupComplete } from '@/lib/setup-state';
 
 export default async function AuthenticatedEditorLayout({
     children,
@@ -13,6 +14,10 @@ export default async function AuthenticatedEditorLayout({
 }) {
     const cookieStore = await cookies();
     const session = cookieStore.get(EDITOR_SESSION_COOKIE)?.value;
+
+    if (!isApplicationSetupComplete()) {
+        redirect(`/setup?next=${encodeURIComponent(getSafeEditorNextPath('/editor'))}`);
+    }
 
     if (!(await isValidRuntimeEditorSession(session))) {
         redirect(`/editor/login?next=${encodeURIComponent(getSafeEditorNextPath('/editor'))}`);

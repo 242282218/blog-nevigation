@@ -164,6 +164,6 @@ describe('CommandInput', () => {
       setupButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(pushMock).toHaveBeenCalledWith('/editor/login');
+    expect(pushMock).toHaveBeenCalledWith('/setup');
   });
 });

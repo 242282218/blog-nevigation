@@ -9,26 +9,6 @@ export function getEditorAccessToken(): string | null {
     return token ? token : null;
 }
 
-export function getEditorCookieOptions() {
-    return {
-        httpOnly: true,
-        sameSite: 'lax' as const,
-        secure: process.env.COOKIE_SECURE !== 'false',
-        path: '/',
-        maxAge: EDITOR_SESSION_MAX_AGE,
-    };
-}
-
-export function getEditorCsrfCookieOptions() {
-    return {
-        httpOnly: false,
-        sameSite: 'lax' as const,
-        secure: process.env.COOKIE_SECURE !== 'false',
-        path: '/',
-        maxAge: EDITOR_SESSION_MAX_AGE,
-    };
-}
-
 export function getSafeEditorNextPath(rawPath?: string | null): string {
     if (!rawPath) {
         return '/editor';

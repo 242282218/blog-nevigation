@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settings } from 'lucide-react';
+import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settings, SlidersHorizontal } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from '../components/LogoutButton';
 import { createRestoreActionMessage } from '../backup-action-message';
@@ -247,7 +247,7 @@ export default function EditorHomePage() {
           </StatusMessage>
         ) : null}
 
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <EditorActionCard
             href="/editor/blog"
             icon={FileText}
@@ -270,6 +270,14 @@ export default function EditorHomePage() {
             title="站点设置"
             description="管理公开站点名称、描述和首页首屏文案，并随备份一起迁移。"
             action="调整设置"
+          />
+
+          <EditorActionCard
+            href="/editor/settings/runtime"
+            icon={SlidersHorizontal}
+            title="运行时配置"
+            description="管理首次启动变量、Cookie、代理、站点 URL、数据目录和编辑口令。"
+            action="配置变量"
           />
         </section>
 

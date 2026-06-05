@@ -1,19 +1,17 @@
 import type { NextRequest } from 'next/server';
+import { getRuntimeTrustedProxyIps } from '@/lib/app-runtime-config';
 
 const LOCAL_CLIENT_ID = 'local';
 const UNKNOWN_CLIENT_ID = 'unknown';
 
 export function getTrustedProxyIps(): Set<string> | null {
-    const env = process.env.TRUSTED_PROXY_IPS;
-    if (!env) {
+    const configuredIps = getRuntimeTrustedProxyIps();
+
+    if (configuredIps.length === 0) {
         return null;
     }
 
-    return new Set(
-        env.split(',')
-            .map((ip) => ip.trim())
-            .filter(Boolean)
-    );
+    return new Set(configuredIps);
 }
 
 const CLIENT_IP_HEADERS = [

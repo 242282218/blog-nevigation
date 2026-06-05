@@ -223,6 +223,7 @@ describe('R2 backup configuration', () => {
       hasAccessKeyId: true,
       hasSecretAccessKey: true,
       hasBackupEncryptionKey: true,
+      allowPlaintextBackup: false,
       prefix: 'custom-prefix',
       endpoint: '',
       snapshotOnWrite: true,

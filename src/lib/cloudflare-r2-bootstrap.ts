@@ -248,6 +248,7 @@ export async function bootstrapCloudflareR2Settings(
             prefix: input.prefix,
             endpoint: '',
             snapshotOnWrite: input.snapshotOnWrite,
+            allowPlaintextBackup: false,
         });
         settingsSaved = true;
 

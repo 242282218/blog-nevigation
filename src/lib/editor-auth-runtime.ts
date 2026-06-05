@@ -242,13 +242,13 @@ function writeRuntimeEditorAuthConfig(config: RuntimeEditorAuthConfig, mode: 'cr
 }
 
 export function isRuntimeEditorAuthConfigured(): boolean {
-    return Boolean(getEditorAccessToken() || readRuntimeEditorAuthConfig());
+    return Boolean(readRuntimeEditorAuthConfig() || getEditorAccessToken());
 }
 
 export async function initializeRuntimeEditorAuth(secret: string): Promise<string> {
     const normalizedSecret = normalizeSecret(secret);
 
-    if (getEditorAccessToken() || readRuntimeEditorAuthConfig()) {
+    if (readRuntimeEditorAuthConfig() || getEditorAccessToken()) {
         throw new RuntimeEditorAuthAlreadyConfiguredError();
     }
 
@@ -364,43 +364,67 @@ function deleteEnvironmentEditorSessionState(): void {
 }
 
 export async function createRuntimeEditorSession(): Promise<string | null> {
-    const envSecret = getEditorAccessToken();
     const sessionValue = randomBytes(32).toString('hex');
+    const config = readRuntimeEditorAuthConfig();
 
-    if (envSecret) {
-        writeEnvironmentEditorSessionState({
-            tokenHash: createEnvironmentTokenHash(envSecret),
+    if (config) {
+        const nextConfig: RuntimeEditorAuthConfig = {
+            ...config,
             ...createRuntimeEditorSessionFields(sessionValue),
-        });
+            updatedAt: new Date().toISOString(),
+        };
 
+        writeRuntimeEditorAuthConfig(nextConfig, 'replace');
         return sessionValue;
     }
 
-    const config = readRuntimeEditorAuthConfig();
+    const envSecret = getEditorAccessToken();
 
-    if (!config) {
+    if (!envSecret) {
         return null;
     }
 
-    const nextConfig: RuntimeEditorAuthConfig = {
-        ...config,
+    writeEnvironmentEditorSessionState({
+        tokenHash: createEnvironmentTokenHash(envSecret),
         ...createRuntimeEditorSessionFields(sessionValue),
-        updatedAt: new Date().toISOString(),
+    });
+
+    return sessionValue;
+}
+
+export async function updateRuntimeEditorAuthSecret(secret: string): Promise<string> {
+    const normalizedSecret = normalizeSecret(secret);
+
+    if (normalizedSecret.length < MIN_EDITOR_SECRET_LENGTH) {
+        throw new RuntimeEditorAuthInvalidSecretError();
+    }
+
+    const existingConfig = readRuntimeEditorAuthConfig();
+    const passwordSalt = randomBytes(16).toString('hex');
+    const sessionValue = randomBytes(32).toString('hex');
+    const now = new Date().toISOString();
+    const config: RuntimeEditorAuthConfig = {
+        version: AUTH_CONFIG_VERSION,
+        passwordSalt,
+        passwordHash: await createPasswordHash(normalizedSecret, passwordSalt),
+        ...createRuntimeEditorSessionFields(sessionValue),
+        createdAt: existingConfig?.createdAt ?? now,
+        updatedAt: now,
     };
 
-    writeRuntimeEditorAuthConfig(nextConfig, 'replace');
+    writeRuntimeEditorAuthConfig(config, 'replace');
+
     return sessionValue;
 }
 
 export function revokeRuntimeEditorSession(): void {
-    if (getEditorAccessToken()) {
-        deleteEnvironmentEditorSessionState();
-        return;
-    }
-
     const config = readRuntimeEditorAuthConfig();
 
     if (!config) {
+        if (getEditorAccessToken()) {
+            deleteEnvironmentEditorSessionState();
+        }
+
         return;
     }
 
@@ -419,26 +443,25 @@ export function revokeRuntimeEditorSession(): void {
 
 export async function isValidRuntimeEditorSecret(candidate: string): Promise<boolean> {
     const normalizedCandidate = normalizeSecret(candidate);
-    const envSecret = getEditorAccessToken();
 
     if (!normalizedCandidate) {
         return false;
     }
 
-    if (envSecret) {
-        return safeEqual(createLegacySessionValue(normalizedCandidate), createLegacySessionValue(envSecret));
-    }
-
     const config = readRuntimeEditorAuthConfig();
 
-    if (!config) {
-        return false;
+    if (config) {
+        return safeEqual(
+            await createPasswordHash(normalizedCandidate, config.passwordSalt),
+            config.passwordHash
+        );
     }
 
-    return safeEqual(
-        await createPasswordHash(normalizedCandidate, config.passwordSalt),
-        config.passwordHash
-    );
+    const envSecret = getEditorAccessToken();
+
+    return envSecret
+        ? safeEqual(createLegacySessionValue(normalizedCandidate), createLegacySessionValue(envSecret))
+        : false;
 }
 
 export async function isValidRuntimeEditorSession(
@@ -448,38 +471,42 @@ export async function isValidRuntimeEditorSession(
         return false;
     }
 
-    const envSecret = getEditorAccessToken();
+    const config = readRuntimeEditorAuthConfig();
 
-    if (envSecret) {
-        const sessionState = readEnvironmentEditorSessionState();
-
+    if (config) {
         if (
-            !sessionState ||
-            isSessionExpired(sessionState.activeSessionExpiresAt) ||
-            !safeEqual(sessionState.tokenHash, createEnvironmentTokenHash(envSecret))
+            !config.activeSessionSalt ||
+            !config.activeSessionHash ||
+            isSessionExpired(config.activeSessionExpiresAt)
         ) {
             return false;
         }
 
         return safeEqual(
-            createSessionHash(sessionValue, sessionState.activeSessionSalt),
-            sessionState.activeSessionHash
+            createSessionHash(sessionValue, config.activeSessionSalt),
+            config.activeSessionHash
         );
     }
 
-    const config = readRuntimeEditorAuthConfig();
+    const envSecret = getEditorAccessToken();
+
+    if (!envSecret) {
+        return false;
+    }
+
+    const sessionState = readEnvironmentEditorSessionState();
 
     if (
-        !config?.activeSessionSalt ||
-        !config.activeSessionHash ||
-        isSessionExpired(config.activeSessionExpiresAt)
+        !sessionState ||
+        isSessionExpired(sessionState.activeSessionExpiresAt) ||
+        !safeEqual(sessionState.tokenHash, createEnvironmentTokenHash(envSecret))
     ) {
         return false;
     }
 
     return safeEqual(
-        createSessionHash(sessionValue, config.activeSessionSalt),
-        config.activeSessionHash
+        createSessionHash(sessionValue, sessionState.activeSessionSalt),
+        sessionState.activeSessionHash
     );
 }
 
@@ -498,7 +525,7 @@ export function getRuntimeEditorAuthSetupToken(): string | null {
 }
 
 function isRuntimeEditorAuthAlreadyInitialized(): boolean {
-    return Boolean(getEditorAccessToken() || readRuntimeEditorAuthConfig());
+    return Boolean(readRuntimeEditorAuthConfig() || getEditorAccessToken());
 }
 
 export function isRuntimeEditorAuthSetupEnabled(): boolean {

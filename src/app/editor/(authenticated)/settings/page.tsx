@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Info, Save, Settings, UserRound } from 'lucide-react';
+import { Info, Save, Settings, SlidersHorizontal, UserRound } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import {
     createDefaultSiteSettings,
@@ -13,6 +13,7 @@ import { createEditorCsrfHeaders } from '../../editor-csrf';
 import { LogoutButton } from '../../components/LogoutButton';
 import {
     EditorButton,
+    EditorLinkButton,
     EditorMain,
     EditorPage,
     EditorPanel,
@@ -331,6 +332,10 @@ export default function EditorSettingsPage() {
                 actions={(
                     <>
                         <LogoutButton />
+                        <EditorLinkButton href="/editor/settings/runtime">
+                            <SlidersHorizontal className="h-4 w-4" />
+                            运行时配置
+                        </EditorLinkButton>
                         <EditorButton
                             type="submit"
                             form="site-settings-form"

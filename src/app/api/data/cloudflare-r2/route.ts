@@ -44,6 +44,7 @@ function parseSettings(value: CloudflareR2RequestBody['settings']): EditableR2Ba
         prefix: asString(value.prefix),
         endpoint: asString(value.endpoint),
         snapshotOnWrite: value.snapshotOnWrite === true,
+        allowPlaintextBackup: value.allowPlaintextBackup === true,
     };
 }
 

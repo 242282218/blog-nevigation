@@ -319,7 +319,7 @@ describe('EditorSettingsPage', () => {
 
     const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('#cloudflare-r2-form input[type="checkbox"]'));
 
-    expect(checkboxes).toHaveLength(2);
+    expect(checkboxes).toHaveLength(3);
 
     for (const checkbox of checkboxes) {
       const label = checkbox.closest('label');

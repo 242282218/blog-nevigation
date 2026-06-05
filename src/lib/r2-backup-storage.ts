@@ -53,12 +53,14 @@ export interface EditableR2BackupSettings {
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
+    allowPlaintextBackup?: boolean;
 }
 
-export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId' | 'backupEncryptionKey'> {
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId' | 'backupEncryptionKey' | 'allowPlaintextBackup'> {
     hasSecretAccessKey: boolean;
     hasAccessKeyId: boolean;
     hasBackupEncryptionKey: boolean;
+    allowPlaintextBackup: boolean;
 }
 
 interface EncryptedR2BackupPayload {
@@ -100,10 +102,6 @@ function getEnv(name: string): string {
     return process.env[name]?.trim() ?? '';
 }
 
-function isPlaintextBackupAllowed(): boolean {
-    return getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true';
-}
-
 function getR2SettingsFilePath(): string | null {
     return getRuntimeSettingsFilePath(R2_SETTINGS_FILE_NAME);
 }
@@ -138,7 +136,16 @@ function parseStoredR2BackupSettings(value: unknown, filePath: string): Editable
         prefix: value.prefix.trim() || DEFAULT_R2_PREFIX,
         endpoint: value.endpoint.trim(),
         snapshotOnWrite: value.snapshotOnWrite,
+        allowPlaintextBackup: typeof value.allowPlaintextBackup === 'boolean'
+            ? value.allowPlaintextBackup
+            : false,
     };
+}
+
+function isPlaintextBackupAllowed(): boolean {
+    const stored = readStoredR2BackupSettings();
+
+    return stored ? Boolean(stored.allowPlaintextBackup) : getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true';
 }
 
 function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
@@ -257,6 +264,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
             prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
             endpoint: stored.endpoint,
             snapshotOnWrite: stored.snapshotOnWrite,
+            allowPlaintextBackup: Boolean(stored.allowPlaintextBackup),
         };
     }
 
@@ -275,6 +283,7 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
         prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         endpoint,
         snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
+        allowPlaintextBackup: getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true',
     };
 }
 
@@ -314,6 +323,7 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
         endpoint: input.endpoint.trim(),
         snapshotOnWrite: input.snapshotOnWrite,
+        allowPlaintextBackup: Boolean(input.allowPlaintextBackup),
     };
 
     if (
