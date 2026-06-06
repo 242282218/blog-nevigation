@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GET as getSetup, PUT as putSetup } from '@/app/api/setup/route';
 import { GET as getRuntimeConfig, PUT as putRuntimeConfig } from '@/app/api/runtime-config/route';
 import { POST as loginEditor } from '@/app/api/editor-auth/route';
@@ -96,6 +96,8 @@ async function login(secret: string): Promise<Response> {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   restoreEnv(ORIGINAL_ENV);
   resetEditorAuthRateLimitForTests();
   resetEnvironmentEditorSessionForTests();
@@ -174,6 +176,168 @@ describe('runtime setup and config APIs', () => {
       expect.objectContaining({
         setupCompleted: true,
         authConfigured: true,
+      })
+    );
+  });
+
+  it('initializes with Cloudflare R2 automatic setup without persisting the global key', async () => {
+    clearRuntimeEnv();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const cloudflareFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef') && method === 'GET') {
+        return Response.json({ success: true, result: { id: '0123456789abcdef0123456789abcdef' } });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && method === 'GET') {
+        return Response.json({ success: true, result: { buckets: [] } });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && method === 'POST') {
+        expect(JSON.parse(String(init?.body))).toEqual({ name: 'blog-navigation' });
+        return Response.json({ success: true, result: { name: 'blog-navigation' } });
+      }
+
+      if (url.endsWith('/user/tokens/permission_groups') && method === 'GET') {
+        return Response.json({
+          success: true,
+          result: [
+            { id: 'r2-read-group', name: 'Workers R2 Storage Bucket Item Read' },
+            { id: 'r2-write-group', name: 'Workers R2 Storage Bucket Item Write' },
+          ],
+        });
+      }
+
+      if (url.endsWith('/user/tokens') && method === 'POST') {
+        return Response.json({
+          success: true,
+          result: {
+            id: 'created-r2-access-key',
+            value: 'created-r2-token-value',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected Cloudflare request: ${method} ${url}`);
+    });
+
+    vi.stubGlobal('fetch', cloudflareFetch);
+
+    const setupResponse = await putSetup(createSetupRequest({
+      config: {
+        publicSiteUrl: 'https://example.com/',
+        cookieSecure: false,
+        trustedProxyIps: '',
+        dataRootPath: process.env.BLOG_DATA_ROOT,
+      },
+      editorSecret: 'new-runtime-secret-12',
+      confirmEditorSecret: 'new-runtime-secret-12',
+      r2SetupMode: 'cloudflare',
+      cloudflareR2Setup: {
+        authEmail: 'owner@example.com',
+        globalApiKey: 'global-key-should-not-leak',
+        accountId: '0123456789abcdef0123456789abcdef',
+        bucket: 'blog-navigation',
+        prefix: 'blog-navigation',
+        snapshotOnWrite: false,
+      },
+    }));
+    const payload = await setupResponse.json();
+    const r2SettingsFile = path.join(process.env.BLOG_DATA_ROOT, 'settings', 'cloudflare-r2.json');
+    const storedSettings = JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'));
+    const storedText = JSON.stringify(storedSettings);
+
+    expect(setupResponse.status).toBe(200);
+    expect(payload).toEqual(expect.objectContaining({ success: true }));
+    expect(cloudflareFetch).toHaveBeenCalledTimes(5);
+    expect(storedText).not.toContain('global-key-should-not-leak');
+    expect(storedText).not.toContain('created-r2-token-value');
+    expect(storedSettings).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        accountId: '0123456789abcdef0123456789abcdef',
+        bucket: 'blog-navigation',
+        accessKeyId: 'created-r2-access-key',
+        secretAccessKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+        backupEncryptionKey: expect.any(String),
+        prefix: 'blog-navigation',
+        snapshotOnWrite: false,
+      })
+    );
+  });
+
+  it('rejects invalid setup input before Cloudflare R2 automatic setup has external side effects', async () => {
+    clearRuntimeEnv();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const cloudflareFetch = vi.fn();
+
+    vi.stubGlobal('fetch', cloudflareFetch);
+
+    const setupResponse = await putSetup(createSetupRequest({
+      config: {
+        publicSiteUrl: 'https://example.com/',
+        cookieSecure: false,
+        trustedProxyIps: '',
+        dataRootPath: process.env.BLOG_DATA_ROOT,
+      },
+      editorSecret: 'short',
+      confirmEditorSecret: 'short',
+      r2SetupMode: 'cloudflare',
+      cloudflareR2Setup: {
+        authEmail: 'owner@example.com',
+        globalApiKey: 'global-key-should-not-leak',
+        accountId: '0123456789abcdef0123456789abcdef',
+        bucket: 'blog-navigation',
+        prefix: 'blog-navigation',
+        snapshotOnWrite: false,
+      },
+    }));
+    const payload = await setupResponse.json();
+
+    expect(setupResponse.status).toBe(400);
+    expect(payload).toEqual({ message: '编辑口令至少需要 12 个字符。' });
+    expect(cloudflareFetch).not.toHaveBeenCalled();
+  });
+
+  it('lets first setup explicitly skip R2 even when stale R2 fields are incomplete', async () => {
+    clearRuntimeEnv();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    const setupResponse = await putSetup(createSetupRequest({
+      config: {
+        publicSiteUrl: 'https://example.com/',
+        cookieSecure: false,
+        trustedProxyIps: '',
+        dataRootPath: process.env.BLOG_DATA_ROOT,
+      },
+      editorSecret: 'new-runtime-secret-12',
+      confirmEditorSecret: 'new-runtime-secret-12',
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: true,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        backupEncryptionKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+        allowPlaintextBackup: true,
+      },
+    }));
+    const payload = await setupResponse.json();
+    const r2SettingsFile = path.join(process.env.BLOG_DATA_ROOT, 'settings', 'cloudflare-r2.json');
+    const storedSettings = JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'));
+
+    expect(setupResponse.status).toBe(200);
+    expect(payload).toEqual(expect.objectContaining({ success: true }));
+    expect(storedSettings).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        allowPlaintextBackup: false,
       })
     );
   });

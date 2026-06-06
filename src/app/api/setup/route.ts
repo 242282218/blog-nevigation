@@ -28,15 +28,24 @@ import {
     saveEditableR2BackupSettings,
     type EditableR2BackupSettings,
 } from '@/lib/r2-backup-storage';
+import {
+    CloudflareR2BootstrapError,
+    bootstrapCloudflareR2Settings,
+    type CloudflareR2BootstrapInput,
+} from '@/lib/cloudflare-r2-bootstrap';
 import { setEditorSessionCookies } from '@/lib/editor-session-response';
 import { isApplicationSetupComplete } from '@/lib/setup-state';
+
+type R2SetupMode = 'disabled' | 'manual' | 'cloudflare';
 
 type SetupRequestBody = {
     config?: Partial<Record<keyof EditableAppRuntimeConfig, unknown>>;
     editorSecret?: unknown;
     confirmEditorSecret?: unknown;
     setupToken?: unknown;
+    r2SetupMode?: unknown;
     r2Settings?: Partial<Record<keyof EditableR2BackupSettings, unknown>>;
+    cloudflareR2Setup?: Partial<Record<keyof CloudflareR2BootstrapInput, unknown>>;
 };
 
 function asString(value: unknown): string {
@@ -70,6 +79,66 @@ function parseRuntimeConfig(value: SetupRequestBody['config']): EditableAppRunti
         cookieSecure: value.cookieSecure === true,
         trustedProxyIps: parseTrustedProxyIps(value.trustedProxyIps),
         dataRootPath: asString(value.dataRootPath),
+    };
+}
+
+function validateRuntimeConfigBeforeExternalSetup(config: EditableAppRuntimeConfig): string | null {
+    const publicSiteUrl = config.publicSiteUrl.trim();
+
+    if (publicSiteUrl) {
+        try {
+            const url = new URL(publicSiteUrl);
+
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                return '公开站点 URL 必须是有效的 HTTP 或 HTTPS 地址。';
+            }
+        } catch {
+            return '公开站点 URL 必须是有效的 HTTP 或 HTTPS 地址。';
+        }
+    }
+
+    if (config.trustedProxyIps.some((ip) => ip.includes('\n') || ip.includes('\r') || ip.includes(','))) {
+        return '可信代理 IP 请按行填写，不能包含逗号或换行符。';
+    }
+
+    return null;
+}
+
+function parseR2SetupMode(value: unknown, r2Settings: SetupRequestBody['r2Settings']): R2SetupMode {
+    if (value === 'disabled' || value === 'manual' || value === 'cloudflare') {
+        return value;
+    }
+
+    return r2Settings?.enabled === true ? 'manual' : 'disabled';
+}
+
+function createDisabledR2Settings(value: SetupRequestBody['r2Settings']): EditableR2BackupSettings {
+    return {
+        enabled: false,
+        accountId: asString(value?.accountId),
+        bucket: asString(value?.bucket),
+        accessKeyId: '',
+        secretAccessKey: '',
+        backupEncryptionKey: '',
+        prefix: asString(value?.prefix) || 'blog-navigation',
+        endpoint: asString(value?.endpoint),
+        snapshotOnWrite: value?.snapshotOnWrite === true,
+        allowPlaintextBackup: false,
+    };
+}
+
+function parseCloudflareR2Setup(value: SetupRequestBody['cloudflareR2Setup']): CloudflareR2BootstrapInput | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+
+    return {
+        authEmail: asString(value.authEmail),
+        globalApiKey: asString(value.globalApiKey),
+        accountId: asString(value.accountId),
+        bucket: asString(value.bucket),
+        prefix: asString(value.prefix),
+        snapshotOnWrite: value.snapshotOnWrite === true,
     };
 }
 
@@ -154,12 +223,18 @@ export async function PUT(request: NextRequest) {
     }
 
     const config = parseRuntimeConfig(body?.config);
-    const r2Settings = parseR2Settings(body?.r2Settings);
+    const r2SetupMode = parseR2SetupMode(body?.r2SetupMode, body?.r2Settings);
+    const r2Settings = r2SetupMode === 'manual'
+        ? parseR2Settings(body?.r2Settings)
+        : createDisabledR2Settings(body?.r2Settings);
+    const cloudflareR2Setup = r2SetupMode === 'cloudflare'
+        ? parseCloudflareR2Setup(body?.cloudflareR2Setup)
+        : null;
     const editorSecret = asString(body?.editorSecret).trim();
     const confirmEditorSecret = asString(body?.confirmEditorSecret).trim();
     const setupToken = asString(body?.setupToken);
 
-    if (!config || !r2Settings) {
+    if (!config || !r2Settings || (r2SetupMode === 'cloudflare' && !cloudflareR2Setup)) {
         return NextResponse.json(
             {
                 message: '初始化配置格式无效。',
@@ -195,8 +270,28 @@ export async function PUT(request: NextRequest) {
         );
     }
 
+    if (editorSecret && editorSecret.length < 12) {
+        return NextResponse.json(
+            {
+                message: '编辑口令至少需要 12 个字符。',
+            },
+            { status: 400 }
+        );
+    }
+
+    const runtimeConfigError = validateRuntimeConfigBeforeExternalSetup(config);
+
+    if (runtimeConfigError) {
+        return NextResponse.json({ message: runtimeConfigError }, { status: 400 });
+    }
+
     try {
-        saveEditableR2BackupSettings(r2Settings);
+        if (r2SetupMode === 'cloudflare') {
+            await bootstrapCloudflareR2Settings(cloudflareR2Setup as CloudflareR2BootstrapInput);
+        } else {
+            saveEditableR2BackupSettings(r2Settings);
+        }
+
         let sessionValue: string | null = null;
 
         if (editorSecret) {
@@ -231,6 +326,13 @@ export async function PUT(request: NextRequest) {
                     message: '编辑口令至少需要 12 个字符。',
                 },
                 { status: 400 }
+            );
+        }
+
+        if (error instanceof CloudflareR2BootstrapError) {
+            return NextResponse.json(
+                { message: error.message },
+                { status: error.statusCode }
             );
         }
 

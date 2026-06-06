@@ -33,6 +33,17 @@ type R2Form = {
     allowPlaintextBackup: boolean;
 };
 
+type R2SetupMode = 'manual' | 'cloudflare';
+
+type CloudflareR2SetupForm = {
+    authEmail: string;
+    globalApiKey: string;
+    accountId: string;
+    bucket: string;
+    prefix: string;
+    snapshotOnWrite: boolean;
+};
+
 type SetupResponse = {
     authConfigured?: boolean;
     setupTokenRequired?: boolean;
@@ -80,6 +91,17 @@ function createEmptyR2Form(): R2Form {
         endpoint: '',
         snapshotOnWrite: false,
         allowPlaintextBackup: false,
+    };
+}
+
+function createEmptyCloudflareR2SetupForm(): CloudflareR2SetupForm {
+    return {
+        authEmail: '',
+        globalApiKey: '',
+        accountId: '',
+        bucket: 'blog-navigation',
+        prefix: 'blog-navigation',
+        snapshotOnWrite: false,
     };
 }
 
@@ -160,6 +182,8 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
     const router = useRouter();
     const [runtimeForm, setRuntimeForm] = useState<RuntimeForm>(createEmptyRuntimeForm);
     const [r2Form, setR2Form] = useState<R2Form>(createEmptyR2Form);
+    const [r2SetupMode, setR2SetupMode] = useState<R2SetupMode>('cloudflare');
+    const [cloudflareR2SetupForm, setCloudflareR2SetupForm] = useState<CloudflareR2SetupForm>(createEmptyCloudflareR2SetupForm);
     const [authConfigured, setAuthConfigured] = useState(false);
     const [setupTokenRequired, setSetupTokenRequired] = useState(false);
     const [setupToken, setSetupToken] = useState('');
@@ -196,7 +220,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     trustedProxyIps: payload?.editable?.trustedProxyIps?.join('\n') ?? '',
                     dataRootPath: payload?.editable?.dataRootPath ?? '',
                 });
-                setR2Form({
+                const loadedR2Form = {
                     ...createEmptyR2Form(),
                     enabled: Boolean(payload?.r2Settings?.enabled),
                     accountId: payload?.r2Settings?.accountId ?? '',
@@ -205,6 +229,14 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     endpoint: payload?.r2Settings?.endpoint ?? '',
                     snapshotOnWrite: Boolean(payload?.r2Settings?.snapshotOnWrite),
                     allowPlaintextBackup: Boolean(payload?.r2Settings?.allowPlaintextBackup),
+                };
+                setR2Form(loadedR2Form);
+                setCloudflareR2SetupForm({
+                    ...createEmptyCloudflareR2SetupForm(),
+                    accountId: loadedR2Form.accountId,
+                    bucket: loadedR2Form.bucket || 'blog-navigation',
+                    prefix: loadedR2Form.prefix || 'blog-navigation',
+                    snapshotOnWrite: loadedR2Form.snapshotOnWrite,
                 });
             } catch (error) {
                 if (isMounted) {
@@ -241,6 +273,41 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
         }));
     };
 
+    const updateCloudflareR2Setup = <Key extends keyof CloudflareR2SetupForm>(key: Key, value: CloudflareR2SetupForm[Key]) => {
+        setCloudflareR2SetupForm((current) => ({
+            ...current,
+            [key]: value,
+        }));
+    };
+
+    const createR2Payload = () => {
+        if (!r2Form.enabled) {
+            return {
+                r2SetupMode: 'disabled',
+                r2Settings: {
+                    ...r2Form,
+                    enabled: false,
+                    accessKeyId: '',
+                    secretAccessKey: '',
+                    backupEncryptionKey: '',
+                    allowPlaintextBackup: false,
+                },
+            };
+        }
+
+        if (r2SetupMode === 'cloudflare') {
+            return {
+                r2SetupMode,
+                cloudflareR2Setup: cloudflareR2SetupForm,
+            };
+        }
+
+        return {
+            r2SetupMode,
+            r2Settings: r2Form,
+        };
+    };
+
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
@@ -272,7 +339,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     editorSecret: editorSecret.trim(),
                     confirmEditorSecret: confirmEditorSecret.trim(),
                     setupToken: setupToken.trim(),
-                    r2Settings: r2Form,
+                    ...createR2Payload(),
                 }),
             });
             const payload = (await response.json().catch(() => null)) as SetupResponse | null;
@@ -373,31 +440,64 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                 <div className="md:col-span-2">
                                     <Toggle label="启用 R2 远端备份" checked={r2Form.enabled} onChange={(value) => updateR2('enabled', value)} />
                                 </div>
-                                <Field id="setup-r2-account-id" label="Account ID" value={r2Form.accountId} onChange={(value) => updateR2('accountId', value)} />
-                                <Field id="setup-r2-bucket" label="Bucket" value={r2Form.bucket} onChange={(value) => updateR2('bucket', value)} />
-                                <Field id="setup-r2-access-key-id" label="Access Key ID" value={r2Form.accessKeyId} onChange={(value) => updateR2('accessKeyId', value)} />
-                                <Field id="setup-r2-secret-access-key" label="Secret Access Key" value={r2Form.secretAccessKey} onChange={(value) => updateR2('secretAccessKey', value)} type="password" />
-                                <div>
-                                    <label htmlFor="setup-r2-backup-encryption-key" className="block text-sm font-medium text-fg">
-                                        备份加密密钥
-                                    </label>
-                                    <div className="mt-2 flex gap-2">
-                                        <input
-                                            id="setup-r2-backup-encryption-key"
-                                            type="password"
-                                            value={r2Form.backupEncryptionKey}
-                                            onChange={(event) => updateR2('backupEncryptionKey', event.target.value)}
-                                            className={editorInputClassName}
-                                        />
-                                        <EditorButton type="button" onClick={() => updateR2('backupEncryptionKey', createBackupEncryptionKey())}>
-                                            生成
-                                        </EditorButton>
+                                {r2Form.enabled ? (
+                                    <div className="md:col-span-2 grid gap-3 rounded-token-card border border-border-soft bg-background/70 p-3">
+                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                            <EditorButton type="button" variant={r2SetupMode === 'cloudflare' ? 'primary' : 'secondary'} onClick={() => setR2SetupMode('cloudflare')}>
+                                                一键配置 Cloudflare R2
+                                            </EditorButton>
+                                            <EditorButton type="button" variant={r2SetupMode === 'manual' ? 'primary' : 'secondary'} onClick={() => setR2SetupMode('manual')}>
+                                                手动填写 R2 变量
+                                            </EditorButton>
+                                        </div>
+                                        <p className="text-xs leading-5 text-subtle">
+                                            一键配置会临时使用 Cloudflare 邮箱和 Global API Key 创建 bucket 与 R2 专用凭证，初始化完成后不会保存 Global API Key。
+                                        </p>
                                     </div>
-                                </div>
-                                <Field id="setup-r2-prefix" label="对象前缀" value={r2Form.prefix} onChange={(value) => updateR2('prefix', value)} />
-                                <Field id="setup-r2-endpoint" label="Endpoint" value={r2Form.endpoint} onChange={(value) => updateR2('endpoint', value)} />
-                                <Toggle label="每次写入都创建 snapshot" checked={r2Form.snapshotOnWrite} onChange={(value) => updateR2('snapshotOnWrite', value)} />
-                                <Toggle label="允许明文 R2 备份" checked={r2Form.allowPlaintextBackup} onChange={(value) => updateR2('allowPlaintextBackup', value)} danger />
+                                ) : (
+                                    <div className="md:col-span-2 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm leading-6 text-muted">
+                                        未启用 R2 时只保存基础初始化配置，不校验 Account ID、Bucket、Access Key ID 和 Secret Access Key。
+                                    </div>
+                                )}
+                                {r2Form.enabled && r2SetupMode === 'cloudflare' ? (
+                                    <>
+                                        <Field id="setup-cloudflare-auth-email" label="Cloudflare 邮箱" value={cloudflareR2SetupForm.authEmail} onChange={(value) => updateCloudflareR2Setup('authEmail', value)} />
+                                        <Field id="setup-cloudflare-global-api-key" label="Global API Key" value={cloudflareR2SetupForm.globalApiKey} onChange={(value) => updateCloudflareR2Setup('globalApiKey', value)} type="password" />
+                                        <Field id="setup-cloudflare-account-id" label="Account ID" value={cloudflareR2SetupForm.accountId} onChange={(value) => updateCloudflareR2Setup('accountId', value)} />
+                                        <Field id="setup-cloudflare-bucket" label="Bucket" value={cloudflareR2SetupForm.bucket} onChange={(value) => updateCloudflareR2Setup('bucket', value)} />
+                                        <Field id="setup-cloudflare-prefix" label="对象前缀" value={cloudflareR2SetupForm.prefix} onChange={(value) => updateCloudflareR2Setup('prefix', value)} />
+                                        <Toggle label="每次写入都创建 snapshot" checked={cloudflareR2SetupForm.snapshotOnWrite} onChange={(value) => updateCloudflareR2Setup('snapshotOnWrite', value)} />
+                                    </>
+                                ) : null}
+                                {r2Form.enabled && r2SetupMode === 'manual' ? (
+                                    <>
+                                        <Field id="setup-r2-account-id" label="Account ID" value={r2Form.accountId} onChange={(value) => updateR2('accountId', value)} />
+                                        <Field id="setup-r2-bucket" label="Bucket" value={r2Form.bucket} onChange={(value) => updateR2('bucket', value)} />
+                                        <Field id="setup-r2-access-key-id" label="Access Key ID" value={r2Form.accessKeyId} onChange={(value) => updateR2('accessKeyId', value)} />
+                                        <Field id="setup-r2-secret-access-key" label="Secret Access Key" value={r2Form.secretAccessKey} onChange={(value) => updateR2('secretAccessKey', value)} type="password" />
+                                        <div>
+                                            <label htmlFor="setup-r2-backup-encryption-key" className="block text-sm font-medium text-fg">
+                                                备份加密密钥
+                                            </label>
+                                            <div className="mt-2 flex gap-2">
+                                                <input
+                                                    id="setup-r2-backup-encryption-key"
+                                                    type="password"
+                                                    value={r2Form.backupEncryptionKey}
+                                                    onChange={(event) => updateR2('backupEncryptionKey', event.target.value)}
+                                                    className={editorInputClassName}
+                                                />
+                                                <EditorButton type="button" onClick={() => updateR2('backupEncryptionKey', createBackupEncryptionKey())}>
+                                                    生成
+                                                </EditorButton>
+                                            </div>
+                                        </div>
+                                        <Field id="setup-r2-prefix" label="对象前缀" value={r2Form.prefix} onChange={(value) => updateR2('prefix', value)} />
+                                        <Field id="setup-r2-endpoint" label="Endpoint" value={r2Form.endpoint} onChange={(value) => updateR2('endpoint', value)} />
+                                        <Toggle label="每次写入都创建 snapshot" checked={r2Form.snapshotOnWrite} onChange={(value) => updateR2('snapshotOnWrite', value)} />
+                                        <Toggle label="允许明文 R2 备份" checked={r2Form.allowPlaintextBackup} onChange={(value) => updateR2('allowPlaintextBackup', value)} danger />
+                                    </>
+                                ) : null}
                             </div>
                         </EditorPanel>
 
