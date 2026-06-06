@@ -166,7 +166,7 @@ describe('runtime setup and config APIs', () => {
     expect(JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'))).toEqual(
       expect.objectContaining({
         enabled: false,
-        allowPlaintextBackup: true,
+        allowPlaintextBackup: false,
       })
     );
 
