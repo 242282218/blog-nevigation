@@ -42,8 +42,6 @@ services:
       R2_PREFIX: ${R2_PREFIX:-blog-navigation}
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_SNAPSHOT_ON_WRITE: ${R2_SNAPSHOT_ON_WRITE:-false}
-      R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}
-      R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}
     volumes:
       # 数据持久化：整个数据根目录单点挂载，迁移时复制 ./data 即可
       - ./data:/var/lib/blog-navigation

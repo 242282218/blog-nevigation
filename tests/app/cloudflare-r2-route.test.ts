@@ -22,7 +22,6 @@ const ORIGINAL_ENV = {
   R2_PREFIX: process.env.R2_PREFIX,
   R2_ENDPOINT: process.env.R2_ENDPOINT,
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
-  R2_BACKUP_ENCRYPTION_KEY: process.env.R2_BACKUP_ENCRYPTION_KEY,
 };
 const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
@@ -41,7 +40,6 @@ function clearR2Env(): void {
     'R2_PREFIX',
     'R2_ENDPOINT',
     'R2_SNAPSHOT_ON_WRITE',
-    'R2_BACKUP_ENCRYPTION_KEY',
   ]) {
     delete process.env[name];
   }
@@ -355,102 +353,6 @@ describe('Cloudflare R2 settings API', () => {
     );
   });
 
-  it('saves manual backup encryption keys without returning them and keeps them when omitted later', async () => {
-    clearR2Env();
-    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
-    process.env.BLOG_DATA_ROOT = createTempDataRoot();
-    const backupEncryptionKey = Buffer.alloc(32, 3).toString('base64');
-
-    const createResponse = await PUT(
-      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
-        method: 'PUT',
-        body: JSON.stringify({
-          settings: {
-            enabled: true,
-            accountId: '0123456789abcdef0123456789abcdef',
-            bucket: 'blog-data',
-            accessKeyId: 'access-key',
-            secretAccessKey: 'secret-key',
-            backupEncryptionKey,
-            prefix: 'blog-navigation',
-            endpoint: '',
-            snapshotOnWrite: false,
-          },
-        }),
-      })
-    );
-    const createPayload = await createResponse.json();
-
-    expect(createResponse.status).toBe(200);
-    expect(JSON.stringify(createPayload)).not.toContain(backupEncryptionKey);
-    expect(createPayload.settings).toEqual(
-      expect.objectContaining({
-        hasBackupEncryptionKey: true,
-      })
-    );
-
-    const updateResponse = await PUT(
-      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
-        method: 'PUT',
-        body: JSON.stringify({
-          settings: {
-            enabled: true,
-            accountId: '0123456789abcdef0123456789abcdef',
-            bucket: 'blog-data',
-            accessKeyId: 'next-access-key',
-            secretAccessKey: '',
-            backupEncryptionKey: '',
-            prefix: 'next-prefix',
-            endpoint: '',
-            snapshotOnWrite: true,
-          },
-        }),
-      })
-    );
-    const settingsFile = path.join(process.env.BLOG_DATA_ROOT, 'settings', 'cloudflare-r2.json');
-    const storedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-
-    expect(updateResponse.status).toBe(200);
-    expect(storedSettings).toEqual(
-      expect.objectContaining({
-        accessKeyId: 'next-access-key',
-        secretAccessKey: 'secret-key',
-        backupEncryptionKey,
-        prefix: 'next-prefix',
-      })
-    );
-  });
-
-  it('rejects malformed manual backup encryption keys without writing settings', async () => {
-    clearR2Env();
-    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
-    process.env.BLOG_DATA_ROOT = createTempDataRoot();
-
-    const response = await PUT(
-      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
-        method: 'PUT',
-        body: JSON.stringify({
-          settings: {
-            enabled: true,
-            accountId: '0123456789abcdef0123456789abcdef',
-            bucket: 'blog-data',
-            accessKeyId: 'access-key',
-            secretAccessKey: 'secret-key',
-            backupEncryptionKey: 'bad-key',
-            prefix: 'blog-navigation',
-            endpoint: '',
-            snapshotOnWrite: false,
-          },
-        }),
-      })
-    );
-    const payload = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(payload.message).toContain('R2 备份加密密钥');
-    expect(fs.existsSync(getSettingsFile(process.env.BLOG_DATA_ROOT))).toBe(false);
-  });
-
   it('automatically configures R2 from a one-time Cloudflare global key without returning secrets', async () => {
     clearR2Env();
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
@@ -558,13 +460,13 @@ describe('Cloudflare R2 settings API', () => {
         bucket: 'blog-data',
         accessKeyId: 'created-r2-access-key',
         secretAccessKey: expect.stringMatching(/^[a-f0-9]{64}$/),
-        backupEncryptionKey: expect.any(String),
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: true,
       })
     );
-    expect(Buffer.from(storedSettings.backupEncryptionKey, 'base64')).toHaveLength(32);
+    expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
+    expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
     expect(payload).toEqual(
       expect.objectContaining({
         success: true,
@@ -573,11 +475,10 @@ describe('Cloudflare R2 settings API', () => {
           enabled: true,
           hasAccessKeyId: true,
           hasSecretAccessKey: true,
-          hasBackupEncryptionKey: true,
         }),
         status: expect.objectContaining({
           configured: true,
-          hasEncryptionKey: true,
+          securityWarning: expect.stringContaining('plaintext JSON'),
         }),
       })
     );

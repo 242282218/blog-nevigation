@@ -16,7 +16,6 @@ import {
   uploadBackupPayloadToR2,
 } from '@/lib/r2-backup-storage';
 
-const TEST_R2_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   R2_BACKUP_ENABLED: process.env.R2_BACKUP_ENABLED,
@@ -27,8 +26,6 @@ const ORIGINAL_ENV = {
   R2_PREFIX: process.env.R2_PREFIX,
   R2_ENDPOINT: process.env.R2_ENDPOINT,
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
-  R2_BACKUP_ENCRYPTION_KEY: process.env.R2_BACKUP_ENCRYPTION_KEY,
-  R2_ALLOW_PLAINTEXT_BACKUP: process.env.R2_ALLOW_PLAINTEXT_BACKUP,
 };
 const tempDirectories: string[] = [];
 const sentCommands: Array<GetObjectCommand | PutObjectCommand> = [];
@@ -150,7 +147,6 @@ describe('R2 backup configuration', () => {
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
     process.env.R2_PREFIX = '/custom-prefix/';
     process.env.R2_SNAPSHOT_ON_WRITE = 'true';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
 
     expect(getR2BackupConfig()).toEqual({
       bucket: 'blog-data',
@@ -170,7 +166,6 @@ describe('R2 backup configuration', () => {
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
     process.env.R2_ENDPOINT = 'http://127.0.0.1:9000';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
 
     expect(getR2BackupConfig()).toBeNull();
     expect(getR2BackupStatus()).toEqual(
@@ -188,7 +183,6 @@ describe('R2 backup configuration', () => {
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
 
     expect(getR2BackupConfig()).toBeNull();
     expect(getR2BackupStatus()).toEqual(
@@ -202,7 +196,6 @@ describe('R2 backup configuration', () => {
   it('persists editable R2 settings without exposing the secret in safe settings', () => {
     clearR2Env();
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
 
     const safeSettings = saveEditableR2BackupSettings({
       enabled: true,
@@ -222,8 +215,6 @@ describe('R2 backup configuration', () => {
       bucket: 'blog-data',
       hasAccessKeyId: true,
       hasSecretAccessKey: true,
-      hasBackupEncryptionKey: true,
-      allowPlaintextBackup: false,
       prefix: 'custom-prefix',
       endpoint: '',
       snapshotOnWrite: true,
@@ -291,7 +282,6 @@ describe('R2 backup configuration', () => {
   it('keeps an existing stored secret when the update omits it', () => {
     clearR2Env();
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
 
     saveEditableR2BackupSettings({
       enabled: true,
@@ -321,70 +311,6 @@ describe('R2 backup configuration', () => {
         prefix: 'next-prefix',
       })
     );
-  });
-
-  it('persists and keeps a manually configured backup encryption key', () => {
-    clearR2Env();
-    process.env.BLOG_DATA_ROOT = createTempDataRoot();
-    const nextEncryptionKey = Buffer.alloc(32, 2).toString('base64');
-
-    saveEditableR2BackupSettings({
-      enabled: true,
-      accountId: '0123456789abcdef0123456789abcdef',
-      bucket: 'blog-data',
-      accessKeyId: 'access-key',
-      secretAccessKey: 'secret-key',
-      backupEncryptionKey: nextEncryptionKey,
-      prefix: 'blog-navigation',
-      endpoint: '',
-      snapshotOnWrite: false,
-    });
-    saveEditableR2BackupSettings({
-      enabled: true,
-      accountId: '0123456789abcdef0123456789abcdef',
-      bucket: 'blog-data',
-      accessKeyId: 'next-access-key',
-      secretAccessKey: '',
-      backupEncryptionKey: '',
-      prefix: 'next-prefix',
-      endpoint: '',
-      snapshotOnWrite: false,
-    });
-
-    const settingsFile = getSettingsFile(process.env.BLOG_DATA_ROOT);
-    const storedSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
-
-    expect(storedSettings.backupEncryptionKey).toBe(nextEncryptionKey);
-    expect(getEditableR2BackupSettings()).toEqual(
-      expect.objectContaining({
-        hasBackupEncryptionKey: true,
-      })
-    );
-    expect(getR2BackupStatus()).toEqual(
-      expect.objectContaining({
-        configured: true,
-        hasEncryptionKey: true,
-      })
-    );
-  });
-
-  it('rejects malformed manually configured backup encryption keys before writing settings', () => {
-    clearR2Env();
-    process.env.BLOG_DATA_ROOT = createTempDataRoot();
-
-    expect(() => saveEditableR2BackupSettings({
-      enabled: true,
-      accountId: '0123456789abcdef0123456789abcdef',
-      bucket: 'blog-data',
-      accessKeyId: 'access-key',
-      secretAccessKey: 'secret-key',
-      backupEncryptionKey: 'not-a-valid-key',
-      prefix: 'blog-navigation',
-      endpoint: '',
-      snapshotOnWrite: false,
-    })).toThrow('R2 备份加密密钥');
-
-    expect(fs.existsSync(getSettingsFile(process.env.BLOG_DATA_ROOT))).toBe(false);
   });
 
   it('does not copy the env secret into disabled file settings', () => {
@@ -417,7 +343,6 @@ describe('R2 backup configuration', () => {
         bucket: '',
         hasAccessKeyId: false,
         hasSecretAccessKey: false,
-        hasBackupEncryptionKey: false,
       })
     );
     expect(getR2BackupStatus()).toEqual(
@@ -432,34 +357,13 @@ describe('R2 backup configuration', () => {
     expect(getR2BackupConfig()).toBeNull();
   });
 
-  it('requires an encryption key by default when R2 is fully configured', () => {
+  it('uses plaintext backups by default when R2 is fully configured', () => {
     clearR2Env();
     process.env.R2_BACKUP_ENABLED = 'true';
     process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-
-    expect(getR2BackupConfig()).toBeNull();
-    expect(getR2BackupStatus()).toEqual(
-      expect.objectContaining({
-        enabled: true,
-        configured: false,
-        hasEncryptionKey: false,
-        allowsPlaintextBackup: false,
-        message: 'R2 backup encryption key is required unless R2_ALLOW_PLAINTEXT_BACKUP=true is explicitly set.',
-      })
-    );
-  });
-
-  it('allows plaintext backups only with an explicit opt-in', () => {
-    clearR2Env();
-    process.env.R2_BACKUP_ENABLED = 'true';
-    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
-    process.env.R2_BUCKET = 'blog-data';
-    process.env.R2_ACCESS_KEY_ID = 'access-key';
-    process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_ALLOW_PLAINTEXT_BACKUP = 'true';
 
     expect(getR2BackupConfig()).toEqual(
       expect.objectContaining({
@@ -469,21 +373,18 @@ describe('R2 backup configuration', () => {
     expect(getR2BackupStatus()).toEqual(
       expect.objectContaining({
         configured: true,
-        hasEncryptionKey: false,
-        allowsPlaintextBackup: true,
-        securityWarning: expect.stringContaining('plaintext mode'),
+        securityWarning: expect.stringContaining('plaintext JSON'),
       })
     );
   });
 
-  it('uploads encrypted backup bodies and decrypts them on restore', async () => {
+  it('uploads plaintext backup bodies and restores them without an encryption key', async () => {
     clearR2Env();
     process.env.R2_BACKUP_ENABLED = 'true';
     process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
     const payload: EditorBackupPayload = {
       version: 1,
       exportedAt: '2026-05-26T00:00:00.000Z',
@@ -528,20 +429,18 @@ describe('R2 backup configuration', () => {
 
     expect(sentCommands).toHaveLength(1);
     expect(sentCommands[0]).toBeInstanceOf(PutObjectCommand);
-    expect(latestUploadedBody).toContain('"encrypted": true');
-    expect(latestUploadedBody).not.toContain('Sensitive Draft');
-    expect(latestUploadedBody).not.toContain('Private settings');
+    expect(latestUploadedBody).toContain('Sensitive Draft');
+    expect(latestUploadedBody).toContain('Private settings');
     await expect(downloadLatestBackupPayloadFromR2()).resolves.toEqual(payload);
   });
 
-  it('rejects encrypted backup bodies that exceed the final R2 object size limit', async () => {
+  it('rejects plaintext backup bodies that exceed the R2 object size limit', async () => {
     clearR2Env();
     process.env.R2_BACKUP_ENABLED = 'true';
     process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
     const payload: EditorBackupPayload = {
       version: 1,
       exportedAt: '2026-05-26T00:00:00.000Z',
@@ -554,9 +453,9 @@ describe('R2 backup configuration', () => {
             id: 'large-article',
             title: 'Large Article',
             date: '2026-05-26',
-            description: 'Large enough to exceed the encrypted envelope limit.',
+            description: 'Large enough to exceed the R2 object size limit.',
             tags: ['backup'],
-            content: 'x'.repeat(4 * 1024 * 1024),
+            content: 'x'.repeat(6 * 1024 * 1024),
             createdAt: 1,
             updatedAt: 2,
           },
@@ -585,7 +484,6 @@ describe('R2 backup configuration', () => {
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
     const payload: EditorBackupPayload = {
       version: 1,
       exportedAt: '2026-05-26T00:00:00.000Z',
@@ -621,7 +519,6 @@ describe('R2 backup configuration', () => {
     process.env.R2_BUCKET = 'blog-data';
     process.env.R2_ACCESS_KEY_ID = 'access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
     const payload: EditorBackupPayload = {
       version: 1,
       exportedAt: '2026-05-26T00:00:00.000Z',
@@ -683,7 +580,6 @@ describe('R2 backup configuration', () => {
     clearR2Env();
     const dataRoot = createTempDataRoot();
     process.env.BLOG_DATA_ROOT = dataRoot;
-    process.env.R2_BACKUP_ENCRYPTION_KEY = TEST_R2_ENCRYPTION_KEY;
     writeText(getSettingsFile(dataRoot), '{');
 
     const safeSettings = saveEditableR2BackupSettings({
@@ -734,7 +630,6 @@ describe('R2 backup configuration', () => {
       expect.objectContaining({
         enabled: false,
         hasSecretAccessKey: false,
-        hasBackupEncryptionKey: false,
       })
     );
     expect(storedSettings.secretAccessKey).toBe('');

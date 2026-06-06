@@ -4,7 +4,7 @@ import {
     S3Client,
     S3ServiceException,
 } from '@aws-sdk/client-s3';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@/lib/article-data';
@@ -14,8 +14,6 @@ import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 const DEFAULT_R2_PREFIX = 'blog-navigation';
 const LATEST_BACKUP_FILE_NAME = 'backup.json';
 const R2_SETTINGS_FILE_NAME = 'cloudflare-r2.json';
-const R2_BACKUP_ENCRYPTION_VERSION = 1;
-const R2_BACKUP_ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const R2_BACKUP_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
 
 export interface R2BackupConfig {
@@ -36,8 +34,6 @@ export interface R2BackupStatus {
     snapshotOnWrite: boolean;
     hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
-    hasEncryptionKey: boolean;
-    allowsPlaintextBackup: boolean;
     source: 'file' | 'env' | 'default';
     message: string | null;
     securityWarning: string | null;
@@ -49,27 +45,14 @@ export interface EditableR2BackupSettings {
     bucket: string;
     accessKeyId: string;
     secretAccessKey: string;
-    backupEncryptionKey?: string;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
-    allowPlaintextBackup?: boolean;
 }
 
-export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId' | 'backupEncryptionKey' | 'allowPlaintextBackup'> {
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId'> {
     hasSecretAccessKey: boolean;
     hasAccessKeyId: boolean;
-    hasBackupEncryptionKey: boolean;
-    allowPlaintextBackup: boolean;
-}
-
-interface EncryptedR2BackupPayload {
-    version: typeof R2_BACKUP_ENCRYPTION_VERSION;
-    encrypted: true;
-    algorithm: typeof R2_BACKUP_ENCRYPTION_ALGORITHM;
-    iv: string;
-    authTag: string;
-    ciphertext: string;
 }
 
 export interface R2UploadResult {
@@ -130,22 +113,10 @@ function parseStoredR2BackupSettings(value: unknown, filePath: string): Editable
         bucket: value.bucket.trim(),
         accessKeyId: value.accessKeyId.trim(),
         secretAccessKey: value.secretAccessKey.trim(),
-        backupEncryptionKey: typeof value.backupEncryptionKey === 'string'
-            ? value.backupEncryptionKey.trim()
-            : '',
         prefix: value.prefix.trim() || DEFAULT_R2_PREFIX,
         endpoint: value.endpoint.trim(),
         snapshotOnWrite: value.snapshotOnWrite,
-        allowPlaintextBackup: typeof value.allowPlaintextBackup === 'boolean'
-            ? value.allowPlaintextBackup
-            : false,
     };
-}
-
-function isPlaintextBackupAllowed(): boolean {
-    const stored = readStoredR2BackupSettings();
-
-    return stored ? Boolean(stored.allowPlaintextBackup) : getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true';
 }
 
 function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
@@ -260,11 +231,9 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
             bucket: stored.bucket,
             hasAccessKeyId: Boolean(stored.accessKeyId),
             hasSecretAccessKey: Boolean(stored.secretAccessKey),
-            hasBackupEncryptionKey: Boolean(stored.backupEncryptionKey || getEnv('R2_BACKUP_ENCRYPTION_KEY')),
             prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
             endpoint: stored.endpoint,
             snapshotOnWrite: stored.snapshotOnWrite,
-            allowPlaintextBackup: Boolean(stored.allowPlaintextBackup),
         };
     }
 
@@ -279,11 +248,9 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
         bucket: getEnv('R2_BUCKET'),
         hasAccessKeyId: Boolean(getEnv('R2_ACCESS_KEY_ID')),
         hasSecretAccessKey: Boolean(secretAccessKey),
-        hasBackupEncryptionKey: Boolean(getEnv('R2_BACKUP_ENCRYPTION_KEY')),
         prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         endpoint,
         snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
-        allowPlaintextBackup: getEnv('R2_ALLOW_PLAINTEXT_BACKUP') === 'true',
     };
 }
 
@@ -310,8 +277,6 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     }
 
     const trimmedSecretAccessKey = input.secretAccessKey.trim();
-    const trimmedBackupEncryptionKey = input.backupEncryptionKey?.trim() ?? '';
-    validateOptionalR2BackupEncryptionKey(trimmedBackupEncryptionKey);
 
     const nextSettings: EditableR2BackupSettings = {
         enabled: input.enabled,
@@ -319,11 +284,9 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         bucket: input.bucket.trim(),
         accessKeyId: input.accessKeyId.trim(),
         secretAccessKey: trimmedSecretAccessKey || existing?.secretAccessKey || (input.enabled ? getEnv('R2_SECRET_ACCESS_KEY') : ''),
-        backupEncryptionKey: trimmedBackupEncryptionKey || existing?.backupEncryptionKey || '',
         prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
         endpoint: input.endpoint.trim(),
         snapshotOnWrite: input.snapshotOnWrite,
-        allowPlaintextBackup: Boolean(input.allowPlaintextBackup),
     };
 
     if (
@@ -360,10 +323,6 @@ export function getR2BackupConfig(): R2BackupConfig | null {
         return null;
     }
 
-    if (!getR2BackupEncryptionKey() && !isPlaintextBackupAllowed()) {
-        return null;
-    }
-
     return {
         bucket,
         endpoint,
@@ -381,8 +340,6 @@ export function getR2BackupStatus(): R2BackupStatus {
     const enabled = stored ? stored.enabled : getEnv('R2_BACKUP_ENABLED') === 'true';
     const config = getR2BackupConfig();
     const settings = getEditableR2BackupSettings();
-    const hasEncryptionKey = Boolean(getR2BackupEncryptionKey());
-    const allowsPlaintextBackup = isPlaintextBackupAllowed();
     const hasRequiredConnectionSettings = Boolean(
         settings.accountId &&
         settings.bucket &&
@@ -390,11 +347,6 @@ export function getR2BackupStatus(): R2BackupStatus {
         settings.hasSecretAccessKey &&
         resolveR2Endpoint(settings.endpoint, settings.accountId)
     );
-
-    let securityWarning: string | null = null;
-    if (enabled && config && !hasEncryptionKey && allowsPlaintextBackup) {
-        securityWarning = 'R2 backup plaintext mode is explicitly enabled. Backup data will be stored without application-level encryption.';
-    }
 
     return {
         enabled,
@@ -405,15 +357,13 @@ export function getR2BackupStatus(): R2BackupStatus {
         snapshotOnWrite: settings.snapshotOnWrite,
         hasAccessKeyId: settings.hasAccessKeyId,
         hasSecretAccessKey: settings.hasSecretAccessKey,
-        hasEncryptionKey,
-        allowsPlaintextBackup,
         source: stored ? 'file' : (enabled || settings.bucket || settings.accountId ? 'env' : 'default'),
-        message: enabled && !config
-            ? (hasRequiredConnectionSettings && !hasEncryptionKey && !allowsPlaintextBackup
-                ? 'R2 backup encryption key is required unless R2_ALLOW_PLAINTEXT_BACKUP=true is explicitly set.'
-                : 'R2 backup is enabled but required variables are missing.')
+        message: enabled && !config && !hasRequiredConnectionSettings
+            ? 'R2 backup is enabled but required variables are missing.'
             : null,
-        securityWarning,
+        securityWarning: enabled && config
+            ? 'R2 backups are stored as plaintext JSON in Cloudflare R2.'
+            : null,
     };
 }
 
@@ -522,124 +472,15 @@ async function bodyToString(body: unknown): Promise<string> {
     return value;
 }
 
-function getR2BackupEncryptionKey(): Buffer | null {
-    const stored = readStoredR2BackupSettings();
-    const rawKey = stored?.backupEncryptionKey?.trim() || getEnv('R2_BACKUP_ENCRYPTION_KEY');
-
-    if (!rawKey) {
-        return null;
-    }
-
-    return parseR2BackupEncryptionKey(rawKey, 'R2_BACKUP_ENCRYPTION_KEY');
-}
-
-function parseR2BackupEncryptionKey(rawKey: string, label: string): Buffer {
-    const trimmedKey = rawKey.trim();
-    const base64Key = Buffer.from(trimmedKey, 'base64');
-
-    if (base64Key.length === 32 && base64Key.toString('base64') === trimmedKey) {
-        return base64Key;
-    }
-
-    const hexKey = Buffer.from(trimmedKey, 'hex');
-
-    if (hexKey.length === 32 && hexKey.toString('hex').toLowerCase() === trimmedKey.toLowerCase()) {
-        return hexKey;
-    }
-
-    throw new Error(`${label} must be a 32-byte base64 or hex value.`);
-}
-
-function validateOptionalR2BackupEncryptionKey(rawKey: string): void {
-    if (!rawKey.trim()) {
-        return;
-    }
-
-    try {
-        parseR2BackupEncryptionKey(rawKey, 'R2 backup encryption key');
-    } catch {
-        throw new Error('R2 备份加密密钥必须是 32 字节 base64 或 hex 值。');
-    }
-}
-
-function encryptBackupBody(body: string, key: Buffer): string {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv(R2_BACKUP_ENCRYPTION_ALGORITHM, key, iv);
-    const ciphertext = Buffer.concat([
-        cipher.update(body, 'utf8'),
-        cipher.final(),
-    ]);
-    const envelope: EncryptedR2BackupPayload = {
-        version: R2_BACKUP_ENCRYPTION_VERSION,
-        encrypted: true,
-        algorithm: R2_BACKUP_ENCRYPTION_ALGORITHM,
-        iv: iv.toString('base64'),
-        authTag: cipher.getAuthTag().toString('base64'),
-        ciphertext: ciphertext.toString('base64'),
-    };
-
-    return JSON.stringify(envelope, null, 2);
-}
-
-function isEncryptedR2BackupPayload(value: unknown): value is EncryptedR2BackupPayload {
-    return (
-        isRecord(value) &&
-        value.version === R2_BACKUP_ENCRYPTION_VERSION &&
-        value.encrypted === true &&
-        value.algorithm === R2_BACKUP_ENCRYPTION_ALGORITHM &&
-        typeof value.iv === 'string' &&
-        typeof value.authTag === 'string' &&
-        typeof value.ciphertext === 'string'
-    );
-}
-
-function decryptBackupBody(envelope: EncryptedR2BackupPayload, key: Buffer): string {
-    const decipher = createDecipheriv(
-        R2_BACKUP_ENCRYPTION_ALGORITHM,
-        key,
-        Buffer.from(envelope.iv, 'base64')
-    );
-
-    decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
-
-    return Buffer.concat([
-        decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
-        decipher.final(),
-    ]).toString('utf8');
-}
-
 function createR2BackupBody(payload: EditorBackupPayload): string {
     const body = JSON.stringify(payload, null, 2);
-    const key = getR2BackupEncryptionKey();
+
     assertR2BackupBodyTextSize(body);
-
-    if (key) {
-        const encryptedBody = encryptBackupBody(body, key);
-        assertR2BackupBodyTextSize(encryptedBody);
-        return encryptedBody;
-    }
-
-    if (isPlaintextBackupAllowed()) {
-        return body;
-    }
-
-    throw new Error('R2_BACKUP_ENCRYPTION_KEY is required unless R2_ALLOW_PLAINTEXT_BACKUP=true is explicitly set.');
+    return body;
 }
 
 function parseR2BackupBody(content: string): unknown {
-    const parsed = JSON.parse(content) as unknown;
-
-    if (!isEncryptedR2BackupPayload(parsed)) {
-        return parsed;
-    }
-
-    const key = getR2BackupEncryptionKey();
-
-    if (!key) {
-        throw new Error('Latest R2 backup is encrypted but R2_BACKUP_ENCRYPTION_KEY is not configured.');
-    }
-
-    return JSON.parse(decryptBackupBody(parsed, key));
+    return JSON.parse(content) as unknown;
 }
 
 export async function uploadBackupPayloadToR2(

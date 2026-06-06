@@ -119,11 +119,9 @@ function createDisabledR2Settings(value: SetupRequestBody['r2Settings']): Editab
         bucket: asString(value?.bucket),
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionKey: '',
         prefix: asString(value?.prefix) || 'blog-navigation',
         endpoint: asString(value?.endpoint),
         snapshotOnWrite: value?.snapshotOnWrite === true,
-        allowPlaintextBackup: false,
     };
 }
 
@@ -153,11 +151,9 @@ function parseR2Settings(value: SetupRequestBody['r2Settings']): EditableR2Backu
         bucket: asString(value.bucket),
         accessKeyId: asString(value.accessKeyId),
         secretAccessKey: asString(value.secretAccessKey),
-        backupEncryptionKey: asString(value.backupEncryptionKey),
         prefix: asString(value.prefix),
         endpoint: asString(value.endpoint),
         snapshotOnWrite: value.snapshotOnWrite === true,
-        allowPlaintextBackup: value.allowPlaintextBackup === true,
     };
 }
 

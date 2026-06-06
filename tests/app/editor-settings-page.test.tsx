@@ -117,7 +117,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -131,8 +130,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasEncryptionKey: true,
-            allowsPlaintextBackup: false,
             source: 'file',
             message: null,
             securityWarning: null,
@@ -153,7 +150,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -167,8 +163,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasEncryptionKey: true,
-            allowsPlaintextBackup: false,
             source: 'file',
             message: null,
             securityWarning: null,
@@ -223,7 +217,6 @@ describe('EditorSettingsPage', () => {
         bucket: 'blog-data',
         accessKeyId: 'access-key',
         secretAccessKey: '',
-        backupEncryptionKey: '',
       })
     );
   });
@@ -319,7 +312,7 @@ describe('EditorSettingsPage', () => {
 
     const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('#cloudflare-r2-form input[type="checkbox"]'));
 
-    expect(checkboxes).toHaveLength(3);
+    expect(checkboxes).toHaveLength(2);
 
     for (const checkbox of checkboxes) {
       const label = checkbox.closest('label');
@@ -350,7 +343,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionKey: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -364,8 +356,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasEncryptionKey: false,
-            allowsPlaintextBackup: false,
             source: 'default',
             message: null,
             securityWarning: null,
@@ -383,7 +373,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionKey: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: true,
@@ -397,8 +386,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: true,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasEncryptionKey: true,
-            allowsPlaintextBackup: false,
             source: 'file',
             message: null,
             securityWarning: null,

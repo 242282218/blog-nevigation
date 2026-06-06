@@ -144,15 +144,11 @@ describe('repository structure migration', () => {
         expect(localCompose).toContain('127.0.0.1:${APP_PORT:-7199}:3000');
         expect(localCompose).toContain('NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}');
         expect(localCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
-        expect(localCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
-        expect(localCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
         expect(localCompose).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
         expect(envExample).toContain('COOKIE_SECURE=false');
         expect(envExample).toContain('TRUSTED_PROXY_IPS=');
         expect(envExample).toContain('NEXT_PUBLIC_SITE_URL=http://localhost:7199');
-        expect(envExample).toContain('R2_BACKUP_ENCRYPTION_KEY=');
-        expect(envExample).toContain('R2_ALLOW_PLAINTEXT_BACKUP=false');
         expect(envExample).not.toContain('EDITOR_ACCESS_TOKEN=change-me');
         expect(readme).toContain('EDITOR_ACCESS_TOKEN="$(openssl rand -base64 32');
         expect(readme).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
@@ -180,8 +176,6 @@ describe('repository structure migration', () => {
         expect(deployCompose).toContain('COOKIE_SECURE: ${COOKIE_SECURE:-true}');
         expect(deployCompose).not.toContain('COOKIE_SECURE: ${COOKIE_SECURE:-false}');
         expect(deployCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
-        expect(deployCompose).toContain('R2_BACKUP_ENCRYPTION_KEY: ${R2_BACKUP_ENCRYPTION_KEY:-}');
-        expect(deployCompose).toContain('R2_ALLOW_PLAINTEXT_BACKUP: ${R2_ALLOW_PLAINTEXT_BACKUP:-false}');
         expect(deployScript).toContain('NEXT_PUBLIC_SITE_URL=');
         expect(deployWorkflow).toContain('# actions/checkout@v6');
         expect(deployWorkflow).toContain('# actions/setup-node@v6');

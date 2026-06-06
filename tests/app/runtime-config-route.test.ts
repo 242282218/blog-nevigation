@@ -35,8 +35,6 @@ const ORIGINAL_ENV = {
   R2_PREFIX: process.env.R2_PREFIX,
   R2_ENDPOINT: process.env.R2_ENDPOINT,
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
-  R2_BACKUP_ENCRYPTION_KEY: process.env.R2_BACKUP_ENCRYPTION_KEY,
-  R2_ALLOW_PLAINTEXT_BACKUP: process.env.R2_ALLOW_PLAINTEXT_BACKUP,
 };
 const TEMP_DIRECTORIES: string[] = [];
 
@@ -137,11 +135,9 @@ describe('runtime setup and config APIs', () => {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionKey: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
-        allowPlaintextBackup: true,
       },
     }));
     const setupPayload = await setupResponse.json();
@@ -166,9 +162,10 @@ describe('runtime setup and config APIs', () => {
     expect(JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'))).toEqual(
       expect.objectContaining({
         enabled: false,
-        allowPlaintextBackup: false,
       })
     );
+    expect(JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'))).not.toHaveProperty('backupEncryptionKey');
+    expect(JSON.parse(fs.readFileSync(r2SettingsFile, 'utf8'))).not.toHaveProperty('allowPlaintextBackup');
 
     const afterSetup = await getSetup();
 
@@ -261,11 +258,12 @@ describe('runtime setup and config APIs', () => {
         bucket: 'blog-navigation',
         accessKeyId: 'created-r2-access-key',
         secretAccessKey: expect.stringMatching(/^[a-f0-9]{64}$/),
-        backupEncryptionKey: expect.any(String),
         prefix: 'blog-navigation',
         snapshotOnWrite: false,
       })
     );
+    expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
+    expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
   });
 
   it('rejects invalid setup input before Cloudflare R2 automatic setup has external side effects', async () => {
@@ -321,11 +319,9 @@ describe('runtime setup and config APIs', () => {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionKey: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
-        allowPlaintextBackup: true,
       },
     }));
     const payload = await setupResponse.json();
@@ -337,9 +333,10 @@ describe('runtime setup and config APIs', () => {
     expect(storedSettings).toEqual(
       expect.objectContaining({
         enabled: false,
-        allowPlaintextBackup: false,
       })
     );
+    expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
+    expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
   });
 
   it('updates runtime config and makes the saved editor secret override the legacy env token', async () => {

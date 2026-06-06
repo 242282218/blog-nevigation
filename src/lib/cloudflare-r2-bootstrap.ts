@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { isRecord } from '@/lib/article-data';
 import {
     getR2BackupStatus,
@@ -244,11 +244,9 @@ export async function bootstrapCloudflareR2Settings(
             bucket: input.bucket,
             accessKeyId: token.accessKeyId,
             secretAccessKey: token.secretAccessKey,
-            backupEncryptionKey: randomBytes(32).toString('base64'),
             prefix: input.prefix,
             endpoint: '',
             snapshotOnWrite: input.snapshotOnWrite,
-            allowPlaintextBackup: false,
         });
         settingsSaved = true;
 

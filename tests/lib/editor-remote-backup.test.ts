@@ -50,8 +50,6 @@ function createConfiguredStatus() {
     snapshotOnWrite: false,
     hasAccessKeyId: true,
     hasSecretAccessKey: true,
-    hasEncryptionKey: true,
-    allowsPlaintextBackup: false,
     source: 'env' as const,
     message: null,
     securityWarning: null,
