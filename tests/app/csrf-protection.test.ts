@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ensureEditorWriteRequest } from '@/lib/editor-api-auth';
 import { EDITOR_SESSION_COOKIE, EDITOR_CSRF_COOKIE, EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
