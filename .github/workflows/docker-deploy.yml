@@ -300,6 +300,25 @@ jobs:
               echo "http://127.0.0.1:${port:-7199}/"
             }
 
+            create_runtime_backup() {
+              local backup_dir
+              local backup_path
+
+              backup_dir="${DEPLOY_DIR}/backups"
+              backup_path="${backup_dir}/blog-navigation-runtime-$(date -u +%Y%m%dT%H%M%SZ).tgz"
+
+              mkdir -p "${backup_dir}" "${DEPLOY_DIR}/data"
+              echo "Creating runtime backup: ${backup_path}"
+              tar -C "${DEPLOY_DIR}" -czf "${backup_path}" .env data
+
+              find "${backup_dir}" -maxdepth 1 -type f -name 'blog-navigation-runtime-*.tgz' \
+                | sort -r \
+                | awk 'NR>10' \
+                | while IFS= read -r old_backup; do
+                    rm -f "${old_backup}"
+                  done
+            }
+
             wait_for_healthcheck() {
               local url="$1"
               local label="$2"
@@ -330,6 +349,8 @@ jobs:
               PREV_DIGEST="none"
             fi
             echo "Previous image digest: ${PREV_DIGEST}"
+
+            create_runtime_backup
 
             echo "Pulling latest image..."
             docker pull "${IMAGE}"

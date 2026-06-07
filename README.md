@@ -30,6 +30,7 @@ APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
 APP_PORT=7199
+BACKUP_RETENTION=10
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请切换 root 后重新执行。"
@@ -37,21 +38,21 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 install_base_tools() {
-  if command -v curl >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+  if command -v curl >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
     return
   fi
 
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update
-    apt-get install -y curl openssl ca-certificates
+    apt-get install -y curl openssl ca-certificates tar
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y curl openssl ca-certificates
+    dnf install -y curl openssl ca-certificates tar
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y curl openssl ca-certificates
+    yum install -y curl openssl ca-certificates tar
   elif command -v apk >/dev/null 2>&1; then
-    apk add --no-cache curl openssl ca-certificates
+    apk add --no-cache curl openssl ca-certificates tar
   else
-    echo "请先安装 curl、openssl、ca-certificates。"
+    echo "请先安装 curl、openssl、tar、ca-certificates。"
     exit 1
   fi
 }
@@ -108,9 +109,31 @@ NEXT_PUBLIC_SITE_URL=${SITE_URL}
 COOKIE_SECURE=false
 TRUSTED_PROXY_IPS=
 R2_BACKUP_ENABLED=false
+R2_ACCOUNT_ID=
+R2_BUCKET=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
 R2_BACKUP_ENCRYPTION_PASSPHRASE=
+R2_PREFIX=blog-navigation
+R2_ENDPOINT=
+R2_SNAPSHOT_ON_WRITE=false
 ENVEOF
   chmod 600 "${APP_DIR}/.env"
+}
+
+create_runtime_backup() {
+  mkdir -p "${APP_DIR}/backups"
+  BACKUP_PATH="${APP_DIR}/backups/blog-navigation-runtime-$(date -u +%Y%m%dT%H%M%SZ).tgz"
+  tar -C "${APP_DIR}" -czf "${BACKUP_PATH}" .env data
+
+  find "${APP_DIR}/backups" -maxdepth 1 -type f -name 'blog-navigation-runtime-*.tgz' \
+    | sort -r \
+    | awk "NR>${BACKUP_RETENTION}" \
+    | while IFS= read -r OLD_BACKUP; do
+        rm -f "${OLD_BACKUP}"
+      done
+
+  echo "已创建本地备份：${BACKUP_PATH}"
 }
 
 run_container() {
@@ -146,6 +169,7 @@ install_docker
 start_docker
 detect_public_ip
 create_env_file
+create_runtime_backup
 run_container
 print_result
 EOF
@@ -161,7 +185,7 @@ http://服务器公网IP:7199
 
 ## 更新 latest
 
-后续更新直接复制粘贴执行下面整段，会保留 `/opt/blog-nevigation/.env` 和 `/opt/blog-nevigation/data`：
+后续更新直接复制粘贴执行下面整段，会保留 `/opt/blog-nevigation/.env` 和 `/opt/blog-nevigation/data`。更新前还会把配置和数据打包到 `/opt/blog-nevigation/backups/`，默认保留最近 10 份：
 
 ```bash
 sh -s <<'EOF'
@@ -171,6 +195,7 @@ APP_DIR=/opt/blog-nevigation
 CONTAINER_NAME=blog-navigation
 IMAGE=ghcr.io/242282218/blog-nevigation:latest
 APP_PORT=7199
+BACKUP_RETENTION=10
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请切换 root 后重新执行。"
@@ -187,6 +212,23 @@ if grep -q '^NEXT_PUBLIC_SITE_URL=http://.*:3000$' "${APP_DIR}/.env"; then
 fi
 
 mkdir -p "${APP_DIR}/data"
+
+create_runtime_backup() {
+  mkdir -p "${APP_DIR}/backups"
+  BACKUP_PATH="${APP_DIR}/backups/blog-navigation-runtime-$(date -u +%Y%m%dT%H%M%SZ).tgz"
+  tar -C "${APP_DIR}" -czf "${BACKUP_PATH}" .env data
+
+  find "${APP_DIR}/backups" -maxdepth 1 -type f -name 'blog-navigation-runtime-*.tgz' \
+    | sort -r \
+    | awk "NR>${BACKUP_RETENTION}" \
+    | while IFS= read -r OLD_BACKUP; do
+        rm -f "${OLD_BACKUP}"
+      done
+
+  echo "已创建更新前本地备份：${BACKUP_PATH}"
+}
+
+create_runtime_backup
 docker pull "${IMAGE}"
 docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 docker run -d \
@@ -215,6 +257,8 @@ grep '^EDITOR_ACCESS_TOKEN=' /opt/blog-nevigation/.env
 
 R2 备份可以在 `/setup` 或 `/editor/settings` 里配置。保存后配置文件位于 `/opt/blog-nevigation/data/settings/cloudflare-r2.json`，它会完整优先于 `.env` 中的 R2 变量。
 
+启用 R2 后，编辑器每次保存文章、导航或站点设置都会把当前数据加入远端备份队列。服务运行期间还会每 3 小时自动写入一次 `latest` 和 `snapshot` 备份。Docker 更新前的本地 `.tgz` 备份只用于更新兜底，不能替代 R2 远端备份。
+
 R2 上传内容会使用 AES-256-GCM 加密。必须保存备份加密口令，口令丢失后无法解密已有 R2 备份。如果改用 `.env` 启用 R2，至少需要配置：
 
 ```bash
@@ -224,6 +268,9 @@ R2_BUCKET=blog-data
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
 R2_BACKUP_ENCRYPTION_PASSPHRASE=请替换为高强度随机口令
+R2_PREFIX=blog-navigation
+R2_ENDPOINT=
+R2_SNAPSHOT_ON_WRITE=false
 ```
 
 ## 常用管理
@@ -266,7 +313,14 @@ NEXT_PUBLIC_SITE_URL=http://${PUBLIC_IP}:${APP_PORT}
 COOKIE_SECURE=false
 TRUSTED_PROXY_IPS=
 R2_BACKUP_ENABLED=false
+R2_ACCOUNT_ID=
+R2_BUCKET=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
 R2_BACKUP_ENCRYPTION_PASSPHRASE=
+R2_PREFIX=blog-navigation
+R2_ENDPOINT=
+R2_SNAPSHOT_ON_WRITE=false
 EOF
   chmod 600 "${APP_DIR}/.env"
 fi
@@ -300,6 +354,12 @@ docker rm -f blog-navigation
 
 ```bash
 tar -C /opt/blog-nevigation -czf blog-navigation-data.tgz data .env
+```
+
+查看更新脚本自动创建的本地备份：
+
+```bash
+ls -lh /opt/blog-nevigation/backups/
 ```
 
 恢复数据和配置：

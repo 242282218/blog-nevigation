@@ -13,6 +13,8 @@ COMPOSE_SOURCE="${REPO_PATH}/deploy/compose.prod.yaml"
 COMPOSE_FILE="${DEPLOY_PATH}/compose.prod.yaml"
 ENV_FILE="${DEPLOY_PATH}/.env"
 DATA_DIR="${DEPLOY_PATH}/data"
+BACKUP_DIR="${DEPLOY_PATH}/backups"
+BACKUP_RETENTION="${BACKUP_RETENTION:-10}"
 
 log() {
   printf '\n==> %s\n' "$*"
@@ -62,6 +64,14 @@ APP_PORT=7199
 NEXT_PUBLIC_SITE_URL=
 COOKIE_SECURE=true
 R2_BACKUP_ENABLED=false
+R2_ACCOUNT_ID=
+R2_BUCKET=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BACKUP_ENCRYPTION_PASSPHRASE=
+R2_PREFIX=blog-navigation
+R2_ENDPOINT=
+R2_SNAPSHOT_ON_WRITE=false
 EOF
 
   fail "Created ${ENV_FILE}. Set EDITOR_ACCESS_TOKEN, then rerun this script."
@@ -90,6 +100,29 @@ prepare_compose() {
 
   mkdir -p "${DATA_DIR}"
   cp "${COMPOSE_SOURCE}" "${COMPOSE_FILE}"
+}
+
+create_runtime_backup() {
+  if [ ! -f "${ENV_FILE}" ] && [ ! -d "${DATA_DIR}" ]; then
+    return
+  fi
+
+  need_cmd tar
+  mkdir -p "${BACKUP_DIR}"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_path="${BACKUP_DIR}/blog-navigation-runtime-${timestamp}.tgz"
+
+  log "Creating runtime backup: ${backup_path}"
+  tar -C "${DEPLOY_PATH}" -czf "${backup_path}" .env data
+
+  if [ "${BACKUP_RETENTION}" -gt 0 ] 2>/dev/null; then
+    find "${BACKUP_DIR}" -maxdepth 1 -type f -name 'blog-navigation-runtime-*.tgz' \
+      | sort -r \
+      | awk "NR>${BACKUP_RETENTION}" \
+      | while IFS= read -r old_backup; do
+          rm -f "${old_backup}"
+        done
+  fi
 }
 
 resolve_image() {
@@ -190,6 +223,7 @@ main() {
   ensure_env_file
   update_repo
   prepare_compose
+  create_runtime_backup
 
   image="$(resolve_image)"
   pull_image "${image}"
