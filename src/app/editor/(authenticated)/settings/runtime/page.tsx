@@ -46,6 +46,10 @@ type RuntimeMessage = {
     text: string;
 };
 
+type RuntimeFieldError = {
+    text: string;
+};
+
 function createEmptyRuntimeForm(): RuntimeForm {
     return {
         publicSiteUrl: '',
@@ -65,6 +69,7 @@ function RuntimeField({
     onChange,
     type = 'text',
     multiline = false,
+    error,
 }: {
     id: string;
     label: string;
@@ -73,8 +78,11 @@ function RuntimeField({
     onChange: (value: string) => void;
     type?: 'text' | 'password';
     multiline?: boolean;
+    error?: RuntimeFieldError | null;
 }) {
     const descriptionId = `${id}-description`;
+    const errorId = `${id}-error`;
+    const describedBy = error ? `${descriptionId} ${errorId}` : descriptionId;
 
     return (
         <div>
@@ -87,7 +95,8 @@ function RuntimeField({
                     value={value}
                     rows={4}
                     onChange={(event) => onChange(event.target.value)}
-                    aria-describedby={descriptionId}
+                    aria-describedby={describedBy}
+                    aria-invalid={Boolean(error)}
                     className={`${editorInputClassName} mt-2 resize-y leading-6`}
                 />
             ) : (
@@ -96,13 +105,19 @@ function RuntimeField({
                     type={type}
                     value={value}
                     onChange={(event) => onChange(event.target.value)}
-                    aria-describedby={descriptionId}
+                    aria-describedby={describedBy}
+                    aria-invalid={Boolean(error)}
                     className={`${editorInputClassName} mt-2`}
                 />
             )}
             <p id={descriptionId} className="mt-1.5 text-xs leading-5 text-subtle">
                 {help}
             </p>
+            {error ? (
+                <p id={errorId} className="mt-1.5 text-xs leading-5 text-error-600" role="alert">
+                    {error.text}
+                </p>
+            ) : null}
         </div>
     );
 }
@@ -151,6 +166,7 @@ export default function RuntimeSettingsPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [requiresRestart, setRequiresRestart] = useState(false);
     const [message, setMessage] = useState<RuntimeMessage | null>(null);
+    const [confirmSecretError, setConfirmSecretError] = useState<RuntimeFieldError | null>(null);
 
     useEffect(() => {
         let isMounted = true;
@@ -202,6 +218,10 @@ export default function RuntimeSettingsPage() {
     }, []);
 
     const updateField = useCallback(<Key extends keyof RuntimeForm>(key: Key, value: RuntimeForm[Key]) => {
+        if (key === 'editorSecret' || key === 'confirmEditorSecret') {
+            setConfirmSecretError(null);
+        }
+
         setForm((current) => ({
             ...current,
             [key]: value,
@@ -212,11 +232,18 @@ export default function RuntimeSettingsPage() {
         event.preventDefault();
 
         if (form.editorSecret.trim() && form.editorSecret.trim() !== form.confirmEditorSecret.trim()) {
-            setMessage({ tone: 'danger', text: '两次输入的编辑口令不一致。' });
+            const error = { text: '两次输入的编辑口令不一致。' };
+
+            setConfirmSecretError(error);
+            setMessage({ tone: 'danger', text: error.text });
+            requestAnimationFrame(() => {
+                document.getElementById('runtime-confirm-editor-secret')?.focus();
+            });
             return;
         }
 
         setIsSaving(true);
+        setConfirmSecretError(null);
         setMessage({ tone: 'loading', text: '正在保存运行时配置...' });
 
         try {
@@ -377,6 +404,7 @@ export default function RuntimeSettingsPage() {
                                     value={form.confirmEditorSecret}
                                     onChange={(value) => updateField('confirmEditorSecret', value)}
                                     type="password"
+                                    error={confirmSecretError}
                                 />
                             </div>
                         </EditorPanel>

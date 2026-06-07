@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   drainPendingBackupTasks,
   enqueuePendingBackupTask,
+  getBackupQueueStatus,
   readPendingBackupTasksForTests,
   resetBackupCoordinatorForTests,
+  retryFailedBackupTasks,
 } from '@/lib/backup-coordinator';
 
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
@@ -54,12 +56,14 @@ describe('backup coordinator', () => {
 
     expect(fs.existsSync(pendingFile)).toBe(true);
     expect(JSON.parse(fs.readFileSync(pendingFile, 'utf8'))).toEqual({
-      version: 1,
+      version: 2,
       tasks: [
         expect.objectContaining({
           id: task.id,
           reason: 'articles-write',
           retries: 0,
+          attempts: 0,
+          status: 'pending',
           writeSnapshot: true,
           writeLatest: false,
         }),
@@ -83,7 +87,68 @@ describe('backup coordinator', () => {
     expect(fs.existsSync(getPendingFilePath(dataRoot))).toBe(false);
   });
 
-  it('retries failed tasks up to three attempts with backoff', async () => {
+  it('reads legacy version 1 pending tasks as pending version 2 tasks', () => {
+    const dataRoot = process.env.BLOG_DATA_ROOT as string;
+    const pendingFile = getPendingFilePath(dataRoot);
+
+    fs.writeFileSync(pendingFile, JSON.stringify({
+      version: 1,
+      tasks: [
+        {
+          id: 'legacy-task',
+          reason: 'legacy-write',
+          timestamp: '2026-06-07T00:00:00.000Z',
+          retries: 1,
+          writeSnapshot: true,
+          writeLatest: true,
+        },
+      ],
+    }), 'utf8');
+
+    expect(readPendingBackupTasksForTests()).toEqual([
+      expect.objectContaining({
+        id: 'legacy-task',
+        attempts: 1,
+        status: 'pending',
+      }),
+    ]);
+  });
+
+  it('persists snapshot manifest references for auditable queued snapshots', () => {
+    const dataRoot = process.env.BLOG_DATA_ROOT as string;
+    const snapshotManifest = {
+      version: 1 as const,
+      updatedAt: '2026-06-07T00:00:00.000Z',
+      resources: {
+        articles: {
+          revision: 'articles-revision',
+          hash: 'articles-hash',
+          updatedAt: '2026-06-07T00:00:00.000Z',
+        },
+      },
+    };
+
+    enqueuePendingBackupTask({
+      reason: 'snapshot-write',
+      writeSnapshot: true,
+      writeLatest: true,
+      snapshotManifest,
+      snapshotManifestHash: 'manifest-hash',
+    });
+
+    expect(JSON.parse(fs.readFileSync(getPendingFilePath(dataRoot), 'utf8'))).toEqual(
+      expect.objectContaining({
+        tasks: [
+          expect.objectContaining({
+            snapshotManifest,
+            snapshotManifestHash: 'manifest-hash',
+          }),
+        ],
+      })
+    );
+  });
+
+  it('marks tasks failed after three attempts instead of deleting them', async () => {
     enqueuePendingBackupTask({
       reason: 'write-failure',
       writeSnapshot: false,
@@ -104,6 +169,59 @@ describe('backup coordinator', () => {
     expect(execute).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenNthCalledWith(1, 10);
     expect(sleep).toHaveBeenNthCalledWith(2, 20);
+    const tasks = readPendingBackupTasksForTests();
+
+    expect(tasks).toEqual([
+      expect.objectContaining({
+        reason: 'write-failure',
+        retries: 3,
+        attempts: 3,
+        status: 'failed',
+        lastError: 'Backup task failed.',
+        lastAttemptAt: '2026-06-07T00:00:00.030Z',
+      }),
+    ]);
+    expect(getBackupQueueStatus()).toEqual({
+      pending: 0,
+      failed: 1,
+      failedTasks: [
+        expect.objectContaining({
+          reason: 'write-failure',
+          attempts: 3,
+          lastError: 'Backup task failed.',
+        }),
+      ],
+    });
+  });
+
+  it('retries failed tasks after manual requeue', async () => {
+    enqueuePendingBackupTask({
+      reason: 'manual-retry',
+      writeSnapshot: false,
+    });
+    const failingExecute = vi.fn(async () => false);
+
+    await drainPendingBackupTasks(failingExecute, {
+      retryDelayMs: () => 0,
+      sleep: async () => undefined,
+      now: () => new Date('2026-06-07T00:00:00.000Z'),
+    });
+
+    expect(readPendingBackupTasksForTests()[0]?.status).toBe('failed');
+    expect(retryFailedBackupTasks()).toBe(1);
+    expect(readPendingBackupTasksForTests()[0]).toEqual(
+      expect.objectContaining({
+        status: 'pending',
+        retries: 0,
+        attempts: 0,
+      })
+    );
+
+    const successfulExecute = vi.fn(async () => true);
+
+    await drainPendingBackupTasks(successfulExecute);
+
+    expect(successfulExecute).toHaveBeenCalledTimes(1);
     expect(readPendingBackupTasksForTests()).toEqual([]);
   });
 

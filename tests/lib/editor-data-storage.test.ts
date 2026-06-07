@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createArticleSlug } from '@/lib/article-data';
 import {
     EditorDataFileInvalidError,
+    ManifestTransactionIncompleteError,
     getDefaultNavigationSeedFilePath,
     getEditorDataRoot,
     getEditorDataResourceManifest,
@@ -206,6 +207,59 @@ describe('editor data storage configuration', () => {
         const manifest = getEditorDataResourceManifest('articles', reorderedArticles);
 
         expect(manifest?.revision).not.toMatch(/^derived-/);
+    });
+
+    it('does not update manifest when a resource transaction write fails before replacement', async () => {
+        const tempRoot = createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        const nextArticles = [createArticle('article-2', 'Next Article')];
+        const originalManifest = await writeArticlesToDisk(originalArticles);
+        const renameSync = fs.renameSync;
+
+        vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+            if (String(newPath) === path.join(tempRoot, 'articles', 'articles.json')) {
+                throw new Error('Simulated resource replacement failure.');
+            }
+
+            return renameSync(oldPath, newPath);
+        });
+
+        await expect(writeArticlesToDisk(nextArticles)).rejects.toThrow('Simulated resource replacement failure.');
+
+        expect(readArticlesFromDisk()).toEqual(originalArticles);
+        expect(readEditorDataManifest().resources.articles?.revision).toBe(originalManifest.revision);
+        expect(fs.existsSync(path.join(tempRoot, '.manifest-transaction.json'))).toBe(false);
+    });
+
+    it('leaves and recovers a manifest transaction marker when manifest replacement fails', async () => {
+        const tempRoot = createTempDataRoot();
+        const originalArticles = [createArticle('article-1', 'Original Article')];
+        const nextArticles = [createArticle('article-2', 'Next Article')];
+        const originalManifest = await writeArticlesToDisk(originalArticles);
+        const renameSync = fs.renameSync;
+        let manifestFailureInjected = false;
+
+        vi.spyOn(fs, 'renameSync').mockImplementation((oldPath, newPath) => {
+            if (!manifestFailureInjected && String(newPath) === path.join(tempRoot, 'manifest.json')) {
+                manifestFailureInjected = true;
+                throw new Error('Simulated manifest replacement failure.');
+            }
+
+            return renameSync(oldPath, newPath);
+        });
+
+        await expect(writeArticlesToDisk(nextArticles)).rejects.toThrow('Simulated manifest replacement failure.');
+
+        expect(JSON.parse(fs.readFileSync(path.join(tempRoot, 'articles', 'articles.json'), 'utf8'))).toEqual(nextArticles);
+        expect(JSON.parse(fs.readFileSync(path.join(tempRoot, 'manifest.json'), 'utf8')).resources.articles.revision).toBe(originalManifest.revision);
+        expect(fs.existsSync(path.join(tempRoot, '.manifest-transaction.json'))).toBe(true);
+        expect(() => readArticlesFromDisk()).toThrow(ManifestTransactionIncompleteError);
+
+        vi.mocked(fs.renameSync).mockRestore();
+
+        expect(await readArticlesFromDiskAsync()).toEqual(nextArticles);
+        expect(readEditorDataManifest().resources.articles?.revision).not.toBe(originalManifest.revision);
+        expect(fs.existsSync(path.join(tempRoot, '.manifest-transaction.json'))).toBe(false);
     });
 
     it('rejects corrupt runtime article JSON instead of returning empty data', () => {

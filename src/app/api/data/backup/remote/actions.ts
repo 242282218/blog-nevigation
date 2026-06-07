@@ -16,7 +16,11 @@ import {
     parseEditorBackupData,
     restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
-import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import {
+    getRemoteBackupQueueStatus,
+    retryFailedRemoteBackups,
+    syncCurrentBackupToRemote,
+} from '@/lib/editor-remote-backup';
 import {
     downloadLatestBackupPayloadFromR2,
     getR2BackupStatus,
@@ -117,7 +121,10 @@ export async function readRemoteBackupRequestBody(
 
 export function createRemoteBackupStatusResponse(): NextResponse {
     try {
-        return NextResponse.json(getR2BackupStatus());
+        return NextResponse.json({
+            ...getR2BackupStatus(),
+            backupQueue: getRemoteBackupQueueStatus(),
+        });
     } catch (error) {
         const invalidResponse = createInvalidR2SettingsResponse(error);
 
@@ -127,6 +134,15 @@ export function createRemoteBackupStatusResponse(): NextResponse {
 
         throw error;
     }
+}
+
+export function createRemoteBackupRetryFailedResponse(): NextResponse {
+    const result = retryFailedRemoteBackups();
+
+    return NextResponse.json({
+        success: true,
+        ...result,
+    });
 }
 
 export async function createRemoteBackupSyncResponse(): Promise<NextResponse> {
@@ -144,6 +160,7 @@ export async function createRemoteBackupSyncResponse(): Promise<NextResponse> {
         {
             success: remoteBackup.success,
             remoteBackup,
+            backupQueue: getRemoteBackupQueueStatus(),
         },
         { status }
     );

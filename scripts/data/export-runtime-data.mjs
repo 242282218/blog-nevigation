@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   createManifest,
+  DATA_SCHEMA_VERSION,
   readRuntimeData,
   resolveDataRoot,
 } from './runtime-data.mjs';
@@ -25,6 +26,7 @@ const data = readRuntimeData(dataRoot);
 const manifest = createManifest(data);
 const payload = {
   version: BACKUP_VERSION,
+  schemaVersion: DATA_SCHEMA_VERSION,
   exportedAt: new Date().toISOString(),
   source: 'local',
   persistent: true,

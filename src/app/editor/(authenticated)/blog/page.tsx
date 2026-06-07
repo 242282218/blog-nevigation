@@ -33,6 +33,11 @@ import {
   isPublicArticleStatus,
 } from '@/lib/article-metadata';
 import { getArticleSaveBlockingChecks } from '@/lib/article-quality';
+import {
+  getArticleWorkflowSummary,
+  matchesArticleWorkflowState,
+  type ArticleWorkflowState,
+} from '@/lib/article-quality';
 import { LogoutButton } from '../../components/LogoutButton';
 import {
   EditorButton,
@@ -59,6 +64,38 @@ function formatDate(timestamp: number): string {
   });
 }
 
+const WORKFLOW_TABS: Array<{
+  value: ArticleWorkflowState;
+  label: string;
+  description: string;
+  statKey: 'draft' | 'needsFix' | 'ready' | 'published';
+}> = [
+  {
+    value: 'draft',
+    label: '草稿',
+    description: '全部未发布文章',
+    statKey: 'draft',
+  },
+  {
+    value: 'needs-fix',
+    label: '待修复',
+    description: '存在发布阻塞',
+    statKey: 'needsFix',
+  },
+  {
+    value: 'ready',
+    label: '可发布',
+    description: '阻塞检查通过',
+    statKey: 'ready',
+  },
+  {
+    value: 'published',
+    label: '已发布',
+    description: '公开可见内容',
+    statKey: 'published',
+  },
+];
+
 export default function BlogEditorPage() {
   const router = useRouter();
   const {
@@ -83,11 +120,13 @@ export default function BlogEditorPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [kindFilter, setKindFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [workflowFilter, setWorkflowFilter] = useState<ArticleWorkflowState | ''>('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [featuredFilter, setFeaturedFilter] = useState(false);
-  const hasActiveFilters = Boolean(searchTerm.trim() || kindFilter || statusFilter || categoryFilter || featuredFilter);
+  const hasActiveFilters = Boolean(searchTerm.trim() || kindFilter || statusFilter || workflowFilter || categoryFilter || featuredFilter);
   const activeKindLabel = ARTICLE_KIND_OPTIONS.find((option) => option.value === kindFilter)?.label || kindFilter;
   const activeStatusLabel = ARTICLE_STATUS_OPTIONS.find((option) => option.value === statusFilter)?.label || statusFilter;
+  const activeWorkflowLabel = WORKFLOW_TABS.find((option) => option.value === workflowFilter)?.label || workflowFilter;
 
   const sortedArticles = useMemo(
     () => [...articles].sort((first, second) => second.updatedAt - first.updatedAt),
@@ -103,6 +142,12 @@ export default function BlogEditorPage() {
     drafts: articles.filter((article) => article.status === 'draft').length,
     evergreen: articles.filter((article) => article.status === 'evergreen').length,
     featured: articles.filter((article) => article.featured).length,
+  }), [articles]);
+  const workflowStats = useMemo(() => ({
+    draft: articles.filter((article) => (article.status || 'published') === 'draft').length,
+    needsFix: articles.filter((article) => matchesArticleWorkflowState(article, 'needs-fix')).length,
+    ready: articles.filter((article) => matchesArticleWorkflowState(article, 'ready')).length,
+    published: articles.filter((article) => matchesArticleWorkflowState(article, 'published')).length,
   }), [articles]);
   const filteredArticles = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -121,18 +166,20 @@ export default function BlogEditorPage() {
 
       return (
         (!keyword || haystack.includes(keyword)) &&
+        (!workflowFilter || matchesArticleWorkflowState(article, workflowFilter)) &&
         (!kindFilter || article.kind === kindFilter) &&
         (!statusFilter || (article.status || 'published') === statusFilter) &&
         (!categoryFilter || article.category === categoryFilter) &&
         (!featuredFilter || article.featured)
       );
     });
-  }, [categoryFilter, featuredFilter, kindFilter, searchTerm, sortedArticles, statusFilter]);
+  }, [categoryFilter, featuredFilter, kindFilter, searchTerm, sortedArticles, statusFilter, workflowFilter]);
 
   const handleClearFilters = useCallback(() => {
     setSearchTerm('');
     setKindFilter('');
     setStatusFilter('');
+    setWorkflowFilter('');
     setCategoryFilter('');
     setFeaturedFilter(false);
   }, []);
@@ -372,6 +419,22 @@ export default function BlogEditorPage() {
           />
         </section>
 
+        <section
+          className="grid gap-2 rounded-token-card border border-border bg-surface p-2 shadow-token-card sm:grid-cols-4"
+          aria-label="文章工作流视图"
+        >
+          {WORKFLOW_TABS.map((tab) => (
+            <WorkflowTab
+              key={tab.value}
+              label={tab.label}
+              description={tab.description}
+              value={workflowStats[tab.statKey]}
+              active={workflowFilter === tab.value}
+              onClick={() => setWorkflowFilter((current) => current === tab.value ? '' : tab.value)}
+            />
+          ))}
+        </section>
+
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="rounded-token-card border border-border bg-surface p-4 shadow-token-card">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -529,6 +592,9 @@ export default function BlogEditorPage() {
                 {statusFilter ? (
                   <FilterPill label={`状态：${activeStatusLabel}`} onRemove={() => setStatusFilter('')} />
                 ) : null}
+                {workflowFilter ? (
+                  <FilterPill label={`工作流：${activeWorkflowLabel}`} onRemove={() => setWorkflowFilter('')} />
+                ) : null}
                 {categoryFilter ? (
                   <FilterPill label={`分类：${categoryFilter}`} onRemove={() => setCategoryFilter('')} />
                 ) : null}
@@ -645,6 +711,44 @@ function MetricContent({ label, value, active }: { label: string; value: number;
   );
 }
 
+function WorkflowTab({
+  label,
+  description,
+  value,
+  active,
+  onClick,
+}: {
+  label: string;
+  description: string;
+  value: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex min-h-16 items-center justify-between gap-3 rounded-token-card border px-3 py-2 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+        active
+          ? 'border-accent-300 bg-accent-50 text-accent'
+          : 'border-transparent bg-background text-muted hover:border-accent-200 hover:text-fg'
+      )}
+      aria-pressed={active}
+    >
+      <span className="min-w-0">
+        <span className={cn('block text-sm font-semibold', active ? 'text-accent' : 'text-fg')}>
+          {label}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-subtle">{description}</span>
+      </span>
+      <span className={cn('font-mono text-lg font-semibold', active ? 'text-accent' : 'text-fg')}>
+        {value}
+      </span>
+    </button>
+  );
+}
+
 function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
     <button
@@ -673,6 +777,15 @@ function ArticleCard({
   const isPublic = isPublicArticleStatus(status);
   const publishActionLabel = isPublic ? '改为草稿' : '发布';
   const PublishActionIcon = isPublic ? Undo2 : Send;
+  const workflowSummary = getArticleWorkflowSummary(article);
+  const qualitySummaryLabel = workflowSummary.blockingChecks.length > 0
+    ? `发布阻塞 ${workflowSummary.blockingChecks.length}`
+    : workflowSummary.warningChecks.length > 0
+      ? `发布建议 ${workflowSummary.warningChecks.length}`
+      : isPublic
+        ? '质量通过'
+        : '可发布';
+  const firstQualityIssue = workflowSummary.blockingChecks[0] || workflowSummary.warningChecks[0] || null;
 
   return (
     <div className="group relative overflow-hidden rounded-token-card border border-border bg-surface p-4 shadow-token-card transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:bg-accent-50/40 hover:shadow-token-card-hover focus-within:border-accent-300 focus-within:ring-2 focus-within:ring-accent-100 active:translate-y-0">
@@ -736,6 +849,23 @@ function ArticleCard({
           <div className="mt-2 inline-flex items-center gap-2 rounded-token-button border border-accent-200 bg-accent-50 px-2.5 py-1 text-xs font-medium text-accent transition-colors group-hover:bg-accent-100">
             <Edit2 className="h-3.5 w-3.5" />
             选择编辑
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className={cn(
+              'rounded-token-badge border px-2 py-1 font-medium',
+              workflowSummary.blockingChecks.length > 0
+                ? 'border-error-light bg-error-50 text-error-600'
+                : workflowSummary.warningChecks.length > 0
+                  ? 'border-warning-light bg-warning-50 text-warning-600'
+                  : 'border-success-light bg-success-50 text-success'
+            )}>
+              {qualitySummaryLabel}
+            </span>
+            {firstQualityIssue ? (
+              <span className="min-w-0 truncate text-subtle">
+                {firstQualityIssue.label}
+              </span>
+            ) : null}
           </div>
         </button>
 

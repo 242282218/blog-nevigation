@@ -1,8 +1,10 @@
 import type { Article } from '@/app/types/article';
 import type { Category } from '@/app/types/navigation';
+import { createHash } from 'node:crypto';
 import { isRecord, parseArticlesData } from '@/lib/article-data';
 import {
     createEditorDataManifestSnapshot,
+    EDITOR_DATA_SCHEMA_VERSION,
     getEditorDataRoot,
     isEditorDataRootConfigured,
     readArticlesFromDisk,
@@ -32,6 +34,7 @@ export interface EditorBackupData {
 
 export interface EditorBackupPayload {
     version: typeof EDITOR_BACKUP_VERSION;
+    schemaVersion?: typeof EDITOR_DATA_SCHEMA_VERSION;
     exportedAt: string;
     source: EditorBackupSource;
     persistent: boolean;
@@ -49,6 +52,11 @@ export interface RestoreBackupResult {
 interface RestoreBackupOptions {
     currentManifest?: EditorDataManifest;
 }
+
+export type EditorDataManifestSnapshotReference = {
+    manifest: EditorDataManifest;
+    manifestHash: string;
+};
 
 export class EditorBackupRestoreConflictError extends Error {
     constructor(public readonly currentManifest: EditorDataManifest) {
@@ -91,6 +99,50 @@ function isSameManifestSnapshot(expected: EditorDataManifest, current: EditorDat
     return true;
 }
 
+function stableStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+        return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+    }
+
+    if (value && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map((key) => {
+            const record = value as Record<string, unknown>;
+
+            return `${JSON.stringify(key)}:${stableStringify(record[key])}`;
+        }).join(',')}}`;
+    }
+
+    return JSON.stringify(value);
+}
+
+export function createEditorDataManifestHash(manifest: EditorDataManifest): string {
+    const resourceHashes = {
+        articles: manifest.resources.articles?.hash ?? null,
+        navigation: manifest.resources.navigation?.hash ?? null,
+        settings: manifest.resources.settings?.hash ?? null,
+    };
+
+    return createHash('sha256')
+        .update(stableStringify({
+            version: manifest.version,
+            resources: resourceHashes,
+        }))
+        .digest('hex');
+}
+
+export function createCurrentEditorManifestSnapshotReference(data?: EditorBackupData): EditorDataManifestSnapshotReference {
+    const manifest = createEditorDataManifestSnapshot(data ?? readCurrentEditorBackupData());
+
+    return {
+        manifest,
+        manifestHash: createEditorDataManifestHash(manifest),
+    };
+}
+
+export function isSameEditorManifestSnapshot(expected: EditorDataManifest, current: EditorDataManifest): boolean {
+    return isSameManifestSnapshot(expected, current);
+}
+
 function assertCurrentManifestForRestore(expected: EditorDataManifest): void {
     const currentManifest = createEditorDataManifestSnapshot(readCurrentEditorBackupData());
 
@@ -109,6 +161,7 @@ export function createEditorBackupPayload(
 ): EditorBackupPayload {
     return {
         version: EDITOR_BACKUP_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
         exportedAt: new Date().toISOString(),
         source,
         persistent: isEditorDataRootConfigured(),
@@ -127,6 +180,13 @@ export async function createCurrentEditorBackupPayload(): Promise<EditorBackupPa
 
 export function parseEditorBackupData(value: unknown): EditorBackupData | null {
     if (!isRecord(value)) {
+        return null;
+    }
+
+    if (
+        value.schemaVersion !== undefined &&
+        value.schemaVersion !== EDITOR_DATA_SCHEMA_VERSION
+    ) {
         return null;
     }
 

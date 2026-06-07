@@ -15,6 +15,7 @@ ENV_FILE="${DEPLOY_PATH}/.env"
 DATA_DIR="${DEPLOY_PATH}/data"
 BACKUP_DIR="${DEPLOY_PATH}/backups"
 BACKUP_RETENTION="${BACKUP_RETENTION:-10}"
+LAST_GOOD_DIGEST_FILE="${DEPLOY_PATH}/.last-good-digest"
 
 log() {
   printf '\n==> %s\n' "$*"
@@ -125,6 +126,16 @@ create_runtime_backup() {
 }
 
 resolve_image() {
+  if [ -n "${DEPLOY_IMAGE:-}" ]; then
+    printf '%s\n' "${DEPLOY_IMAGE}"
+    return
+  fi
+
+  if [ -n "${IMAGE_DIGEST:-}" ]; then
+    printf '%s@%s\n' "${IMAGE_REPOSITORY}" "${IMAGE_DIGEST}"
+    return
+  fi
+
   commit_short="$(git -C "${REPO_PATH}" rev-parse --short=7 HEAD)"
   tag_branch="$(printf '%s' "${DEPLOY_BRANCH}" | sed 's/[^A-Za-z0-9_.-]/-/g')"
   image_tag="${IMAGE_TAG:-${tag_branch}-${commit_short}}"
@@ -153,13 +164,25 @@ pull_image() {
   done
 }
 
-current_container_image() {
-  container_id="$(compose ps -q app 2>/dev/null || true)"
-  if [ -z "${container_id}" ]; then
+read_last_good_image() {
+  if [ ! -f "${LAST_GOOD_DIGEST_FILE}" ]; then
     return
   fi
 
-  docker inspect --format '{{.Config.Image}}' "${container_id}" 2>/dev/null || true
+  tr -d '[:space:]' < "${LAST_GOOD_DIGEST_FILE}"
+}
+
+write_last_good_image() {
+  image="$1"
+
+  case "${image}" in
+    *@sha256:*)
+      printf '%s\n' "${image}" > "${LAST_GOOD_DIGEST_FILE}"
+      ;;
+    *)
+      log "Skipping last-good digest update because ${image} is not an immutable digest."
+      ;;
+  esac
 }
 
 healthcheck_url() {
@@ -194,13 +217,19 @@ wait_for_healthcheck() {
 
 deploy_image() {
   image="$1"
-  previous_image="$(current_container_image)"
+  previous_image="$(read_last_good_image)"
+
+  case "${previous_image}" in
+    *@sha256:*) ;;
+    *) previous_image="" ;;
+  esac
 
   log "Starting ${APP_NAME} with ${image}"
   DEPLOY_IMAGE="${image}" compose up -d --force-recreate --remove-orphans app
 
   if wait_for_healthcheck "$(healthcheck_url)"; then
     log "Deployment succeeded"
+    write_last_good_image "${image}"
     compose ps
     return
   fi
@@ -209,7 +238,7 @@ deploy_image() {
   compose logs --tail=80 app || true
 
   if [ -n "${previous_image}" ]; then
-    log "Rolling back to ${previous_image}"
+    log "Rolling back image only to last-good digest ${previous_image}"
     DEPLOY_IMAGE="${previous_image}" compose up -d --force-recreate --remove-orphans app
     wait_for_healthcheck "$(healthcheck_url)" || fail "Rollback health check failed."
   fi

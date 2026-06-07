@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import type { EditorBackupPayload } from '@/lib/editor-data-backup';
+import {
+  createEditorDataManifestHash,
+  type EditorBackupPayload,
+} from '@/lib/editor-data-backup';
 import { createDefaultSiteSettings } from '@/lib/site-settings';
 import {
   downloadLatestBackupPayloadFromR2,
@@ -429,8 +432,13 @@ describe('R2 backup configuration', () => {
 
     expect(sentCommands).toHaveLength(1);
     expect(sentCommands[0]).toBeInstanceOf(PutObjectCommand);
+    const putCommand = sentCommands[0] as PutObjectCommand;
+    expect(putCommand.input.ContentType).toBe('application/json; charset=utf-8');
     expect(latestUploadedBody).toContain('Sensitive Draft');
     expect(latestUploadedBody).toContain('Private settings');
+    expect(JSON.parse(latestUploadedBody)).toEqual(payload);
+    expect(latestUploadedBody).not.toContain('ciphertext');
+    expect(latestUploadedBody).not.toContain('backupEncryption');
     await expect(downloadLatestBackupPayloadFromR2()).resolves.toEqual(payload);
   });
 
@@ -510,6 +518,61 @@ describe('R2 backup configuration', () => {
     expect(sentCommands).toHaveLength(2);
     expect(sentCommands[0].input.Key).toContain('/snapshots/');
     expect(sentCommands[1].input.Key).toBe('blog-navigation/latest/backup.json');
+  });
+
+  it('includes the manifest hash in immutable snapshot keys', async () => {
+    clearR2Env();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
+    process.env.R2_BUCKET = 'blog-data';
+    process.env.R2_ACCESS_KEY_ID = 'access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
+    const manifest: NonNullable<EditorBackupPayload['manifest']> = {
+      version: 1,
+      updatedAt: '2026-05-26T00:00:00.000Z',
+      resources: {
+        articles: {
+          revision: 'articles-revision',
+          hash: 'articles-hash',
+          updatedAt: '2026-05-26T00:00:00.000Z',
+        },
+        navigation: {
+          revision: 'navigation-revision',
+          hash: 'navigation-hash',
+          updatedAt: '2026-05-26T00:00:00.000Z',
+        },
+        settings: {
+          revision: 'settings-revision',
+          hash: 'settings-hash',
+          updatedAt: '2026-05-26T00:00:00.000Z',
+        },
+      },
+    };
+    const payload: EditorBackupPayload = {
+      version: 1,
+      exportedAt: '2026-05-26T00:00:00.000Z',
+      source: 'local',
+      persistent: true,
+      dataRoot: '/var/lib/blog-navigation',
+      data: {
+        articles: [],
+        navigation: [],
+        settings: createDefaultSiteSettings(),
+      },
+      manifest,
+    };
+    const fullManifestHash = createEditorDataManifestHash(manifest);
+    const manifestHash = fullManifestHash.slice(0, 16);
+
+    const result = await uploadBackupPayloadToR2(payload, {
+      reason: 'manual-sync',
+      writeSnapshot: true,
+      manifestHash: fullManifestHash,
+    });
+
+    expect(result.snapshotKey).toBe(`blog-navigation/snapshots/2026/05/26/2026-05-26T00-00-00-000Z-manual-sync-${manifestHash}.json`);
+    expect(sentCommands[0].input.Key).toBe(result.snapshotKey);
+    expect(JSON.parse(String((sentCommands[0] as PutObjectCommand).input.Body))).toEqual(payload);
   });
 
   it('can write a pre-restore snapshot without updating latest', async () => {

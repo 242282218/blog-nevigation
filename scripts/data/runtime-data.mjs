@@ -3,6 +3,9 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 
 export const MANIFEST_VERSION = 1;
+export const DATA_SCHEMA_VERSION = 1;
+
+export const DATA_MIGRATIONS = [];
 
 export const DEFAULT_SITE_SETTINGS = {
   siteName: '我的技术书桌',
@@ -394,6 +397,7 @@ export function createManifest(data) {
 
   return {
     version: MANIFEST_VERSION,
+    schemaVersion: DATA_SCHEMA_VERSION,
     updatedAt: settings.updatedAt,
     resources: {
       articles,
@@ -401,6 +405,40 @@ export function createManifest(data) {
       settings,
     },
   };
+}
+
+export function readSchemaVersion(value) {
+  if (!isRecord(value) || value.schemaVersion === undefined) {
+    return DATA_SCHEMA_VERSION;
+  }
+
+  if (!Number.isInteger(value.schemaVersion) || value.schemaVersion < 1) {
+    throw new Error('Backup schemaVersion must be a positive integer.');
+  }
+
+  if (value.schemaVersion > DATA_SCHEMA_VERSION) {
+    throw new Error(`Backup schemaVersion ${value.schemaVersion} is newer than supported ${DATA_SCHEMA_VERSION}.`);
+  }
+
+  return value.schemaVersion;
+}
+
+export function migrateRuntimeData(data, fromSchemaVersion) {
+  let currentData = data;
+  let currentVersion = fromSchemaVersion;
+
+  while (currentVersion < DATA_SCHEMA_VERSION) {
+    const migration = DATA_MIGRATIONS.find((candidate) => candidate.from === currentVersion);
+
+    if (!migration) {
+      throw new Error(`Missing runtime data migration from schemaVersion ${currentVersion}.`);
+    }
+
+    currentData = migration.migrate(currentData);
+    currentVersion = migration.to;
+  }
+
+  return currentData;
 }
 
 export function readRuntimeData(dataRoot) {
@@ -542,6 +580,10 @@ export function getManifestProblems(data, manifest) {
 
   if (!isRecord(manifest) || manifest.version !== MANIFEST_VERSION || !isRecord(manifest.resources)) {
     return ['manifest.json is missing or invalid.'];
+  }
+
+  if (manifest.schemaVersion !== undefined && manifest.schemaVersion !== DATA_SCHEMA_VERSION) {
+    return [`manifest schemaVersion ${manifest.schemaVersion} is unsupported.`];
   }
 
   for (const resource of ['articles', 'navigation', 'settings']) {

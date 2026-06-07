@@ -12,7 +12,7 @@ interface StatusMessageProps extends HTMLAttributes<HTMLDivElement> {
 const toneClass: Record<StatusTone, string> = {
   info: 'border-border bg-surface text-muted',
   success: 'border-success-light bg-green-50 text-fg',
-  warning: 'border-warning-light bg-yellow-50 text-fg',
+  warning: 'border-warning-light bg-warning-50 text-fg',
   danger: 'border-danger-light bg-red-50 text-fg',
   loading: 'border-border bg-surface text-muted',
 };

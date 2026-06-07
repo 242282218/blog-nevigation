@@ -636,6 +636,89 @@ describe('EditorSettingsPage', () => {
     expect(container.textContent).toContain('云端备份已同步。');
   });
 
+  it('shows failed R2 backup tasks and requeues them from settings', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: false,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+          },
+          backupQueue: {
+            pending: 0,
+            failed: 1,
+            failedTasks: [
+              {
+                id: 'failed-task',
+                reason: 'articles-write',
+                attempts: 3,
+                lastAttemptAt: '2026-06-07T00:00:00.000Z',
+                lastError: 'R2 temporarily unavailable.',
+              },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          retried: 1,
+          backupQueue: {
+            pending: 1,
+            failed: 0,
+            failedTasks: [],
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('有 1 个 R2 备份任务失败');
+    expect(container.textContent).toContain('R2 temporarily unavailable.');
+
+    await act(async () => {
+      getButtonByText(container, '重试失败备份').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      '/api/data/backup/remote/retry',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+    expect(container.textContent).toContain('已重新排队 1 个失败备份任务。');
+  });
+
   it('submits edited homepage intro card settings', async () => {
     fetchMock
       .mockResolvedValueOnce(

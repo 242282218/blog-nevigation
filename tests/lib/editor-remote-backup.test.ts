@@ -2,11 +2,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createCurrentEditorBackupPayload } from '@/lib/editor-data-backup';
+import {
+  createCurrentEditorBackupPayload,
+  createCurrentEditorManifestSnapshotReference,
+  createEditorDataManifestHash,
+  isSameEditorManifestSnapshot,
+} from '@/lib/editor-data-backup';
 import {
   drainPendingBackups,
+  getRemoteBackupQueueStatus,
   queueCurrentBackupToRemote,
   resetRemoteBackupQueueForTests,
+  retryFailedRemoteBackups,
   syncCurrentBackupToRemote,
   waitForRemoteBackupQueueIdleForTests,
 } from '@/lib/editor-remote-backup';
@@ -19,9 +26,31 @@ import {
   type R2UploadResult,
 } from '@/lib/r2-backup-storage';
 
-vi.mock('@/lib/editor-data-backup', () => ({
-  createCurrentEditorBackupPayload: vi.fn(),
-}));
+vi.mock('@/lib/editor-data-backup', () => {
+  const createEditorDataManifestHash = vi.fn((manifest: unknown) =>
+    Buffer.from(JSON.stringify(manifest)).toString('hex').slice(0, 64).padEnd(64, '0')
+  );
+
+  return {
+    createCurrentEditorBackupPayload: vi.fn(),
+    createCurrentEditorManifestSnapshotReference: vi.fn(() => {
+      const manifest = {
+        version: 1,
+        updatedAt: '2026-05-26T00:00:00.000Z',
+        resources: {},
+      };
+
+      return {
+        manifest,
+        manifestHash: createEditorDataManifestHash(manifest),
+      };
+    }),
+    createEditorDataManifestHash,
+    isSameEditorManifestSnapshot: vi.fn((expected: unknown, current: unknown) =>
+      JSON.stringify(expected) === JSON.stringify(current)
+    ),
+  };
+});
 
 vi.mock('@/lib/r2-backup-storage', () => {
   class R2BackupSettingsInvalidError extends Error {
@@ -40,6 +69,9 @@ vi.mock('@/lib/r2-backup-storage', () => {
 });
 
 const mockedCreateCurrentEditorBackupPayload = vi.mocked(createCurrentEditorBackupPayload);
+const mockedCreateCurrentEditorManifestSnapshotReference = vi.mocked(createCurrentEditorManifestSnapshotReference);
+const mockedCreateEditorDataManifestHash = vi.mocked(createEditorDataManifestHash);
+const mockedIsSameEditorManifestSnapshot = vi.mocked(isSameEditorManifestSnapshot);
 const mockedGetR2BackupConfig = vi.mocked(getR2BackupConfig);
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedUploadBackupPayloadToR2 = vi.mocked(uploadBackupPayloadToR2);
@@ -189,16 +221,19 @@ describe('remote backup sync', () => {
       reason: 'first-write',
       writeSnapshot: false,
       writeLatest: undefined,
+      manifestHash: undefined,
     });
     expect(mockedUploadBackupPayloadToR2).toHaveBeenNthCalledWith(2, expect.any(Object), {
       reason: 'stale-middle-write',
       writeSnapshot: false,
       writeLatest: undefined,
+      manifestHash: undefined,
     });
     expect(mockedUploadBackupPayloadToR2).toHaveBeenNthCalledWith(3, expect.any(Object), {
       reason: 'latest-write',
       writeSnapshot: false,
       writeLatest: undefined,
+      manifestHash: undefined,
     });
   });
 
@@ -233,7 +268,126 @@ describe('remote backup sync', () => {
       reason: 'before-restart',
       writeSnapshot: false,
       writeLatest: undefined,
+      manifestHash: undefined,
     });
     expect(fs.existsSync(getPendingBackupFilePath(dataRoot))).toBe(false);
+  });
+
+  it('keeps failed queued backups visible until they are retried', async () => {
+    mockedGetR2BackupConfig.mockReturnValue({
+      bucket: 'blog-data',
+      endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      prefix: 'blog-navigation',
+      snapshotOnWrite: false,
+    });
+    mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
+    mockedCreateCurrentEditorBackupPayload.mockResolvedValue(createBackupPayload('failed'));
+    mockedUploadBackupPayloadToR2
+      .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
+      .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
+      .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
+      .mockResolvedValue({
+        latestKey: 'blog-navigation/latest/backup.json',
+        snapshotKey: null,
+      });
+
+    expect(queueCurrentBackupToRemote({ reason: 'queued-write' })).toEqual(
+      expect.objectContaining({
+        queued: true,
+      })
+    );
+    await waitForRemoteBackupQueueIdleForTests();
+
+    expect(getRemoteBackupQueueStatus()).toEqual({
+      pending: 0,
+      failed: 1,
+      failedTasks: [
+        expect.objectContaining({
+          reason: 'queued-write',
+          attempts: 3,
+          lastError: 'R2 temporarily unavailable.',
+        }),
+      ],
+    });
+
+    const retryResult = retryFailedRemoteBackups();
+
+    expect(retryResult.retried).toBe(1);
+    await waitForRemoteBackupQueueIdleForTests();
+    expect(getRemoteBackupQueueStatus()).toEqual({
+      pending: 0,
+      failed: 0,
+      failedTasks: [],
+    });
+  });
+
+  it('does not write queued snapshots when the current manifest has changed before drain', async () => {
+    const queuedManifest = {
+      version: 1 as const,
+      updatedAt: '2026-05-26T00:00:00.000Z',
+      resources: {
+        articles: {
+          revision: 'queued-articles-revision',
+          hash: 'queued-articles-hash',
+          updatedAt: '2026-05-26T00:00:00.000Z',
+        },
+      },
+    };
+    const changedPayload = {
+      ...createBackupPayload('changed'),
+      manifest: {
+        version: 1 as const,
+        updatedAt: '2026-05-26T00:01:00.000Z',
+        resources: {
+          articles: {
+            revision: 'changed-articles-revision',
+            hash: 'changed-articles-hash',
+            updatedAt: '2026-05-26T00:01:00.000Z',
+          },
+        },
+      },
+    };
+    const queuedManifestHash = mockedCreateEditorDataManifestHash(queuedManifest);
+
+    mockedGetR2BackupConfig.mockReturnValue({
+      bucket: 'blog-data',
+      endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      prefix: 'blog-navigation',
+      snapshotOnWrite: true,
+    });
+    mockedGetR2BackupStatus.mockReturnValue({
+      ...createConfiguredStatus(),
+      snapshotOnWrite: true,
+    });
+    mockedCreateCurrentEditorManifestSnapshotReference.mockReturnValue({
+      manifest: queuedManifest,
+      manifestHash: queuedManifestHash,
+    });
+    mockedCreateCurrentEditorBackupPayload.mockResolvedValue(changedPayload);
+    mockedIsSameEditorManifestSnapshot.mockReturnValue(false);
+
+    expect(queueCurrentBackupToRemote({ reason: 'snapshot-write' })).toEqual(
+      expect.objectContaining({
+        queued: true,
+      })
+    );
+    await waitForRemoteBackupQueueIdleForTests();
+
+    expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
+    expect(getRemoteBackupQueueStatus()).toEqual({
+      pending: 0,
+      failed: 1,
+      failedTasks: [
+        expect.objectContaining({
+          reason: 'snapshot-write',
+          attempts: 3,
+          lastError: 'R2 snapshot manifest changed before upload; snapshot was not written.',
+        }),
+      ],
+    });
   });
 });

@@ -1,21 +1,32 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+    parseEditorDataManifest,
+    type EditorDataManifest,
+} from '@/lib/editor-data-storage';
 import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 
 const PENDING_BACKUP_FILE_NAME = '.backup-pending.json';
-const PENDING_BACKUP_STATE_VERSION = 1;
+const PENDING_BACKUP_STATE_VERSION = 2;
 const MAX_BACKUP_TASK_ATTEMPTS = 3;
+
+export type BackupTaskStatus = 'pending' | 'failed';
 
 export interface BackupTask {
     id: string;
     reason: string;
     timestamp: string;
     retries: number;
+    attempts: number;
+    status: BackupTaskStatus;
     writeSnapshot: boolean;
     writeLatest?: boolean;
+    snapshotManifest?: EditorDataManifest;
+    snapshotManifestHash?: string;
     nextAttemptAt?: string;
     lastError?: string;
+    lastAttemptAt?: string;
 }
 
 export interface PendingBackupState {
@@ -27,6 +38,8 @@ export interface BackupTaskInput {
     reason: string;
     writeSnapshot: boolean;
     writeLatest?: boolean;
+    snapshotManifest?: EditorDataManifest;
+    snapshotManifestHash?: string;
 }
 
 type DrainOptions = {
@@ -95,11 +108,24 @@ function isTask(value: unknown): value is BackupTask {
         typeof candidate.retries === 'number' &&
         Number.isInteger(candidate.retries) &&
         candidate.retries >= 0 &&
+        (candidate.attempts === undefined || (typeof candidate.attempts === 'number' && Number.isInteger(candidate.attempts) && candidate.attempts >= 0)) &&
+        (candidate.status === undefined || candidate.status === 'pending' || candidate.status === 'failed') &&
         typeof candidate.writeSnapshot === 'boolean' &&
         (candidate.writeLatest === undefined || typeof candidate.writeLatest === 'boolean') &&
+        (candidate.snapshotManifest === undefined || parseEditorDataManifest(candidate.snapshotManifest) !== null) &&
+        (candidate.snapshotManifestHash === undefined || typeof candidate.snapshotManifestHash === 'string') &&
         (candidate.nextAttemptAt === undefined || typeof candidate.nextAttemptAt === 'string') &&
-        (candidate.lastError === undefined || typeof candidate.lastError === 'string')
+        (candidate.lastError === undefined || typeof candidate.lastError === 'string') &&
+        (candidate.lastAttemptAt === undefined || typeof candidate.lastAttemptAt === 'string')
     );
+}
+
+function normalizeTask(task: BackupTask): BackupTask {
+    return {
+        ...task,
+        attempts: task.attempts ?? task.retries,
+        status: task.status ?? 'pending',
+    };
 }
 
 function parseState(value: unknown, filePath: string): PendingBackupState {
@@ -110,7 +136,7 @@ function parseState(value: unknown, filePath: string): PendingBackupState {
     const candidate = value as Partial<PendingBackupState>;
 
     if (
-        candidate.version !== PENDING_BACKUP_STATE_VERSION ||
+        (candidate.version !== PENDING_BACKUP_STATE_VERSION && candidate.version !== 1) ||
         !Array.isArray(candidate.tasks) ||
         candidate.tasks.some((task) => !isTask(task))
     ) {
@@ -119,7 +145,7 @@ function parseState(value: unknown, filePath: string): PendingBackupState {
 
     return {
         version: PENDING_BACKUP_STATE_VERSION,
-        tasks: candidate.tasks,
+        tasks: candidate.tasks.map((task) => normalizeTask(task as BackupTask)),
     };
 }
 
@@ -171,8 +197,12 @@ function createTask(input: BackupTaskInput, now: Date): BackupTask {
         reason: input.reason,
         timestamp: now.toISOString(),
         retries: 0,
+        attempts: 0,
+        status: 'pending',
         writeSnapshot: input.writeSnapshot,
         writeLatest: input.writeLatest,
+        snapshotManifest: input.snapshotManifest,
+        snapshotManifestHash: input.snapshotManifestHash,
     };
 }
 
@@ -202,6 +232,10 @@ function findNextTask(tasks: BackupTask[], now: Date): BackupTask | null {
     const nowTime = now.getTime();
 
     return tasks.find((task) => {
+        if (task.status === 'failed') {
+            return false;
+        }
+
         if (task.retries >= MAX_BACKUP_TASK_ATTEMPTS) {
             return false;
         }
@@ -216,7 +250,7 @@ function findNextTask(tasks: BackupTask[], now: Date): BackupTask | null {
 
 function findNextAttemptDelay(tasks: BackupTask[], now: Date): number | null {
     const futureTimes = tasks
-        .filter((task) => task.retries < MAX_BACKUP_TASK_ATTEMPTS && task.nextAttemptAt)
+        .filter((task) => task.status !== 'failed' && task.retries < MAX_BACKUP_TASK_ATTEMPTS && task.nextAttemptAt)
         .map((task) => Date.parse(task.nextAttemptAt as string))
         .filter((time) => Number.isFinite(time) && time > now.getTime())
         .sort((left, right) => left - right);
@@ -234,15 +268,13 @@ function removeTask(taskId: string): void {
 
 function updateTaskAfterFailure(task: BackupTask, error: unknown, now: Date, options: DrainOptions): boolean {
     const retries = task.retries + 1;
-
-    if (retries >= MAX_BACKUP_TASK_ATTEMPTS) {
-        removeTask(task.id);
-        return false;
-    }
+    const lastError = getErrorMessage(error);
+    const lastAttemptAt = now.toISOString();
 
     const retryDelayMs = getRetryDelayMs(retries, options);
     const nextAttemptAt = new Date(now.getTime() + retryDelayMs).toISOString();
     const state = readState();
+    const shouldRetry = retries < MAX_BACKUP_TASK_ATTEMPTS;
 
     writeState({
         ...state,
@@ -250,13 +282,16 @@ function updateTaskAfterFailure(task: BackupTask, error: unknown, now: Date, opt
             ? {
                 ...currentTask,
                 retries,
-                nextAttemptAt,
-                lastError: getErrorMessage(error),
+                attempts: retries,
+                status: shouldRetry ? 'pending' : 'failed',
+                nextAttemptAt: shouldRetry ? nextAttemptAt : undefined,
+                lastError,
+                lastAttemptAt,
             }
             : currentTask),
     });
 
-    return true;
+    return shouldRetry;
 }
 
 async function runDrain(
@@ -319,6 +354,59 @@ export function readPendingBackupTasksForTests(): BackupTask[] {
     }
 
     return readState().tasks;
+}
+
+export type BackupQueueStatus = {
+    pending: number;
+    failed: number;
+    failedTasks: Array<{
+        id: string;
+        reason: string;
+        attempts: number;
+        lastAttemptAt: string | null;
+        lastError: string | null;
+    }>;
+};
+
+export function getBackupQueueStatus(): BackupQueueStatus {
+    const tasks = readState().tasks;
+    const failedTasks = tasks.filter((task) => task.status === 'failed');
+
+    return {
+        pending: tasks.filter((task) => task.status !== 'failed').length,
+        failed: failedTasks.length,
+        failedTasks: failedTasks.map((task) => ({
+            id: task.id,
+            reason: task.reason,
+            attempts: task.attempts,
+            lastAttemptAt: task.lastAttemptAt ?? null,
+            lastError: task.lastError ?? null,
+        })),
+    };
+}
+
+export function retryFailedBackupTasks(): number {
+    const state = readState();
+    const failedTasks = state.tasks.filter((task) => task.status === 'failed');
+
+    if (failedTasks.length === 0) {
+        return 0;
+    }
+
+    writeState({
+        ...state,
+        tasks: state.tasks.map((task) => task.status === 'failed'
+            ? {
+                ...task,
+                retries: 0,
+                attempts: 0,
+                status: 'pending',
+                nextAttemptAt: undefined,
+            }
+            : task),
+    });
+
+    return failedTasks.length;
 }
 
 export async function drainPendingBackupTasks(

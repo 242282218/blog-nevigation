@@ -192,9 +192,9 @@
 }
 
 .markdown-preview .markdown-code-block__copy:hover {
-  background: var(--accent-soft);
-  border-color: var(--terracotta-200);
-  color: var(--accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
 }
 
 .markdown-preview .markdown-code-block__copy:focus,

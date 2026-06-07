@@ -143,9 +143,11 @@ describe('runtime data migration scripts', () => {
     expect(payload).toEqual(
       expect.objectContaining({
         version: 1,
+        schemaVersion: 1,
         source: 'local',
         manifest: expect.objectContaining({
           version: 1,
+          schemaVersion: 1,
           resources: expect.objectContaining({
             articles: expect.objectContaining({
               revision: expect.any(String),
@@ -202,6 +204,7 @@ describe('runtime data migration scripts', () => {
     expect(importedManifest).toEqual(
       expect.objectContaining({
         version: 1,
+        schemaVersion: 1,
         resources: expect.objectContaining({
           articles: expect.objectContaining({
             revision: expect.any(String),
@@ -228,6 +231,46 @@ describe('runtime data migration scripts', () => {
         manifest: true,
       })
     );
+  });
+
+  it('rejects backups from newer schema versions without replacing existing runtime data', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'future-backup.json');
+    const existingArticle = {
+      id: 'existing-article',
+      title: 'Existing Article',
+      date: '2026-05-22',
+      description: 'Existing runtime data',
+      tags: ['runtime'],
+      content: '# Existing',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), validSettings);
+    writeJson(backupPath, {
+      version: 1,
+      schemaVersion: 999,
+      data: {
+        articles: [],
+        navigation: [],
+        settings: validSettings,
+      },
+    });
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('schemaVersion 999 is newer than supported 1');
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
   });
 
   it('creates and restores an encrypted GitHub backup package', () => {

@@ -4,13 +4,18 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/data/backup/remote/route';
 import { POST as POST_RESTORE } from '@/app/api/data/backup/remote/restore/route';
+import { POST as POST_RETRY } from '@/app/api/data/backup/remote/retry/route';
 import { POST as POST_SYNC } from '@/app/api/data/backup/remote/sync/route';
 import {
   downloadLatestBackupPayloadFromR2,
   getR2BackupStatus,
   R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
-import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import {
+  getRemoteBackupQueueStatus,
+  retryFailedRemoteBackups,
+  syncCurrentBackupToRemote,
+} from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import {
   cleanupTempDirectories,
@@ -43,11 +48,15 @@ vi.mock('@/lib/r2-backup-storage', () => {
 });
 
 vi.mock('@/lib/editor-remote-backup', () => ({
+  getRemoteBackupQueueStatus: vi.fn(),
+  retryFailedRemoteBackups: vi.fn(),
   syncCurrentBackupToRemote: vi.fn(),
 }));
 
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedDownloadLatestBackupPayloadFromR2 = vi.mocked(downloadLatestBackupPayloadFromR2);
+const mockedGetRemoteBackupQueueStatus = vi.mocked(getRemoteBackupQueueStatus);
+const mockedRetryFailedRemoteBackups = vi.mocked(retryFailedRemoteBackups);
 const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
 
 const ORIGINAL_ENV = {
@@ -84,6 +93,19 @@ async function readCurrentManifest(): Promise<unknown> {
 beforeEach(() => {
   process.chdir(createTempDataRoot());
   vi.clearAllMocks();
+  mockedGetRemoteBackupQueueStatus.mockReturnValue({
+    pending: 0,
+    failed: 0,
+    failedTasks: [],
+  });
+  mockedRetryFailedRemoteBackups.mockReturnValue({
+    retried: 0,
+    backupQueue: {
+      pending: 0,
+      failed: 0,
+      failedTasks: [],
+    },
+  });
   mockedGetR2BackupStatus.mockReturnValue({
     enabled: false,
     configured: false,
@@ -132,6 +154,45 @@ describe('remote backup API', () => {
       expect.objectContaining({
         enabled: false,
         configured: false,
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
+      })
+    );
+  });
+
+  it('returns failed queue status for authenticated reads', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    mockedGetRemoteBackupQueueStatus.mockReturnValue({
+      pending: 0,
+      failed: 1,
+      failedTasks: [
+        {
+          id: 'failed-task',
+          reason: 'articles-write',
+          attempts: 3,
+          lastAttemptAt: '2026-06-07T00:00:00.000Z',
+          lastError: 'R2 temporarily unavailable.',
+        },
+      ],
+    });
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup/remote'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        backupQueue: expect.objectContaining({
+          failed: 1,
+          failedTasks: [
+            expect.objectContaining({
+              reason: 'articles-write',
+              lastError: 'R2 temporarily unavailable.',
+            }),
+          ],
+        }),
       })
     );
   });
@@ -251,6 +312,37 @@ describe('remote backup API', () => {
         }),
       })
     );
+  });
+
+  it('requeues failed remote backup tasks through the retry endpoint', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    mockedRetryFailedRemoteBackups.mockReturnValue({
+      retried: 1,
+      backupQueue: {
+        pending: 1,
+        failed: 0,
+        failedTasks: [],
+      },
+    });
+
+    const response = await POST_RETRY(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/retry', {
+        method: 'POST',
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      success: true,
+      retried: 1,
+      backupQueue: {
+        pending: 1,
+        failed: 0,
+        failedTasks: [],
+      },
+    });
+    expect(mockedRetryFailedRemoteBackups).toHaveBeenCalledTimes(1);
   });
 
   it('syncs through the resource remote sync endpoint', async () => {

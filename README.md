@@ -244,6 +244,12 @@ docker ps --filter "name=${CONTAINER_NAME}"
 EOF
 ```
 
+## GitHub Actions 生产发布
+
+正式发布建议使用 GitHub Actions 的 `Docker Build & Publish` workflow。workflow 会先用 Buildx 构建同源 smoke 镜像、挂载临时数据目录验证 `/var/lib/blog-navigation` 可持久写入，再执行 Trivy HIGH/CRITICAL 镜像扫描；通过后才发布 GHCR 镜像。
+
+手动勾选 `deploy=true` 部署生产时，workflow 使用 GHCR digest 启动服务，不使用 `latest` 作为生产回滚依据。部署成功后会把完整 digest 镜像引用写入服务器 `/opt/blog-nevigation/.last-good-digest`；下次部署健康检查失败时，只回滚镜像到该 digest，不会覆盖或恢复旧的 `/opt/blog-nevigation/.env` 和 `/opt/blog-nevigation/data`。
+
 ## 查看口令
 
 ```bash

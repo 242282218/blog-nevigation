@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Cloud, CloudDownload, CloudUpload, KeyRound, Save } from 'lucide-react';
+import { Cloud, CloudDownload, CloudUpload, KeyRound, RefreshCcw, Save } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { loadCurrentBackupManifest } from '../../backup-current-manifest';
 import { createRestoreActionMessage } from '../../backup-action-message';
@@ -37,15 +37,29 @@ type CloudflareR2Status = {
     securityWarning: string | null;
 };
 
+type RemoteBackupQueueStatus = {
+    pending: number;
+    failed: number;
+    failedTasks: Array<{
+        id: string;
+        reason: string;
+        attempts: number;
+        lastAttemptAt: string | null;
+        lastError: string | null;
+    }>;
+};
+
 type CloudflareR2Response = {
     persistent?: boolean;
     settings?: CloudflareR2Settings;
     status?: CloudflareR2Status;
+    backupQueue?: RemoteBackupQueueStatus;
     message?: string;
 };
 
 type RemoteBackupActionResponse = {
     message?: string;
+    backupQueue?: RemoteBackupQueueStatus;
     remoteBackup?: {
         success?: boolean;
         message?: string;
@@ -248,6 +262,7 @@ export function CloudflareR2SettingsPanel() {
     const [form, setForm] = useState<CloudflareR2Form>(createEmptyCloudflareR2Form);
     const [bootstrapForm, setBootstrapForm] = useState<CloudflareR2BootstrapForm>(createEmptyCloudflareR2BootstrapForm);
     const [status, setStatus] = useState<CloudflareR2Status | null>(null);
+    const [backupQueue, setBackupQueue] = useState<RemoteBackupQueueStatus | null>(null);
     const [hasSecretAccessKey, setHasSecretAccessKey] = useState(false);
     const [persistent, setPersistent] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -280,6 +295,7 @@ export function CloudflareR2SettingsPanel() {
                     setBootstrapForm(toCloudflareR2BootstrapForm(payload?.settings));
                     setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
                     setStatus(payload?.status ?? null);
+                    setBackupQueue(payload?.backupQueue ?? null);
                 }
             } catch (error) {
                 console.error('Failed to load Cloudflare R2 settings:', error);
@@ -436,8 +452,9 @@ export function CloudflareR2SettingsPanel() {
 
                 setForm(toCloudflareR2Form(payload?.settings));
                 setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
-                setStatus(payload?.status ?? null);
-                setMessage({ tone: 'success', text: 'Cloudflare R2 配置已保存。' });
+            setStatus(payload?.status ?? null);
+            setBackupQueue(payload?.backupQueue ?? null);
+            setMessage({ tone: 'success', text: 'Cloudflare R2 配置已保存。' });
             } catch (error) {
                 console.error('Failed to save Cloudflare R2 settings:', error);
                 setMessage({
@@ -486,11 +503,49 @@ export function CloudflareR2SettingsPanel() {
                     text: '云端备份已同步。',
                 }
                 : createRestoreActionMessage(payload, '云端恢复成功，刷新页面后可见最新数据。'));
+            setBackupQueue(payload?.backupQueue ?? null);
         } catch (error) {
             console.error('Failed to run Cloudflare R2 action:', error);
             setMessage({
                 tone: 'danger',
                 text: error instanceof Error ? error.message : 'Cloudflare R2 操作失败。',
+            });
+        } finally {
+            setIsRemoteBusy(false);
+        }
+    }, []);
+
+    const handleRetryFailedBackups = useCallback(async () => {
+        setIsRemoteBusy(true);
+        setMessage({ tone: 'loading', text: '正在重试失败的 R2 备份任务...' });
+
+        try {
+            const response = await fetch('/api/data/backup/remote/retry', {
+                method: 'POST',
+                credentials: 'include',
+                headers: createEditorCsrfHeaders({
+                    'Content-Type': 'application/json',
+                }),
+                body: JSON.stringify({}),
+            });
+            const payload = (await response.json().catch(() => null)) as (RemoteBackupActionResponse & {
+                retried?: number;
+            }) | null;
+
+            if (!response.ok) {
+                throw new Error(payload?.message || '失败备份任务重试失败。');
+            }
+
+            setBackupQueue(payload?.backupQueue ?? null);
+            setMessage({
+                tone: 'success',
+                text: payload?.retried ? `已重新排队 ${payload.retried} 个失败备份任务。` : '没有需要重试的失败备份任务。',
+            });
+        } catch (error) {
+            console.error('Failed to retry failed Cloudflare R2 backups:', error);
+            setMessage({
+                tone: 'danger',
+                text: error instanceof Error ? error.message : '失败备份任务重试失败。',
             });
         } finally {
             setIsRemoteBusy(false);
@@ -581,6 +636,33 @@ export function CloudflareR2SettingsPanel() {
                 {status?.message ? (
                     <div className="mb-4">
                         <StatusMessage tone="info">{status.message}</StatusMessage>
+                    </div>
+                ) : null}
+
+                {backupQueue?.failed ? (
+                    <div className="mb-4">
+                        <StatusMessage tone="warning">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <p className="font-medium text-fg">
+                                        有 {backupQueue.failed} 个 R2 备份任务失败，已保留等待手动重试。
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-muted">
+                                        最近错误：{backupQueue.failedTasks[0]?.lastError ?? '未记录错误。'}
+                                    </p>
+                                </div>
+                                <EditorButton
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={handleRetryFailedBackups}
+                                    disabled={!canRunRemoteAction}
+                                    className="w-full sm:w-auto"
+                                >
+                                    <RefreshCcw className="h-4 w-4" />
+                                    重试失败备份
+                                </EditorButton>
+                            </div>
+                        </StatusMessage>
                     </div>
                 ) : null}
 

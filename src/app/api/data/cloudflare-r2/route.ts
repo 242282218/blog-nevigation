@@ -13,6 +13,7 @@ import {
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
+import { getRemoteBackupQueueStatus } from '@/lib/editor-remote-backup';
 import {
     getEditableR2BackupSettings,
     getR2BackupStatus,
@@ -71,6 +72,7 @@ export async function GET(request: NextRequest) {
             persistent: isEditorDataRootConfigured(),
             settings: getEditableR2BackupSettings(),
             status: getR2BackupStatus(),
+            backupQueue: getRemoteBackupQueueStatus(),
         });
     } catch (error) {
         const invalidResponse = createInvalidR2SettingsResponse(error);
@@ -128,6 +130,7 @@ export async function PUT(request: NextRequest) {
             success: true,
             settings: savedSettings,
             status: getR2BackupStatus(),
+            backupQueue: getRemoteBackupQueueStatus(),
         });
     } catch (error) {
         const invalidResponse = createInvalidR2SettingsResponse(error);

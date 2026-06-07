@@ -475,6 +475,80 @@ describe('BlogEditorPage', () => {
     expect(container.textContent).toContain('Plain Article');
   });
 
+  it('filters articles by workflow tabs and shows quality summaries', () => {
+    articlesMock = [
+      {
+        id: 'needs-fix-draft',
+        title: '',
+        date: '2026-03-09',
+        description: '',
+        tags: ['draft'],
+        content: '# Draft',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 3,
+      },
+      {
+        id: 'ready-draft',
+        title: 'Ready Draft',
+        date: '2026-03-10',
+        description: 'Ready draft has the minimum public description.',
+        tags: ['ready'],
+        content: '# Ready Draft',
+        status: 'draft',
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      {
+        id: 'published-article',
+        title: 'Published Article',
+        date: '2026-03-11',
+        description: 'Published article',
+        tags: ['published'],
+        content: '# Published',
+        status: 'published',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    act(() => {
+      root.render(<BlogEditorPage />);
+    });
+
+    expect(container.textContent).toContain('发布阻塞 2');
+    expect(container.textContent).toContain('可发布');
+    expect(container.textContent).toContain('发布建议');
+
+    const needsFixTab = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('待修复') && button.textContent.includes('1')
+    );
+
+    expect(needsFixTab).toBeInstanceOf(HTMLButtonElement);
+
+    act(() => {
+      needsFixTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('当前显示 1 / 3 篇');
+    expect(container.textContent).toContain('工作流：待修复');
+    expect(container.textContent).toContain('无标题');
+    expect(container.textContent).not.toContain('Ready Draft');
+
+    const readyTab = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('可发布') && button.textContent.includes('1')
+    );
+
+    act(() => {
+      readyTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('当前显示 1 / 3 篇');
+    expect(container.textContent).toContain('工作流：可发布');
+    expect(container.textContent).toContain('Ready Draft');
+    expect(container.textContent).not.toContain('Published Article');
+  });
+
   it('gives the article search input an accessible name', () => {
     act(() => {
       root.render(<BlogEditorPage />);

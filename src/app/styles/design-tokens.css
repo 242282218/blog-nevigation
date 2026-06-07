@@ -93,7 +93,9 @@
   --success: var(--green-500);
   --success-light: #bfe5dc;
   --warning: var(--amber-500);
-  --warning-light: #fef08a;
+  --warning-bg: #fff7d6;
+  --warning-fg: #6f3f00;
+  --warning-light: #f3c35c;
   --danger: var(--red-500);
   --danger-light: #fecaca;
 
@@ -324,7 +326,9 @@
     --accent-fg: #1a1917;
 
     --success-light: #135e50;
-    --warning-light: #725a0a;
+    --warning-bg: #3a2f12;
+    --warning-fg: #f7d66f;
+    --warning-light: #806414;
     --danger-light: #6f2424;
 
     --link: var(--blue-500);

@@ -1,14 +1,21 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
 import {
+  createManifest,
+  DATA_SCHEMA_VERSION,
   createDefaultSiteSettings,
   isRecord,
+  migrateRuntimeData,
   normalizeArticles,
   normalizeNavigation,
   normalizeSiteSettings,
   readJsonFile,
+  readRuntimeData,
+  readSchemaVersion,
   restoreRuntimeDataAtomically,
   resolveDataRoot,
+  writeJsonAtomically,
 } from './runtime-data.mjs';
 
 function parseBackupData(value) {
@@ -42,7 +49,25 @@ if (!backupFileArg) {
 const backupFile = path.resolve(backupFileArg);
 const dataRoot = resolveDataRoot(dataRootArg);
 const payload = readJsonFile(backupFile);
-const data = parseBackupData(payload);
+const schemaVersion = readSchemaVersion(payload);
+const data = migrateRuntimeData(parseBackupData(payload), schemaVersion);
+
+if (schemaVersion < DATA_SCHEMA_VERSION && fs.existsSync(dataRoot)) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const snapshotPath = path.join(dataRoot, 'backups', `pre-migration-${timestamp}.json`);
+  const currentData = readRuntimeData(dataRoot);
+
+  writeJsonAtomically(snapshotPath, {
+    version: 1,
+    schemaVersion: DATA_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    source: 'local',
+    persistent: true,
+    dataRoot,
+    manifest: createManifest(currentData),
+    data: currentData,
+  });
+}
 
 restoreRuntimeDataAtomically(dataRoot, data);
 

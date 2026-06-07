@@ -13,6 +13,13 @@ import {
 } from '@/lib/site-settings';
 import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 import { resetEditorRuntimeCaches } from '@/lib/editor-runtime-cache';
+import { writeJsonAtomically as writeJsonAtomicallyShared } from '@/lib/atomic-json-writer';
+import {
+    commitResourceManifestTransaction,
+    hasIncompleteManifestTransaction,
+    recoverIncompleteManifestTransaction,
+    ManifestTransactionIncompleteError,
+} from '@/lib/manifest-transaction';
 import {
     EditorDataLockTimeoutError,
     acquireEditorDataRootLock,
@@ -28,6 +35,7 @@ const NAVIGATION_FILE_NAME = 'tools.json';
 const SETTINGS_FILE_NAME = 'site.json';
 const MANIFEST_FILE_NAME = 'manifest.json';
 const MANIFEST_VERSION = 1;
+export const EDITOR_DATA_SCHEMA_VERSION = 1;
 const DATA_CACHE_TTL_MS = 2_000;
 const RESTORE_STATE_FILE_NAME = '.restore-state.json';
 const RESTORE_STATE_VERSION = 1;
@@ -43,6 +51,7 @@ export interface EditorDataResourceManifest {
 
 export interface EditorDataManifest {
     version: typeof MANIFEST_VERSION;
+    schemaVersion?: typeof EDITOR_DATA_SCHEMA_VERSION;
     updatedAt: string;
     resources: Partial<Record<EditorDataResourceName, EditorDataResourceManifest>>;
 }
@@ -66,6 +75,7 @@ export class EditorDataRootNotConfiguredError extends Error {
 }
 
 export { EditorDataLockTimeoutError };
+export { ManifestTransactionIncompleteError };
 
 export class EditorDataFileInvalidError extends Error {
     constructor(
@@ -131,6 +141,7 @@ export async function withEditorDataRootLock<T>(operation: () => T | Promise<T>)
 
     try {
         recoverIncompleteRestore(resolvedRoot);
+        recoverIncompleteManifestTransaction(resolvedRoot);
         return await operation();
     } finally {
         setHeldEditorDataLockCount(resolvedRoot, 0);
@@ -294,8 +305,50 @@ async function recoverIncompleteRestoreForReadAsync(filePath: string | null): Pr
     }
 }
 
+function recoverIncompleteManifestTransactionForReadSync(filePath: string | null): void {
+    const root = getEditorDataRootForReadRecovery(filePath);
+
+    if (!root || !hasIncompleteManifestTransaction(root)) {
+        return;
+    }
+
+    const statePath = path.join(root, '.manifest-transaction.json');
+    const heldCount = getHeldEditorDataLockCount(root);
+
+    if (heldCount > 0) {
+        try {
+            recoverIncompleteManifestTransaction(root);
+        } catch (error) {
+            console.error('[editor-data-storage] Failed to recover incomplete manifest transaction before read:', error);
+            throw new ManifestTransactionIncompleteError(statePath);
+        }
+        return;
+    }
+
+    throw new ManifestTransactionIncompleteError(statePath);
+}
+
+async function recoverIncompleteManifestTransactionForReadAsync(filePath: string | null): Promise<void> {
+    const root = getEditorDataRootForReadRecovery(filePath);
+
+    if (!root || !hasIncompleteManifestTransaction(root)) {
+        return;
+    }
+
+    const lock = await acquireEditorDataRootLock(root);
+    setHeldEditorDataLockCount(root, 1);
+
+    try {
+        recoverIncompleteManifestTransaction(root);
+    } finally {
+        setHeldEditorDataLockCount(root, 0);
+        releaseEditorDataRootLock(lock);
+    }
+}
+
 function readJsonFile(filePath: string | null, resource: EditorDataFileResourceName): unknown | null {
     recoverIncompleteRestoreForReadSync(filePath);
+    recoverIncompleteManifestTransactionForReadSync(filePath);
 
     if (!filePath || !fs.existsSync(filePath)) {
         return null;
@@ -320,6 +373,7 @@ function readJsonFile(filePath: string | null, resource: EditorDataFileResourceN
 
 async function readJsonFileAsync(filePath: string | null, resource: EditorDataFileResourceName): Promise<unknown | null> {
     await recoverIncompleteRestoreForReadAsync(filePath);
+    await recoverIncompleteManifestTransactionForReadAsync(filePath);
 
     if (!filePath) {
         return null;
@@ -396,18 +450,11 @@ function writeJsonFile(filePath: string | null, value: unknown): void {
         throw new EditorDataRootNotConfiguredError();
     }
 
-    ensureParentDirectory(filePath);
-    const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-
     try {
-        fs.writeFileSync(tempFilePath, JSON.stringify(value, null, 2), 'utf8');
-        fsyncFile(tempFilePath);
-        fs.renameSync(tempFilePath, filePath);
-        fsyncDirectory(path.dirname(filePath));
+        writeJsonAtomicallyShared(filePath, value);
         setCachedJsonFile(filePath, value);
         resetEditorRuntimeCaches();
     } catch (error) {
-        fs.rmSync(tempFilePath, { force: true });
         invalidateJsonFileCache(filePath);
         throw error;
     }
@@ -608,6 +655,7 @@ function createManifestForData(data: {
 
     return {
         version: MANIFEST_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
         updatedAt: settings.updatedAt,
         resources: {
             articles,
@@ -642,6 +690,13 @@ function parseManifest(value: unknown): EditorDataManifest | null {
         return null;
     }
 
+    if (
+        candidate.schemaVersion !== undefined &&
+        candidate.schemaVersion !== EDITOR_DATA_SCHEMA_VERSION
+    ) {
+        return null;
+    }
+
     const resources: EditorDataManifest['resources'] = {};
 
     for (const resource of ['articles', 'navigation', 'settings'] as const) {
@@ -654,6 +709,9 @@ function parseManifest(value: unknown): EditorDataManifest | null {
 
     return {
         version: MANIFEST_VERSION,
+        schemaVersion: candidate.schemaVersion === undefined
+            ? EDITOR_DATA_SCHEMA_VERSION
+            : candidate.schemaVersion,
         updatedAt: typeof candidate.updatedAt === 'string'
             ? candidate.updatedAt
             : new Date().toISOString(),
@@ -668,6 +726,7 @@ export function parseEditorDataManifest(value: unknown): EditorDataManifest | nu
 function createEmptyManifest(): EditorDataManifest {
     return {
         version: MANIFEST_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
         updatedAt: new Date().toISOString(),
         resources: {},
     };
@@ -777,6 +836,49 @@ export function touchEditorDataResourceManifest(
     return resourceManifest;
 }
 
+function commitEditorDataResourceWrite(
+    resource: EditorDataResourceName,
+    resourcePath: string | null,
+    value: unknown
+): EditorDataResourceManifest {
+    if (!resourcePath) {
+        throw new EditorDataRootNotConfiguredError();
+    }
+
+    const root = getEditorDataRootOrThrow();
+    const manifestPath = getEditorDataManifestFilePath();
+
+    if (!manifestPath) {
+        throw new EditorDataRootNotConfiguredError();
+    }
+
+    const manifest = readEditorDataManifest();
+    const resourceManifest = createResourceManifest(value);
+    const nextManifest: EditorDataManifest = {
+        version: MANIFEST_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
+        updatedAt: resourceManifest.updatedAt,
+        resources: {
+            ...manifest.resources,
+            [resource]: resourceManifest,
+        },
+    };
+
+    commitResourceManifestTransaction({
+        root,
+        resource,
+        resourcePath,
+        manifestPath,
+        resourceValue: value,
+        nextManifest,
+    });
+    setCachedJsonFile(resourcePath, value);
+    setCachedJsonFile(manifestPath, nextManifest);
+    resetEditorRuntimeCaches();
+
+    return resourceManifest;
+}
+
 export function getEditorDataResourceManifest(
     resource: EditorDataResourceName,
     value: unknown
@@ -813,6 +915,7 @@ export function createEditorDataManifestSnapshot(data: {
 
     return {
         version: MANIFEST_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
         updatedAt,
         resources: {
             ...(articles ? { articles } : {}),
@@ -869,8 +972,7 @@ export async function readArticlesFromDiskAsync(): Promise<Article[]> {
 
 export async function writeArticlesToDisk(articles: Article[]): Promise<EditorDataResourceManifest> {
     return withEditorDataRootLock(() => {
-        writeJsonFile(getArticlesDataFilePath(), articles);
-        return touchEditorDataResourceManifest('articles', articles);
+        return commitEditorDataResourceWrite('articles', getArticlesDataFilePath(), articles);
     });
 }
 
@@ -890,11 +992,9 @@ export async function writeArticlesToDiskIfRevisionMatches(
             };
         }
 
-        writeJsonFile(getArticlesDataFilePath(), articles);
-
         return {
             success: true,
-            resourceManifest: touchEditorDataResourceManifest('articles', articles),
+            resourceManifest: commitEditorDataResourceWrite('articles', getArticlesDataFilePath(), articles),
         };
     });
 }
@@ -957,8 +1057,7 @@ export async function readNavigationFromDiskAsync(): Promise<Category[]> {
 
 export async function writeNavigationToDisk(categories: Category[]): Promise<EditorDataResourceManifest> {
     return withEditorDataRootLock(() => {
-        writeJsonFile(getNavigationDataFilePath(), categories);
-        return touchEditorDataResourceManifest('navigation', categories);
+        return commitEditorDataResourceWrite('navigation', getNavigationDataFilePath(), categories);
     });
 }
 
@@ -978,11 +1077,9 @@ export async function writeNavigationToDiskIfRevisionMatches(
             };
         }
 
-        writeJsonFile(getNavigationDataFilePath(), categories);
-
         return {
             success: true,
-            resourceManifest: touchEditorDataResourceManifest('navigation', categories),
+            resourceManifest: commitEditorDataResourceWrite('navigation', getNavigationDataFilePath(), categories),
         };
     });
 }
@@ -1023,8 +1120,7 @@ export async function readSiteSettingsFromDiskAsync(): Promise<SiteSettings> {
 
 export async function writeSiteSettingsToDisk(settings: SiteSettings): Promise<EditorDataResourceManifest> {
     return withEditorDataRootLock(() => {
-        writeJsonFile(getSiteSettingsDataFilePath(), settings);
-        return touchEditorDataResourceManifest('settings', settings);
+        return commitEditorDataResourceWrite('settings', getSiteSettingsDataFilePath(), settings);
     });
 }
 
@@ -1044,11 +1140,9 @@ export async function writeSiteSettingsToDiskIfRevisionMatches(
             };
         }
 
-        writeJsonFile(getSiteSettingsDataFilePath(), settings);
-
         return {
             success: true,
-            resourceManifest: touchEditorDataResourceManifest('settings', settings),
+            resourceManifest: commitEditorDataResourceWrite('settings', getSiteSettingsDataFilePath(), settings),
         };
     });
 }

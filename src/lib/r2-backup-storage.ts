@@ -8,7 +8,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@/lib/article-data';
-import type { EditorBackupPayload } from '@/lib/editor-data-backup';
+import {
+    createEditorDataManifestHash,
+    type EditorBackupPayload,
+} from '@/lib/editor-data-backup';
 import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 
 const DEFAULT_R2_PREFIX = 'blog-navigation';
@@ -404,13 +407,27 @@ function sanitizeReason(reason: string): string {
         .replace(/^-|-$/g, '') || 'backup';
 }
 
-function createSnapshotBackupKey(config: R2BackupConfig, payload: EditorBackupPayload, reason: string): string {
+function createSnapshotAuditHash(payload: EditorBackupPayload, body: string, manifestHash?: string): string {
+    return (
+        manifestHash ||
+        (payload.manifest ? createEditorDataManifestHash(payload.manifest) : createHash('sha256').update(body).digest('hex'))
+    ).slice(0, 16);
+}
+
+function createSnapshotBackupKey(
+    config: R2BackupConfig,
+    payload: EditorBackupPayload,
+    reason: string,
+    body: string,
+    manifestHash?: string
+): string {
     const exportedAt = new Date(payload.exportedAt);
     const safeDate = Number.isNaN(exportedAt.getTime()) ? new Date() : exportedAt;
     const year = String(safeDate.getUTCFullYear());
     const month = String(safeDate.getUTCMonth() + 1).padStart(2, '0');
     const day = String(safeDate.getUTCDate()).padStart(2, '0');
     const timestamp = safeDate.toISOString().replace(/[:.]/g, '-');
+    const auditHash = createSnapshotAuditHash(payload, body, manifestHash);
 
     return joinR2Key(
         config.prefix,
@@ -418,7 +435,7 @@ function createSnapshotBackupKey(config: R2BackupConfig, payload: EditorBackupPa
         year,
         month,
         day,
-        `${timestamp}-${sanitizeReason(reason)}.json`
+        `${timestamp}-${sanitizeReason(reason)}-${auditHash}.json`
     );
 }
 
@@ -489,6 +506,7 @@ export async function uploadBackupPayloadToR2(
         reason: string;
         writeSnapshot: boolean;
         writeLatest?: boolean;
+        manifestHash?: string;
     }
 ): Promise<R2UploadResult> {
     const config = getR2BackupConfig();
@@ -501,7 +519,7 @@ export async function uploadBackupPayloadToR2(
     const body = createR2BackupBody(payload);
     const latestKey = createLatestBackupKey(config);
     const snapshotKey = options.writeSnapshot
-        ? createSnapshotBackupKey(config, payload, options.reason)
+        ? createSnapshotBackupKey(config, payload, options.reason, body, options.manifestHash)
         : null;
     const writeLatest = options.writeLatest ?? true;
 

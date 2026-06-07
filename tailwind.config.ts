@@ -56,10 +56,10 @@ const config: Config = {
                     600: "var(--green-600)",
                 },
                 warning: {
-                    DEFAULT: "var(--warning)",
+                    DEFAULT: "var(--warning-fg)",
                     light: "var(--warning-light)",
-                    50: "#fffbeb",
-                    600: "var(--amber-600)",
+                    50: "var(--warning-bg)",
+                    600: "var(--warning-fg)",
                 },
                 danger: {
                     DEFAULT: "var(--danger)",

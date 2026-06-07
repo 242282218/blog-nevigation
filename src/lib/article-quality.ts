@@ -37,6 +37,15 @@ export interface ArticleQualityCheck {
     passed: boolean;
 }
 
+export type ArticleWorkflowState = 'draft' | 'needs-fix' | 'ready' | 'published';
+
+export interface ArticleWorkflowSummary {
+    state: ArticleWorkflowState;
+    blockingChecks: ArticleQualityCheck[];
+    warningChecks: ArticleQualityCheck[];
+    failedChecks: ArticleQualityCheck[];
+}
+
 export type ArticleQualityField =
     | 'title'
     | 'date'
@@ -270,6 +279,52 @@ export function getArticleSaveBlockingChecks(
     return failedBlockingChecks.filter((check) =>
         check.id === 'date-valid' || check.id === 'source-url-valid'
     );
+}
+
+export function getArticleWorkflowSummary(article: ArticleQualityInput): ArticleWorkflowSummary {
+    const status = article.status || 'published';
+    const publishCandidate = isPublicArticleStatus(status)
+        ? article
+        : { ...article, status: 'published' as const };
+    const failedChecks = getArticleQualityChecks(publishCandidate)
+        .filter((check) => !check.passed);
+    const blockingChecks = failedChecks.filter((check) => check.severity === 'blocking');
+    const warningChecks = failedChecks.filter((check) => check.severity === 'warning');
+
+    if (isPublicArticleStatus(status)) {
+        return {
+            state: 'published',
+            blockingChecks,
+            warningChecks,
+            failedChecks,
+        };
+    }
+
+    if (blockingChecks.length > 0) {
+        return {
+            state: 'needs-fix',
+            blockingChecks,
+            warningChecks,
+            failedChecks,
+        };
+    }
+
+    return {
+        state: 'ready',
+        blockingChecks,
+        warningChecks,
+        failedChecks,
+    };
+}
+
+export function matchesArticleWorkflowState(article: ArticleQualityInput, state: ArticleWorkflowState): boolean {
+    const status = article.status || 'published';
+
+    if (state === 'draft') {
+        return status === 'draft';
+    }
+
+    return getArticleWorkflowSummary(article).state === state;
 }
 
 export function getFrontmatterFieldQualityChecks(

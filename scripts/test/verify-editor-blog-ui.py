@@ -173,6 +173,11 @@ def main() -> None:
         list_context, page = create_article_list_context(browser, list_workflow_article)
         goto_editor_page(page, "/editor/blog")
         expect(page.get_by_role("heading", name="博客管理")).to_be_visible()
+        needs_fix_tab = page.locator("button", has_text="待修复").first
+        expect(needs_fix_tab).to_be_visible()
+        needs_fix_tab.click()
+        expect(page.get_by_text("工作流：待修复")).to_be_visible()
+        expect(page.get_by_text("发布阻塞 1")).to_be_visible()
         publish_draft_button = page.locator('button[aria-label="发布文章：Smoke Publish Draft"]').first
         expect(publish_draft_button).to_be_visible()
         publish_draft_button.click()
@@ -187,10 +192,19 @@ def main() -> None:
         publish_context, page = create_article_list_context(browser, list_workflow_article)
         goto_editor_page(page, "/editor/blog")
         expect(page.get_by_text("Smoke Publish Draft").first).to_be_visible()
+        ready_tab = page.locator("button", has_text="可发布").first
+        expect(ready_tab).to_be_visible()
+        ready_tab.click()
+        expect(page.get_by_text("工作流：可发布")).to_be_visible()
+        expect(page.get_by_text("Smoke Publish Draft").first).to_be_visible()
         publish_button = page.locator('button[aria-label="发布文章：Smoke Publish Draft"]').first
         expect(publish_button).to_be_visible()
         publish_button.click()
         expect(page.get_by_text("文章已标记为已发布。")).to_be_visible()
+        published_tab = page.locator("button", has_text="已发布").first
+        expect(published_tab).to_be_visible()
+        published_tab.click()
+        expect(page.get_by_text("工作流：已发布")).to_be_visible()
         draft_button = page.locator('button[aria-label="改为草稿文章：Smoke Publish Draft"]').first
         expect(draft_button).to_be_visible()
         draft_button.click()

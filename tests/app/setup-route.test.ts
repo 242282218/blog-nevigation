@@ -136,6 +136,8 @@ describe('setup API R2 flow', () => {
       })
     );
     expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
+    expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
+    expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
   });
 
   it('starts Cloudflare R2 setup without removed legacy secret fields', async () => {
@@ -212,5 +214,7 @@ describe('setup API R2 flow', () => {
       })
     );
     expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
+    expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
+    expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
   });
 });
