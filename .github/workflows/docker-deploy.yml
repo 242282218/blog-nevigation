@@ -144,7 +144,7 @@ jobs:
           vuln-type: os,library
           exit-code: '0'
 
-      - name: Scan Docker smoke image with Trivy
+      - name: Generate Trivy SARIF artifact
         # aquasecurity/trivy-action@master
         uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
         with:
@@ -152,6 +152,17 @@ jobs:
           scanners: vuln
           format: sarif
           output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '0'
+
+      - name: Enforce Docker smoke image vulnerabilities with Trivy
+        # aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
+        with:
+          image-ref: blog-navigation:smoke-${{ github.sha }}
+          scanners: vuln
+          format: table
           severity: HIGH,CRITICAL
           vuln-type: os,library
           exit-code: '1'
