@@ -188,6 +188,7 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).toContain('# docker/setup-buildx-action@v4');
         expect(deployWorkflow).toContain('# aquasecurity/trivy-action@master');
         expect(deployWorkflow).toContain('image-ref: blog-navigation:smoke-${{ github.sha }}');
+        expect(deployWorkflow).toContain('scanners: vuln');
         expect(deployWorkflow).toContain('severity: HIGH,CRITICAL');
         expect(deployWorkflow).toContain('exit-code: \'1\'');
         expect(deployWorkflow).toContain('trivy-results.sarif');
