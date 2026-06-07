@@ -133,6 +133,17 @@ jobs:
           curl --fail --silent --show-error --max-time 10 --output /tmp/blog.html http://127.0.0.1:3210/blog
           curl --fail --silent --show-error --max-time 10 --output /tmp/navigation.html http://127.0.0.1:3210/navigation
 
+      - name: Report Docker smoke image vulnerabilities with Trivy
+        # aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
+        with:
+          image-ref: blog-navigation:smoke-${{ github.sha }}
+          scanners: vuln
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '0'
+
       - name: Scan Docker smoke image with Trivy
         # aquasecurity/trivy-action@master
         uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
