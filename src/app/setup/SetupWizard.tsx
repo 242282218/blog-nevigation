@@ -26,7 +26,6 @@ type R2Form = {
     bucket: string;
     accessKeyId: string;
     secretAccessKey: string;
-    backupEncryptionPassphrase: string;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
@@ -39,7 +38,6 @@ type CloudflareR2SetupForm = {
     globalApiKey: string;
     accountId: string;
     bucket: string;
-    backupEncryptionPassphrase: string;
     prefix: string;
     snapshotOnWrite: boolean;
 };
@@ -60,7 +58,6 @@ type SetupResponse = {
         prefix: string;
         endpoint: string;
         snapshotOnWrite: boolean;
-        hasBackupEncryptionPassphrase?: boolean;
     };
     message?: string;
 };
@@ -86,7 +83,6 @@ function createEmptyR2Form(): R2Form {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
@@ -99,18 +95,9 @@ function createEmptyCloudflareR2SetupForm(): CloudflareR2SetupForm {
         globalApiKey: '',
         accountId: '',
         bucket: 'blog-navigation',
-        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         snapshotOnWrite: false,
     };
-}
-
-function createGeneratedPassphrase(): string {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.~';
-    const bytes = new Uint8Array(36);
-    window.crypto.getRandomValues(bytes);
-
-    return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
 }
 
 function Field({
@@ -285,15 +272,6 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
         }));
     };
 
-    const updateBackupEncryptionPassphrase = (value: string) => {
-        updateR2('backupEncryptionPassphrase', value);
-        updateCloudflareR2Setup('backupEncryptionPassphrase', value);
-    };
-
-    const handleGeneratePassphrase = () => {
-        updateBackupEncryptionPassphrase(createGeneratedPassphrase());
-    };
-
     const handleAcceptR2Risk = () => {
         if (!window.confirm('数据风险：未配置 R2 备份，磁盘故障将导致全部内容丢失。确定跳过远端备份吗？')) {
             return;
@@ -305,7 +283,6 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
             enabled: false,
             accessKeyId: '',
             secretAccessKey: '',
-            backupEncryptionPassphrase: '',
         }));
     };
 
@@ -318,7 +295,6 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     enabled: false,
                     accessKeyId: '',
                     secretAccessKey: '',
-                    backupEncryptionPassphrase: '',
                 },
             };
         }
@@ -466,7 +442,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                 <Cloud className="mt-1 h-5 w-5 text-accent" />
                                 <div>
                                     <h2 className="text-lg font-semibold text-fg">Cloudflare R2 变量</h2>
-                                    <p className="mt-1 text-sm leading-6 text-muted">对应 R2_BACKUP_ENABLED、R2_ACCOUNT_ID、R2_BUCKET、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_BACKUP_ENCRYPTION_PASSPHRASE、R2_PREFIX、R2_ENDPOINT 和 R2_SNAPSHOT_ON_WRITE；备份会加密写入 R2。</p>
+                                    <p className="mt-1 text-sm leading-6 text-muted">对应 R2_BACKUP_ENABLED、R2_ACCOUNT_ID、R2_BUCKET、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_PREFIX、R2_ENDPOINT 和 R2_SNAPSHOT_ON_WRITE；备份会以明文 JSON 写入 R2。</p>
                                 </div>
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
@@ -485,21 +461,6 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                         </div>
                                         <p className="text-xs leading-5 text-subtle">
                                             一键配置会临时使用 Cloudflare 邮箱和 Global API Key 创建 bucket 与 R2 专用凭证，初始化完成后不会保存 Global API Key。
-                                        </p>
-                                        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-                                            <Field
-                                                id="setup-r2-backup-encryption-passphrase"
-                                                label="备份加密口令"
-                                                value={r2SetupMode === 'cloudflare' ? cloudflareR2SetupForm.backupEncryptionPassphrase : r2Form.backupEncryptionPassphrase}
-                                                onChange={updateBackupEncryptionPassphrase}
-                                                type="password"
-                                            />
-                                            <EditorButton type="button" variant="secondary" onClick={handleGeneratePassphrase}>
-                                                生成强口令
-                                            </EditorButton>
-                                        </div>
-                                        <p className="text-xs leading-5 text-subtle">
-                                            该口令会保存到服务器 R2 配置文件，用于加密和恢复云端备份；丢失后无法解密已有 R2 备份。
                                         </p>
                                     </div>
                                 ) : (

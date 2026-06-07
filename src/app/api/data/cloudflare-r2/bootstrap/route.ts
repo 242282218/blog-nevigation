@@ -37,7 +37,6 @@ function parseBootstrapInput(value: CloudflareR2BootstrapRequestBody['bootstrap'
         globalApiKey: asString(value.globalApiKey),
         accountId: asString(value.accountId),
         bucket: asString(value.bucket),
-        backupEncryptionPassphrase: asString(value.backupEncryptionPassphrase),
         prefix: asString(value.prefix),
         snapshotOnWrite: value.snapshotOnWrite === true,
     };

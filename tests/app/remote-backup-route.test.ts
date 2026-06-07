@@ -93,7 +93,6 @@ beforeEach(() => {
     snapshotOnWrite: false,
     hasAccessKeyId: false,
     hasSecretAccessKey: false,
-    hasBackupEncryptionPassphrase: false,
     source: 'default',
     message: null,
     securityWarning: null,

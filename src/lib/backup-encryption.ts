@@ -97,7 +97,7 @@ export function encryptBackupPayload(payload: unknown, passphrase: string): Encr
     const trimmedPassphrase = passphrase.trim();
 
     if (!trimmedPassphrase) {
-        throw new Error('R2 backup encryption passphrase is required.');
+        throw new Error('Encrypted backup passphrase is required.');
     }
 
     const salt = randomBytes(SALT_LENGTH);
@@ -127,7 +127,7 @@ export function decryptBackupPayload(value: unknown, passphrase: string): unknow
     const trimmedPassphrase = passphrase.trim();
 
     if (!trimmedPassphrase) {
-        throw new Error('R2 backup encryption passphrase is required.');
+        throw new Error('Encrypted backup passphrase is required.');
     }
 
     const encrypted = parseEncryptedBackupPayload(value);

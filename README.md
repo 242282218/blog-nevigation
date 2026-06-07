@@ -113,7 +113,6 @@ R2_ACCOUNT_ID=
 R2_BUCKET=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
-R2_BACKUP_ENCRYPTION_PASSPHRASE=
 R2_PREFIX=blog-navigation
 R2_ENDPOINT=
 R2_SNAPSHOT_ON_WRITE=false
@@ -257,9 +256,9 @@ grep '^EDITOR_ACCESS_TOKEN=' /opt/blog-nevigation/.env
 
 R2 备份可以在 `/setup` 或 `/editor/settings` 里配置。保存后配置文件位于 `/opt/blog-nevigation/data/settings/cloudflare-r2.json`，它会完整优先于 `.env` 中的 R2 变量。
 
-启用 R2 后，编辑器每次保存文章、导航或站点设置都会把当前数据加入远端备份队列。服务运行期间还会每 3 小时自动写入一次 `latest` 和 `snapshot` 备份。Docker 更新前的本地 `.tgz` 备份只用于更新兜底，不能替代 R2 远端备份。
+启用 R2 后，编辑器每次保存文章、导航或站点设置都会把当前数据加入远端备份队列。服务运行期间还会每 3 小时自动写入一次 `latest` 和 `snapshot` 备份。R2 备份是明文 JSON，方便直接检查和迁移；Docker 更新前的本地 `.tgz` 备份只用于更新兜底，不能替代 R2 远端备份。
 
-R2 上传内容会使用 AES-256-GCM 加密。必须保存备份加密口令，口令丢失后无法解密已有 R2 备份。如果改用 `.env` 启用 R2，至少需要配置：
+如果改用 `.env` 启用 R2，至少需要配置：
 
 ```bash
 R2_BACKUP_ENABLED=true
@@ -267,7 +266,6 @@ R2_ACCOUNT_ID=0123456789abcdef0123456789abcdef
 R2_BUCKET=blog-data
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
-R2_BACKUP_ENCRYPTION_PASSPHRASE=请替换为高强度随机口令
 R2_PREFIX=blog-navigation
 R2_ENDPOINT=
 R2_SNAPSHOT_ON_WRITE=false
@@ -317,7 +315,6 @@ R2_ACCOUNT_ID=
 R2_BUCKET=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
-R2_BACKUP_ENCRYPTION_PASSPHRASE=
 R2_PREFIX=blog-navigation
 R2_ENDPOINT=
 R2_SNAPSHOT_ON_WRITE=false

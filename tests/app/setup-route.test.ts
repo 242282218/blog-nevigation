@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -82,7 +83,6 @@ describe('setup API R2 flow', () => {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
@@ -100,12 +100,11 @@ describe('setup API R2 flow', () => {
         enabled: false,
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionPassphrase: '',
       })
     );
   });
 
-  it('rejects manual R2 setup when the backup encryption passphrase is missing', async () => {
+  it('saves manual R2 setup without removed legacy secret fields', async () => {
     clearRuntimeEnv();
     const dataRoot = createTempDataRoot();
 
@@ -118,33 +117,6 @@ describe('setup API R2 flow', () => {
         bucket: 'blog-data',
         accessKeyId: 'access-key',
         secretAccessKey: 'secret-key',
-        backupEncryptionPassphrase: '',
-        prefix: 'blog-navigation',
-        endpoint: '',
-        snapshotOnWrite: false,
-      },
-    }));
-    const payload = await response.json();
-
-    expect(response.status).toBe(400);
-    expect(payload.message).toContain('备份加密口令');
-    expect(fs.existsSync(path.join(dataRoot, 'settings', 'cloudflare-r2.json'))).toBe(false);
-  });
-
-  it('saves manual R2 setup with a backup encryption passphrase', async () => {
-    clearRuntimeEnv();
-    const dataRoot = createTempDataRoot();
-
-    const response = await PUT(createSetupRequest({
-      ...createBaseSetupBody(dataRoot),
-      r2SetupMode: 'manual',
-      r2Settings: {
-        enabled: true,
-        accountId: '0123456789abcdef0123456789abcdef',
-        bucket: 'blog-data',
-        accessKeyId: 'access-key',
-        secretAccessKey: 'secret-key',
-        backupEncryptionPassphrase: 'setup-backup-passphrase',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: true,
@@ -156,21 +128,59 @@ describe('setup API R2 flow', () => {
 
     expect(response.status).toBe(200);
     expect(JSON.stringify(payload)).not.toContain('secret-key');
-    expect(JSON.stringify(payload)).not.toContain('setup-backup-passphrase');
     expect(storedSettings).toEqual(
       expect.objectContaining({
         enabled: true,
         secretAccessKey: 'secret-key',
-        backupEncryptionPassphrase: 'setup-backup-passphrase',
         snapshotOnWrite: true,
       })
     );
+    expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
   });
 
-  it('rejects Cloudflare R2 setup without a backup passphrase before external requests', async () => {
+  it('starts Cloudflare R2 setup without removed legacy secret fields', async () => {
     clearRuntimeEnv();
     const dataRoot = createTempDataRoot();
-    const cloudflareFetch = vi.fn();
+    const cloudflareFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef')) {
+        return Response.json({ success: true, result: {} });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && init?.method === 'GET') {
+        return Response.json({ success: true, result: { buckets: [] } });
+      }
+
+      if (url.endsWith('/accounts/0123456789abcdef0123456789abcdef/r2/buckets') && init?.method === 'POST') {
+        return Response.json({ success: true, result: {} });
+      }
+
+      if (url.endsWith('/tokens/permission_groups')) {
+        return Response.json({
+          success: true,
+          result: [
+            { id: 'read-group', name: 'Workers R2 Storage Bucket Item Read' },
+            { id: 'write-group', name: 'Workers R2 Storage Bucket Item Write' },
+          ],
+        });
+      }
+
+      if (url.endsWith('/r2/buckets/blog-data')) {
+        return Response.json({ success: true, result: {} });
+      }
+
+      if (url.endsWith('/tokens') && init?.method === 'POST') {
+        return Response.json({
+          success: true,
+          result: {
+            id: 'token-id',
+            name: 'blog-navigation-blog-data',
+            value: 'created-token-secret',
+          },
+        });
+      }
+
+      return Response.json({ success: false, errors: [{ message: `Unexpected URL: ${url}` }] }, { status: 400 });
+    });
 
     vi.stubGlobal('fetch', cloudflareFetch);
 
@@ -182,15 +192,25 @@ describe('setup API R2 flow', () => {
         globalApiKey: 'global-key-should-not-leak',
         accountId: '0123456789abcdef0123456789abcdef',
         bucket: 'blog-data',
-        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         snapshotOnWrite: false,
       },
     }));
     const payload = await response.json();
+    const storedText = fs.readFileSync(path.join(dataRoot, 'settings', 'cloudflare-r2.json'), 'utf8');
+    const storedSettings = JSON.parse(storedText);
+    const expectedSecret = createHash('sha256').update('created-token-secret').digest('hex');
 
-    expect(response.status).toBe(400);
-    expect(payload.message).toBe('请填写备份加密口令。');
-    expect(cloudflareFetch).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(expect.objectContaining({ success: true }));
+    expect(cloudflareFetch).toHaveBeenCalled();
+    expect(storedSettings).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        accessKeyId: 'token-id',
+        secretAccessKey: expectedSecret,
+      })
+    );
+    expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
   });
 });

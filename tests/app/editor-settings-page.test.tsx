@@ -117,7 +117,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -131,7 +130,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             source: 'file',
             message: null,
             securityWarning: null,
@@ -152,7 +150,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -166,7 +163,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             source: 'file',
             message: null,
             securityWarning: null,
@@ -221,7 +217,6 @@ describe('EditorSettingsPage', () => {
         bucket: 'blog-data',
         accessKeyId: 'access-key',
         secretAccessKey: '',
-        backupEncryptionPassphrase: '',
       })
     );
   });
@@ -244,7 +239,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -258,10 +252,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'file',
             message: 'R2 backup is enabled but required variables are missing.',
-            securityWarning: null,
           },
         })
       );
@@ -294,7 +286,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -308,10 +299,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'default',
             message: null,
-            securityWarning: null,
           },
         })
       );
@@ -354,7 +343,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -368,7 +356,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'default',
             message: null,
             securityWarning: null,
@@ -386,7 +373,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: true,
@@ -400,7 +386,6 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: true,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             source: 'file',
             message: null,
             securityWarning: null,
@@ -417,7 +402,6 @@ describe('EditorSettingsPage', () => {
     const globalKeyInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key');
     const accountInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-account-id');
     const bucketInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-bucket');
-    const passphraseInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-backup-encryption-passphrase');
     const snapshotCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find((input) => input.closest('label')?.textContent?.includes('关闭时仅手动同步和恢复会写入时间快照。'));
 
@@ -433,9 +417,6 @@ describe('EditorSettingsPage', () => {
       }
       if (bucketInput) {
         setInputValue(bucketInput, 'blog-data');
-      }
-      if (passphraseInput) {
-        setInputValue(passphraseInput, 'bootstrap-backup-passphrase');
       }
       snapshotCheckbox?.click();
     });
@@ -461,7 +442,6 @@ describe('EditorSettingsPage', () => {
         globalApiKey: 'global-key-should-clear',
         accountId: '0123456789abcdef0123456789abcdef',
         bucket: 'blog-data',
-        backupEncryptionPassphrase: 'bootstrap-backup-passphrase',
         prefix: 'blog-navigation',
         snapshotOnWrite: true,
       })
@@ -490,7 +470,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -504,10 +483,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'file',
             message: null,
-            securityWarning: null,
           },
         })
       );
@@ -561,7 +538,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -575,10 +551,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'default',
             message: null,
-            securityWarning: null,
           },
         })
       );
@@ -615,7 +589,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -629,10 +602,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             source: 'file',
             message: null,
-            securityWarning: null,
           },
         })
       )
@@ -683,7 +654,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -697,10 +667,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'default',
             message: null,
-            securityWarning: null,
           },
         })
       )
@@ -793,7 +761,6 @@ describe('EditorSettingsPage', () => {
             bucket: '',
             accessKeyId: '',
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -807,10 +774,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: false,
             hasSecretAccessKey: false,
-            hasBackupEncryptionPassphrase: false,
             source: 'default',
             message: null,
-            securityWarning: null,
           },
         })
       );
@@ -866,7 +831,6 @@ describe('EditorSettingsPage', () => {
             bucket: 'blog-data',
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -880,10 +844,8 @@ describe('EditorSettingsPage', () => {
             snapshotOnWrite: false,
             hasAccessKeyId: true,
             hasSecretAccessKey: true,
-            hasBackupEncryptionPassphrase: true,
             source: 'file',
             message: null,
-            securityWarning: null,
           },
         })
       )

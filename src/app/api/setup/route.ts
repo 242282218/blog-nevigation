@@ -119,7 +119,6 @@ function createDisabledR2Settings(value: SetupRequestBody['r2Settings']): Editab
         bucket: asString(value?.bucket),
         accessKeyId: '',
         secretAccessKey: '',
-        backupEncryptionPassphrase: '',
         prefix: asString(value?.prefix) || 'blog-navigation',
         endpoint: asString(value?.endpoint),
         snapshotOnWrite: value?.snapshotOnWrite === true,
@@ -136,7 +135,6 @@ function parseCloudflareR2Setup(value: SetupRequestBody['cloudflareR2Setup']): C
         globalApiKey: asString(value.globalApiKey),
         accountId: asString(value.accountId),
         bucket: asString(value.bucket),
-        backupEncryptionPassphrase: asString(value.backupEncryptionPassphrase),
         prefix: asString(value.prefix),
         snapshotOnWrite: value.snapshotOnWrite === true,
     };
@@ -153,7 +151,6 @@ function parseR2Settings(value: SetupRequestBody['r2Settings']): EditableR2Backu
         bucket: asString(value.bucket),
         accessKeyId: asString(value.accessKeyId),
         secretAccessKey: asString(value.secretAccessKey),
-        backupEncryptionPassphrase: asString(value.backupEncryptionPassphrase),
         prefix: asString(value.prefix),
         endpoint: asString(value.endpoint),
         snapshotOnWrite: value.snapshotOnWrite === true,

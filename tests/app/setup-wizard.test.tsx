@@ -39,7 +39,6 @@ function createSetupLoadResponse() {
       prefix: 'blog-navigation',
       endpoint: '',
       snapshotOnWrite: false,
-      hasBackupEncryptionPassphrase: false,
     },
   };
 }
@@ -167,7 +166,6 @@ describe('SetupWizard', () => {
         r2SetupMode: 'disabled',
         r2Settings: expect.objectContaining({
           enabled: false,
-          backupEncryptionPassphrase: '',
         }),
       })
     );
@@ -175,7 +173,7 @@ describe('SetupWizard', () => {
     expect(refreshMock).toHaveBeenCalled();
   });
 
-  it('submits manual R2 setup with a backup encryption passphrase', async () => {
+  it('submits manual R2 setup without removed legacy secret fields', async () => {
     fetchMock
       .mockResolvedValueOnce(createJsonResponse(createSetupLoadResponse()))
       .mockResolvedValueOnce(createJsonResponse({ success: true }));
@@ -190,7 +188,6 @@ describe('SetupWizard', () => {
       getButtonByText(container, '手动填写 R2 变量').dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
-      setInputValue(container.querySelector<HTMLInputElement>('#setup-r2-backup-encryption-passphrase'), 'setup-backup-passphrase');
       setInputValue(container.querySelector<HTMLInputElement>('#setup-r2-account-id'), '0123456789abcdef0123456789abcdef');
       setInputValue(container.querySelector<HTMLInputElement>('#setup-r2-bucket'), 'blog-data');
       setInputValue(container.querySelector<HTMLInputElement>('#setup-r2-access-key-id'), 'access-key');
@@ -212,7 +209,6 @@ describe('SetupWizard', () => {
           bucket: 'blog-data',
           accessKeyId: 'access-key',
           secretAccessKey: 'secret-key',
-          backupEncryptionPassphrase: 'setup-backup-passphrase',
         }),
       })
     );

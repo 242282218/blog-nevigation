@@ -8,11 +8,6 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@/lib/article-data';
-import {
-    decryptBackupPayload,
-    encryptBackupPayload,
-    isEncryptedBackupPayload,
-} from '@/lib/backup-encryption';
 import type { EditorBackupPayload } from '@/lib/editor-data-backup';
 import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 
@@ -26,7 +21,6 @@ export interface R2BackupConfig {
     endpoint: string;
     accessKeyId: string;
     secretAccessKey: string;
-    backupEncryptionPassphrase: string;
     prefix: string;
     snapshotOnWrite: boolean;
 }
@@ -40,7 +34,6 @@ export interface R2BackupStatus {
     snapshotOnWrite: boolean;
     hasAccessKeyId: boolean;
     hasSecretAccessKey: boolean;
-    hasBackupEncryptionPassphrase: boolean;
     source: 'file' | 'env' | 'default';
     message: string | null;
     securityWarning: string | null;
@@ -52,16 +45,14 @@ export interface EditableR2BackupSettings {
     bucket: string;
     accessKeyId: string;
     secretAccessKey: string;
-    backupEncryptionPassphrase?: string;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
 }
 
-export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId' | 'backupEncryptionPassphrase'> {
+export interface SafeR2BackupSettings extends Omit<EditableR2BackupSettings, 'secretAccessKey' | 'accessKeyId'> {
     hasSecretAccessKey: boolean;
     hasAccessKeyId: boolean;
-    hasBackupEncryptionPassphrase: boolean;
 }
 
 export interface R2UploadResult {
@@ -109,7 +100,6 @@ function parseStoredR2BackupSettings(value: unknown, filePath: string): Editable
         typeof value.bucket !== 'string' ||
         typeof value.accessKeyId !== 'string' ||
         typeof value.secretAccessKey !== 'string' ||
-        (value.backupEncryptionPassphrase !== undefined && typeof value.backupEncryptionPassphrase !== 'string') ||
         typeof value.prefix !== 'string' ||
         typeof value.endpoint !== 'string' ||
         typeof value.snapshotOnWrite !== 'boolean'
@@ -123,9 +113,6 @@ function parseStoredR2BackupSettings(value: unknown, filePath: string): Editable
         bucket: value.bucket.trim(),
         accessKeyId: value.accessKeyId.trim(),
         secretAccessKey: value.secretAccessKey.trim(),
-        backupEncryptionPassphrase: typeof value.backupEncryptionPassphrase === 'string'
-            ? value.backupEncryptionPassphrase.trim()
-            : '',
         prefix: value.prefix.trim() || DEFAULT_R2_PREFIX,
         endpoint: value.endpoint.trim(),
         snapshotOnWrite: value.snapshotOnWrite,
@@ -244,7 +231,6 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
             bucket: stored.bucket,
             hasAccessKeyId: Boolean(stored.accessKeyId),
             hasSecretAccessKey: Boolean(stored.secretAccessKey),
-            hasBackupEncryptionPassphrase: Boolean(stored.backupEncryptionPassphrase),
             prefix: normalizePrefix(stored.prefix || DEFAULT_R2_PREFIX),
             endpoint: stored.endpoint,
             snapshotOnWrite: stored.snapshotOnWrite,
@@ -255,7 +241,6 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
     const accountId = getEnv('R2_ACCOUNT_ID');
     const endpoint = getEnv('R2_ENDPOINT');
     const secretAccessKey = getEnv('R2_SECRET_ACCESS_KEY');
-    const backupEncryptionPassphrase = getEnv('R2_BACKUP_ENCRYPTION_PASSPHRASE');
 
     return {
         enabled,
@@ -263,7 +248,6 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
         bucket: getEnv('R2_BUCKET'),
         hasAccessKeyId: Boolean(getEnv('R2_ACCESS_KEY_ID')),
         hasSecretAccessKey: Boolean(secretAccessKey),
-        hasBackupEncryptionPassphrase: Boolean(backupEncryptionPassphrase),
         prefix: normalizePrefix(getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         endpoint,
         snapshotOnWrite: getEnv('R2_SNAPSHOT_ON_WRITE') === 'true',
@@ -284,13 +268,7 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     } catch (error) {
         const canReplaceInvalidSettings = (
             error instanceof R2BackupSettingsInvalidError &&
-            (
-                !input.enabled ||
-                (
-                    input.secretAccessKey.trim().length > 0 &&
-                    ((input.backupEncryptionPassphrase ?? '').trim().length > 0 || Boolean(getEnv('R2_BACKUP_ENCRYPTION_PASSPHRASE')))
-                )
-            )
+            (!input.enabled || input.secretAccessKey.trim().length > 0)
         );
 
         if (!canReplaceInvalidSettings) {
@@ -299,7 +277,6 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     }
 
     const trimmedSecretAccessKey = input.secretAccessKey.trim();
-    const trimmedBackupEncryptionPassphrase = (input.backupEncryptionPassphrase ?? '').trim();
 
     const nextSettings: EditableR2BackupSettings = {
         enabled: input.enabled,
@@ -307,7 +284,6 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         bucket: input.bucket.trim(),
         accessKeyId: input.accessKeyId.trim(),
         secretAccessKey: trimmedSecretAccessKey || existing?.secretAccessKey || (input.enabled ? getEnv('R2_SECRET_ACCESS_KEY') : ''),
-        backupEncryptionPassphrase: trimmedBackupEncryptionPassphrase || existing?.backupEncryptionPassphrase || (input.enabled ? getEnv('R2_BACKUP_ENCRYPTION_PASSPHRASE') : ''),
         prefix: normalizePrefix(input.prefix || DEFAULT_R2_PREFIX),
         endpoint: input.endpoint.trim(),
         snapshotOnWrite: input.snapshotOnWrite,
@@ -318,10 +294,6 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         (!nextSettings.accountId || !nextSettings.bucket || !nextSettings.accessKeyId || !nextSettings.secretAccessKey)
     ) {
         throw new Error('启用 R2 备份时必须填写 Account ID、Bucket、Access Key ID 和 Secret Access Key。');
-    }
-
-    if (nextSettings.enabled && !nextSettings.backupEncryptionPassphrase) {
-        throw new Error('启用 R2 备份时必须填写备份加密口令。');
     }
 
     if (nextSettings.enabled && !resolveR2Endpoint(nextSettings.endpoint, nextSettings.accountId)) {
@@ -345,12 +317,9 @@ export function getR2BackupConfig(): R2BackupConfig | null {
     const bucket = stored ? stored.bucket : getEnv('R2_BUCKET');
     const accessKeyId = stored ? stored.accessKeyId : getEnv('R2_ACCESS_KEY_ID');
     const secretAccessKey = stored ? stored.secretAccessKey : getEnv('R2_SECRET_ACCESS_KEY');
-    const backupEncryptionPassphrase = stored
-        ? stored.backupEncryptionPassphrase
-        : getEnv('R2_BACKUP_ENCRYPTION_PASSPHRASE');
     const endpoint = resolveR2Endpoint(stored ? stored.endpoint : getEnv('R2_ENDPOINT'), accountId);
 
-    if (!accountId || !bucket || !accessKeyId || !secretAccessKey || !backupEncryptionPassphrase || !endpoint) {
+    if (!accountId || !bucket || !accessKeyId || !secretAccessKey || !endpoint) {
         return null;
     }
 
@@ -359,7 +328,6 @@ export function getR2BackupConfig(): R2BackupConfig | null {
         endpoint,
         accessKeyId,
         secretAccessKey,
-        backupEncryptionPassphrase,
         prefix: normalizePrefix(stored ? stored.prefix : getEnv('R2_PREFIX') || DEFAULT_R2_PREFIX),
         snapshotOnWrite: stored
             ? Boolean(stored.snapshotOnWrite)
@@ -374,11 +342,10 @@ export function getR2BackupStatus(): R2BackupStatus {
     const settings = getEditableR2BackupSettings();
     const hasRequiredConnectionSettings = Boolean(
         settings.accountId &&
-            settings.bucket &&
-            settings.hasAccessKeyId &&
-            settings.hasSecretAccessKey &&
-            settings.hasBackupEncryptionPassphrase &&
-            resolveR2Endpoint(settings.endpoint, settings.accountId)
+        settings.bucket &&
+        settings.hasAccessKeyId &&
+        settings.hasSecretAccessKey &&
+        resolveR2Endpoint(settings.endpoint, settings.accountId)
     );
 
     return {
@@ -390,12 +357,13 @@ export function getR2BackupStatus(): R2BackupStatus {
         snapshotOnWrite: settings.snapshotOnWrite,
         hasAccessKeyId: settings.hasAccessKeyId,
         hasSecretAccessKey: settings.hasSecretAccessKey,
-        hasBackupEncryptionPassphrase: settings.hasBackupEncryptionPassphrase,
         source: stored ? 'file' : (enabled || settings.bucket || settings.accountId ? 'env' : 'default'),
         message: enabled && !config && !hasRequiredConnectionSettings
             ? 'R2 backup is enabled but required variables are missing.'
             : null,
-        securityWarning: null,
+        securityWarning: enabled && config
+            ? 'R2 backups are stored as plaintext JSON in Cloudflare R2.'
+            : null,
     };
 }
 
@@ -504,22 +472,15 @@ async function bodyToString(body: unknown): Promise<string> {
     return value;
 }
 
-function createR2BackupBody(payload: EditorBackupPayload, passphrase: string): string {
-    const encryptedPayload = encryptBackupPayload(payload, passphrase);
-    const body = JSON.stringify(encryptedPayload, null, 2);
+function createR2BackupBody(payload: EditorBackupPayload): string {
+    const body = JSON.stringify(payload, null, 2);
 
     assertR2BackupBodyTextSize(body);
     return body;
 }
 
-function parseR2BackupBody(content: string, passphrase: string): unknown {
-    const parsed = JSON.parse(content) as unknown;
-
-    if (!isEncryptedBackupPayload(parsed)) {
-        return parsed;
-    }
-
-    return decryptBackupPayload(parsed, passphrase);
+function parseR2BackupBody(content: string): unknown {
+    return JSON.parse(content) as unknown;
 }
 
 export async function uploadBackupPayloadToR2(
@@ -537,7 +498,7 @@ export async function uploadBackupPayloadToR2(
     }
 
     const client = createR2Client(config);
-    const body = createR2BackupBody(payload, config.backupEncryptionPassphrase);
+    const body = createR2BackupBody(payload);
     const latestKey = createLatestBackupKey(config);
     const snapshotKey = options.writeSnapshot
         ? createSnapshotBackupKey(config, payload, options.reason)
@@ -600,7 +561,7 @@ export async function downloadLatestBackupPayloadFromR2(): Promise<unknown> {
 
         const content = await bodyToString(response.Body);
 
-        return parseR2BackupBody(content, config.backupEncryptionPassphrase);
+        return parseR2BackupBody(content);
     } catch (error) {
         if (error instanceof SyntaxError) {
             throw new Error('Latest R2 backup is not valid JSON.');

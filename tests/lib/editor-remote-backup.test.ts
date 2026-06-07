@@ -68,7 +68,6 @@ function createConfiguredStatus() {
     snapshotOnWrite: false,
     hasAccessKeyId: true,
     hasSecretAccessKey: true,
-    hasBackupEncryptionPassphrase: true,
     source: 'env' as const,
     message: null,
     securityWarning: null,
@@ -147,7 +146,7 @@ describe('remote backup sync', () => {
     expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
   });
 
-  it('serializes queued write backups and persists every pending upload', async () => {
+  it('serializes queued write backups in durable order', async () => {
     const firstUpload = createDeferred<R2UploadResult>();
     const uploadResult: R2UploadResult = {
       latestKey: 'blog-navigation/latest/backup.json',
@@ -159,25 +158,17 @@ describe('remote backup sync', () => {
       endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
       accessKeyId: 'access-key',
       secretAccessKey: 'secret-key',
-      backupEncryptionPassphrase: 'backup-passphrase',
       prefix: 'blog-navigation',
       snapshotOnWrite: false,
     });
     mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
     mockedCreateCurrentEditorBackupPayload
       .mockResolvedValueOnce(createBackupPayload('first'))
-      .mockResolvedValueOnce(createBackupPayload('middle'))
+      .mockResolvedValueOnce(createBackupPayload('stale-middle'))
       .mockResolvedValueOnce(createBackupPayload('latest'));
     mockedUploadBackupPayloadToR2
       .mockReturnValueOnce(firstUpload.promise)
-      .mockResolvedValueOnce({
-        latestKey: 'blog-navigation/latest/backup.json',
-        snapshotKey: null,
-      })
-      .mockResolvedValueOnce({
-        latestKey: 'blog-navigation/latest/backup.json',
-        snapshotKey: null,
-      });
+      .mockResolvedValue(uploadResult);
 
     expect(queueCurrentBackupToRemote({ reason: 'first-write' })).toEqual(
       expect.objectContaining({
@@ -219,7 +210,6 @@ describe('remote backup sync', () => {
       endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
       accessKeyId: 'access-key',
       secretAccessKey: 'secret-key',
-      backupEncryptionPassphrase: 'backup-passphrase',
       prefix: 'blog-navigation',
       snapshotOnWrite: false,
     });
