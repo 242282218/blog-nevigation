@@ -396,4 +396,26 @@ describe('editor data storage configuration', () => {
         expect(fs.existsSync(path.join(tempRoot, '.restore-state.json'))).toBe(true);
         expect(() => readArticlesFromDisk()).toThrow(EditorDataRestoreIncompleteError);
     });
+
+    it('fsyncs restore backup files before replacing live data', async () => {
+        createTempDataRoot();
+        await writeArticlesToDisk([createArticle('article-1', 'Original Article')]);
+        const openedPaths: string[] = [];
+        const openSync = fs.openSync;
+
+        vi.spyOn(fs, 'openSync').mockImplementation((filePath, flags, mode) => {
+            openedPaths.push(String(filePath));
+            return openSync(filePath, flags, mode);
+        });
+
+        await restoreEditorDataRootAtomically({
+            articles: [createArticle('article-2', 'Replacement Article')],
+            navigation: [],
+            settings: DEFAULT_SITE_SETTINGS,
+        });
+
+        expect(openedPaths.some((filePath) =>
+            filePath.includes('.restore-backup') && filePath.endsWith(path.join('articles', 'articles.json'))
+        )).toBe(true);
+    });
 });

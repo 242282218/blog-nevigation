@@ -522,6 +522,7 @@ function copyExistingFiles(files: string[], fromRoot: string, toRoot: string): v
         const backupPath = path.join(toRoot, relativePath);
         ensureParentDirectory(backupPath);
         fs.copyFileSync(filePath, backupPath);
+        fsyncFile(backupPath);
     }
 }
 

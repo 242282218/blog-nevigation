@@ -19,6 +19,7 @@ const ORIGINAL_ENV = {
   R2_BUCKET: process.env.R2_BUCKET,
   R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
   R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
+  R2_BACKUP_ENCRYPTION_PASSPHRASE: process.env.R2_BACKUP_ENCRYPTION_PASSPHRASE,
   R2_PREFIX: process.env.R2_PREFIX,
   R2_ENDPOINT: process.env.R2_ENDPOINT,
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
@@ -37,6 +38,7 @@ function clearR2Env(): void {
     'R2_BUCKET',
     'R2_ACCESS_KEY_ID',
     'R2_SECRET_ACCESS_KEY',
+    'R2_BACKUP_ENCRYPTION_PASSPHRASE',
     'R2_PREFIX',
     'R2_ENDPOINT',
     'R2_SNAPSHOT_ON_WRITE',
@@ -108,6 +110,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: '',
             accessKeyId: '',
             secretAccessKey: '',
+            backupEncryptionPassphrase: '',
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -169,6 +172,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: 'blog-data',
             accessKeyId: '',
             secretAccessKey: '',
+            backupEncryptionPassphrase: '',
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -196,6 +200,7 @@ describe('Cloudflare R2 settings API', () => {
     process.env.R2_BUCKET = 'env-bucket';
     process.env.R2_ACCESS_KEY_ID = 'env-access-key';
     process.env.R2_SECRET_ACCESS_KEY = 'env-secret-key';
+    process.env.R2_BACKUP_ENCRYPTION_PASSPHRASE = 'env-backup-passphrase';
     writeText(getSettingsFile(process.env.BLOG_DATA_ROOT), '{');
 
     const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2'));
@@ -225,6 +230,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: '',
+            backupEncryptionPassphrase: '',
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -259,6 +265,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: 'replacement-secret',
+            backupEncryptionPassphrase: 'replacement-passphrase',
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: true,
@@ -270,15 +277,18 @@ describe('Cloudflare R2 settings API', () => {
 
     expect(response.status).toBe(200);
     expect(JSON.stringify(payload)).not.toContain('replacement-secret');
+    expect(JSON.stringify(payload)).not.toContain('replacement-passphrase');
     expect(payload.settings).toEqual(
       expect.objectContaining({
         enabled: true,
         hasSecretAccessKey: true,
+        hasBackupEncryptionPassphrase: true,
       })
     );
     expect(JSON.parse(fs.readFileSync(settingsFile, 'utf8'))).toEqual(
       expect.objectContaining({
         secretAccessKey: 'replacement-secret',
+        backupEncryptionPassphrase: 'replacement-passphrase',
         snapshotOnWrite: true,
       })
     );
@@ -299,6 +309,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: 'blog-data',
             accessKeyId: 'access-key',
             secretAccessKey: 'secret-key',
+            backupEncryptionPassphrase: 'backup-passphrase',
             prefix: 'blog-navigation',
             endpoint: '',
             snapshotOnWrite: false,
@@ -310,9 +321,11 @@ describe('Cloudflare R2 settings API', () => {
 
     expect(createResponse.status).toBe(200);
     expect(JSON.stringify(createPayload)).not.toContain('secret-key');
+    expect(JSON.stringify(createPayload)).not.toContain('backup-passphrase');
     expect(createPayload.settings).toEqual(
       expect.objectContaining({
         hasSecretAccessKey: true,
+        hasBackupEncryptionPassphrase: true,
       })
     );
 
@@ -321,6 +334,7 @@ describe('Cloudflare R2 settings API', () => {
 
     expect(getResponse.status).toBe(200);
     expect(JSON.stringify(getPayload)).not.toContain('secret-key');
+    expect(JSON.stringify(getPayload)).not.toContain('backup-passphrase');
 
     const updateResponse = await PUT(
       await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
@@ -332,6 +346,7 @@ describe('Cloudflare R2 settings API', () => {
             bucket: 'blog-data',
             accessKeyId: 'next-access-key',
             secretAccessKey: '',
+            backupEncryptionPassphrase: '',
             prefix: 'next-prefix',
             endpoint: '',
             snapshotOnWrite: true,
@@ -347,6 +362,7 @@ describe('Cloudflare R2 settings API', () => {
       expect.objectContaining({
         accessKeyId: 'next-access-key',
         secretAccessKey: 'secret-key',
+        backupEncryptionPassphrase: 'backup-passphrase',
         prefix: 'next-prefix',
         snapshotOnWrite: true,
       })
@@ -434,6 +450,7 @@ describe('Cloudflare R2 settings API', () => {
             globalApiKey: 'global-key-should-not-leak',
             accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'blog-data',
+            backupEncryptionPassphrase: 'bootstrap-backup-passphrase',
             prefix: 'blog-navigation',
             snapshotOnWrite: true,
           },
@@ -460,6 +477,7 @@ describe('Cloudflare R2 settings API', () => {
         bucket: 'blog-data',
         accessKeyId: 'created-r2-access-key',
         secretAccessKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+        backupEncryptionPassphrase: 'bootstrap-backup-passphrase',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: true,
@@ -475,10 +493,11 @@ describe('Cloudflare R2 settings API', () => {
           enabled: true,
           hasAccessKeyId: true,
           hasSecretAccessKey: true,
+          hasBackupEncryptionPassphrase: true,
         }),
         status: expect.objectContaining({
           configured: true,
-          securityWarning: expect.stringContaining('plaintext JSON'),
+          securityWarning: null,
         }),
       })
     );
@@ -539,6 +558,7 @@ describe('Cloudflare R2 settings API', () => {
             globalApiKey: 'global-key-should-not-leak',
             accountId: '0123456789abcdef0123456789abcdef',
             bucket: 'new-blog-data',
+            backupEncryptionPassphrase: 'bootstrap-backup-passphrase',
             prefix: 'blog-navigation',
             snapshotOnWrite: false,
           },

@@ -1,5 +1,12 @@
 import { createCurrentEditorBackupPayload } from '@/lib/editor-data-backup';
 import {
+    drainPendingBackupTasks,
+    enqueuePendingBackupTask,
+    resetBackupCoordinatorForTests,
+    waitForBackupCoordinatorIdleForTests,
+    type BackupTask,
+} from '@/lib/backup-coordinator';
+import {
     getR2BackupConfig,
     getR2BackupStatus,
     R2BackupSettingsInvalidError,
@@ -51,9 +58,6 @@ type RemoteBackupOptions = {
     writeSnapshot?: boolean;
     writeLatest?: boolean;
 };
-
-let activeRemoteBackup: Promise<RemoteBackupResult> | null = null;
-let pendingRemoteBackupOptions: RemoteBackupOptions | null = null;
 
 function getErrorMessage(error: unknown): string {
     if (error instanceof R2BackupSettingsInvalidError) {
@@ -122,29 +126,26 @@ export function queueCurrentBackupToRemote(options: {
 }
 
 function enqueueRemoteBackup(options: RemoteBackupOptions): void {
-    pendingRemoteBackupOptions = options;
-
-    if (activeRemoteBackup) {
-        return;
-    }
-
-    void drainRemoteBackupQueue();
+    enqueuePendingBackupTask({
+        reason: options.reason,
+        writeSnapshot: Boolean(options.writeSnapshot),
+        writeLatest: options.writeLatest,
+    });
+    void drainPendingBackups();
 }
 
-async function drainRemoteBackupQueue(): Promise<void> {
-    while (pendingRemoteBackupOptions) {
-        const options = pendingRemoteBackupOptions;
-        pendingRemoteBackupOptions = null;
-        activeRemoteBackup = syncCurrentBackupToRemote(options);
+async function executePendingBackupTask(task: BackupTask): Promise<boolean> {
+    const result = await syncCurrentBackupToRemote({
+        reason: task.reason,
+        writeSnapshot: task.writeSnapshot,
+        writeLatest: task.writeLatest,
+    });
 
-        try {
-            await activeRemoteBackup;
-        } catch (error) {
-            console.error('[editor-remote-backup] Queued backup failed:', error);
-        } finally {
-            activeRemoteBackup = null;
-        }
-    }
+    return result.enabled === true && result.success === true;
+}
+
+export async function drainPendingBackups(): Promise<void> {
+    await drainPendingBackupTasks(executePendingBackupTask);
 }
 
 export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): Promise<RemoteBackupResult> {
@@ -213,13 +214,9 @@ export function resetRemoteBackupQueueForTests(): void {
         throw new Error('resetRemoteBackupQueueForTests must not be called in production.');
     }
 
-    activeRemoteBackup = null;
-    pendingRemoteBackupOptions = null;
+    resetBackupCoordinatorForTests();
 }
 
 export async function waitForRemoteBackupQueueIdleForTests(): Promise<void> {
-    while (activeRemoteBackup || pendingRemoteBackupOptions) {
-        await activeRemoteBackup?.catch(() => undefined);
-        await Promise.resolve();
-    }
+    await waitForBackupCoordinatorIdleForTests();
 }

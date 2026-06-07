@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCurrentEditorBackupPayload } from '@/lib/editor-data-backup';
 import {
+  drainPendingBackups,
   queueCurrentBackupToRemote,
   resetRemoteBackupQueueForTests,
   syncCurrentBackupToRemote,
@@ -39,6 +43,20 @@ const mockedCreateCurrentEditorBackupPayload = vi.mocked(createCurrentEditorBack
 const mockedGetR2BackupConfig = vi.mocked(getR2BackupConfig);
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedUploadBackupPayloadToR2 = vi.mocked(uploadBackupPayloadToR2);
+const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
+const tempDirectories: string[] = [];
+
+function createTempDataRoot(): string {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-remote-backup-'));
+
+  tempDirectories.push(directory);
+  process.env.BLOG_DATA_ROOT = directory;
+  return directory;
+}
+
+function getPendingBackupFilePath(dataRoot: string): string {
+  return path.join(dataRoot, '.backup-pending.json');
+}
 
 function createConfiguredStatus() {
   return {
@@ -50,6 +68,7 @@ function createConfiguredStatus() {
     snapshotOnWrite: false,
     hasAccessKeyId: true,
     hasSecretAccessKey: true,
+    hasBackupEncryptionPassphrase: true,
     source: 'env' as const,
     message: null,
     securityWarning: null,
@@ -93,8 +112,23 @@ function createDeferred<T = R2UploadResult>() {
 
 describe('remote backup sync', () => {
   beforeEach(() => {
+    createTempDataRoot();
     vi.clearAllMocks();
     resetRemoteBackupQueueForTests();
+  });
+
+  afterEach(() => {
+    resetRemoteBackupQueueForTests();
+
+    if (ORIGINAL_BLOG_DATA_ROOT === undefined) {
+      delete process.env.BLOG_DATA_ROOT;
+    } else {
+      process.env.BLOG_DATA_ROOT = ORIGINAL_BLOG_DATA_ROOT;
+    }
+
+    while (tempDirectories.length > 0) {
+      fs.rmSync(tempDirectories.pop() as string, { recursive: true, force: true });
+    }
   });
 
   it('reports invalid R2 settings without creating or uploading a backup payload', async () => {
@@ -113,7 +147,7 @@ describe('remote backup sync', () => {
     expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
   });
 
-  it('serializes queued write backups and keeps only the latest pending upload', async () => {
+  it('serializes queued write backups and persists every pending upload', async () => {
     const firstUpload = createDeferred<R2UploadResult>();
     const uploadResult: R2UploadResult = {
       latestKey: 'blog-navigation/latest/backup.json',
@@ -125,15 +159,21 @@ describe('remote backup sync', () => {
       endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
       accessKeyId: 'access-key',
       secretAccessKey: 'secret-key',
+      backupEncryptionPassphrase: 'backup-passphrase',
       prefix: 'blog-navigation',
       snapshotOnWrite: false,
     });
     mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
     mockedCreateCurrentEditorBackupPayload
       .mockResolvedValueOnce(createBackupPayload('first'))
+      .mockResolvedValueOnce(createBackupPayload('middle'))
       .mockResolvedValueOnce(createBackupPayload('latest'));
     mockedUploadBackupPayloadToR2
       .mockReturnValueOnce(firstUpload.promise)
+      .mockResolvedValueOnce({
+        latestKey: 'blog-navigation/latest/backup.json',
+        snapshotKey: null,
+      })
       .mockResolvedValueOnce({
         latestKey: 'blog-navigation/latest/backup.json',
         snapshotKey: null,
@@ -153,16 +193,57 @@ describe('remote backup sync', () => {
     firstUpload.resolve(uploadResult);
     await waitForRemoteBackupQueueIdleForTests();
 
-    expect(mockedUploadBackupPayloadToR2).toHaveBeenCalledTimes(2);
+    expect(mockedUploadBackupPayloadToR2).toHaveBeenCalledTimes(3);
     expect(mockedUploadBackupPayloadToR2).toHaveBeenNthCalledWith(1, expect.any(Object), {
       reason: 'first-write',
       writeSnapshot: false,
       writeLatest: undefined,
     });
     expect(mockedUploadBackupPayloadToR2).toHaveBeenNthCalledWith(2, expect.any(Object), {
+      reason: 'stale-middle-write',
+      writeSnapshot: false,
+      writeLatest: undefined,
+    });
+    expect(mockedUploadBackupPayloadToR2).toHaveBeenNthCalledWith(3, expect.any(Object), {
       reason: 'latest-write',
       writeSnapshot: false,
       writeLatest: undefined,
     });
+  });
+
+  it('drains a persisted pending backup after a restart', async () => {
+    const dataRoot = process.env.BLOG_DATA_ROOT as string;
+
+    mockedGetR2BackupConfig.mockReturnValue({
+      bucket: 'blog-data',
+      endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      backupEncryptionPassphrase: 'backup-passphrase',
+      prefix: 'blog-navigation',
+      snapshotOnWrite: false,
+    });
+    mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
+    mockedCreateCurrentEditorBackupPayload.mockResolvedValue(createBackupPayload('persisted'));
+    mockedUploadBackupPayloadToR2.mockResolvedValue({
+      latestKey: 'blog-navigation/latest/backup.json',
+      snapshotKey: null,
+    });
+
+    expect(queueCurrentBackupToRemote({ reason: 'before-restart' })).toEqual(
+      expect.objectContaining({
+        queued: true,
+      })
+    );
+    expect(fs.existsSync(getPendingBackupFilePath(dataRoot))).toBe(true);
+
+    await drainPendingBackups();
+
+    expect(mockedUploadBackupPayloadToR2).toHaveBeenCalledWith(expect.any(Object), {
+      reason: 'before-restart',
+      writeSnapshot: false,
+      writeLatest: undefined,
+    });
+    expect(fs.existsSync(getPendingBackupFilePath(dataRoot))).toBe(false);
   });
 });

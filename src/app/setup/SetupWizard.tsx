@@ -26,6 +26,7 @@ type R2Form = {
     bucket: string;
     accessKeyId: string;
     secretAccessKey: string;
+    backupEncryptionPassphrase: string;
     prefix: string;
     endpoint: string;
     snapshotOnWrite: boolean;
@@ -38,6 +39,7 @@ type CloudflareR2SetupForm = {
     globalApiKey: string;
     accountId: string;
     bucket: string;
+    backupEncryptionPassphrase: string;
     prefix: string;
     snapshotOnWrite: boolean;
 };
@@ -58,6 +60,7 @@ type SetupResponse = {
         prefix: string;
         endpoint: string;
         snapshotOnWrite: boolean;
+        hasBackupEncryptionPassphrase?: boolean;
     };
     message?: string;
 };
@@ -83,6 +86,7 @@ function createEmptyR2Form(): R2Form {
         bucket: '',
         accessKeyId: '',
         secretAccessKey: '',
+        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         endpoint: '',
         snapshotOnWrite: false,
@@ -95,9 +99,18 @@ function createEmptyCloudflareR2SetupForm(): CloudflareR2SetupForm {
         globalApiKey: '',
         accountId: '',
         bucket: 'blog-navigation',
+        backupEncryptionPassphrase: '',
         prefix: 'blog-navigation',
         snapshotOnWrite: false,
     };
+}
+
+function createGeneratedPassphrase(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.~';
+    const bytes = new Uint8Array(36);
+    window.crypto.getRandomValues(bytes);
+
+    return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('');
 }
 
 function Field({
@@ -171,6 +184,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
     const [r2Form, setR2Form] = useState<R2Form>(createEmptyR2Form);
     const [r2SetupMode, setR2SetupMode] = useState<R2SetupMode>('cloudflare');
     const [cloudflareR2SetupForm, setCloudflareR2SetupForm] = useState<CloudflareR2SetupForm>(createEmptyCloudflareR2SetupForm);
+    const [r2RiskAccepted, setR2RiskAccepted] = useState(false);
     const [authConfigured, setAuthConfigured] = useState(false);
     const [setupTokenRequired, setSetupTokenRequired] = useState(false);
     const [setupToken, setSetupToken] = useState('');
@@ -224,6 +238,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     prefix: loadedR2Form.prefix || 'blog-navigation',
                     snapshotOnWrite: loadedR2Form.snapshotOnWrite,
                 });
+                setR2RiskAccepted(false);
             } catch (error) {
                 if (isMounted) {
                     setMessage({
@@ -257,12 +272,40 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
             ...current,
             [key]: value,
         }));
+
+        if (key === 'enabled' && value === true) {
+            setR2RiskAccepted(false);
+        }
     };
 
     const updateCloudflareR2Setup = <Key extends keyof CloudflareR2SetupForm>(key: Key, value: CloudflareR2SetupForm[Key]) => {
         setCloudflareR2SetupForm((current) => ({
             ...current,
             [key]: value,
+        }));
+    };
+
+    const updateBackupEncryptionPassphrase = (value: string) => {
+        updateR2('backupEncryptionPassphrase', value);
+        updateCloudflareR2Setup('backupEncryptionPassphrase', value);
+    };
+
+    const handleGeneratePassphrase = () => {
+        updateBackupEncryptionPassphrase(createGeneratedPassphrase());
+    };
+
+    const handleAcceptR2Risk = () => {
+        if (!window.confirm('数据风险：未配置 R2 备份，磁盘故障将导致全部内容丢失。确定跳过远端备份吗？')) {
+            return;
+        }
+
+        setR2RiskAccepted(true);
+        setR2Form((current) => ({
+            ...current,
+            enabled: false,
+            accessKeyId: '',
+            secretAccessKey: '',
+            backupEncryptionPassphrase: '',
         }));
     };
 
@@ -275,6 +318,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                     enabled: false,
                     accessKeyId: '',
                     secretAccessKey: '',
+                    backupEncryptionPassphrase: '',
                 },
             };
         }
@@ -302,6 +346,11 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
 
         if (editorSecret.trim() !== confirmEditorSecret.trim()) {
             setMessage({ tone: 'danger', text: '两次输入的编辑口令不一致。' });
+            return;
+        }
+
+        if (!r2Form.enabled && !r2RiskAccepted) {
+            setMessage({ tone: 'danger', text: '请配置 R2 远端备份，或点击“跳过并接受风险”。' });
             return;
         }
 
@@ -417,7 +466,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                 <Cloud className="mt-1 h-5 w-5 text-accent" />
                                 <div>
                                     <h2 className="text-lg font-semibold text-fg">Cloudflare R2 变量</h2>
-                                    <p className="mt-1 text-sm leading-6 text-muted">对应 R2_BACKUP_ENABLED、R2_ACCOUNT_ID、R2_BUCKET、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_PREFIX、R2_ENDPOINT 和 R2_SNAPSHOT_ON_WRITE；备份会以明文 JSON 写入 R2。</p>
+                                    <p className="mt-1 text-sm leading-6 text-muted">对应 R2_BACKUP_ENABLED、R2_ACCOUNT_ID、R2_BUCKET、R2_ACCESS_KEY_ID、R2_SECRET_ACCESS_KEY、R2_BACKUP_ENCRYPTION_PASSPHRASE、R2_PREFIX、R2_ENDPOINT 和 R2_SNAPSHOT_ON_WRITE；备份会加密写入 R2。</p>
                                 </div>
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
@@ -437,10 +486,36 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                         <p className="text-xs leading-5 text-subtle">
                                             一键配置会临时使用 Cloudflare 邮箱和 Global API Key 创建 bucket 与 R2 专用凭证，初始化完成后不会保存 Global API Key。
                                         </p>
+                                        <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                                            <Field
+                                                id="setup-r2-backup-encryption-passphrase"
+                                                label="备份加密口令"
+                                                value={r2SetupMode === 'cloudflare' ? cloudflareR2SetupForm.backupEncryptionPassphrase : r2Form.backupEncryptionPassphrase}
+                                                onChange={updateBackupEncryptionPassphrase}
+                                                type="password"
+                                            />
+                                            <EditorButton type="button" variant="secondary" onClick={handleGeneratePassphrase}>
+                                                生成强口令
+                                            </EditorButton>
+                                        </div>
+                                        <p className="text-xs leading-5 text-subtle">
+                                            该口令会保存到服务器 R2 配置文件，用于加密和恢复云端备份；丢失后无法解密已有 R2 备份。
+                                        </p>
                                     </div>
                                 ) : (
-                                    <div className="md:col-span-2 rounded-token-card border border-border-soft bg-background px-3 py-3 text-sm leading-6 text-muted">
-                                        未启用 R2 时只保存基础初始化配置，不校验 Account ID、Bucket、Access Key ID 和 Secret Access Key。
+                                    <div className="md:col-span-2 grid gap-3 rounded-token-card border border-error-light bg-error-50 px-3 py-3 text-sm leading-6 text-error-600">
+                                        <p className="font-medium">数据风险：未配置 R2 备份，磁盘故障将导致全部内容丢失。</p>
+                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                            <EditorButton type="button" variant="primary" onClick={() => updateR2('enabled', true)}>
+                                                配置 R2 备份
+                                            </EditorButton>
+                                            <EditorButton type="button" variant="danger" onClick={handleAcceptR2Risk}>
+                                                跳过并接受风险
+                                            </EditorButton>
+                                        </div>
+                                        {r2RiskAccepted ? (
+                                            <p>已确认跳过 R2 备份风险，本次初始化将只保存本地数据。</p>
+                                        ) : null}
                                     </div>
                                 )}
                                 {r2Form.enabled && r2SetupMode === 'cloudflare' ? (

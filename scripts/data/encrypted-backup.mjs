@@ -1,15 +1,17 @@
 import { createCipheriv, createDecipheriv, createHash, scryptSync, randomBytes } from 'node:crypto';
 
 const ENCRYPTED_BACKUP_VERSION = 1;
+const ENCRYPTED_BACKUP_MAGIC = 'blog-navigation-encrypted-backup';
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const CURRENT_KEY_DERIVATION = 'scrypt';
 const SUPPORTED_KEY_DERIVATIONS = ['sha256', 'scrypt'];
-const KEY_DERIVATION_SALT = 'blog-navigation-backup-v1';
+const LEGACY_KEY_DERIVATION_SALT = 'blog-navigation-backup-v1';
 const KEY_LENGTH = 32;
+const SALT_LENGTH = 16;
 
-function deriveKey(secret, method = CURRENT_KEY_DERIVATION) {
+function deriveKey(secret, method = CURRENT_KEY_DERIVATION, salt = Buffer.from(LEGACY_KEY_DERIVATION_SALT, 'utf8')) {
   if (method === 'scrypt') {
-    return scryptSync(secret, KEY_DERIVATION_SALT, KEY_LENGTH);
+    return scryptSync(secret, salt, KEY_LENGTH);
   }
 
   return createHash('sha256').update(secret, 'utf8').digest();
@@ -24,16 +26,19 @@ export function createEncryptedBackupPayload(backupPayload, secret) {
     throw new Error('GITHUB_BACKUP_ENCRYPTION_KEY or BACKUP_ENCRYPTION_KEY is required.');
   }
 
+  const salt = randomBytes(SALT_LENGTH);
   const iv = randomBytes(12);
-  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, deriveKey(secret), iv);
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, deriveKey(secret, CURRENT_KEY_DERIVATION, salt), iv);
   const plaintext = Buffer.from(JSON.stringify(backupPayload), 'utf8');
   const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 
   return {
+    magic: ENCRYPTED_BACKUP_MAGIC,
     version: ENCRYPTED_BACKUP_VERSION,
     algorithm: ENCRYPTION_ALGORITHM,
     keyDerivation: CURRENT_KEY_DERIVATION,
     encryptedAt: new Date().toISOString(),
+    salt: salt.toString('base64'),
     iv: iv.toString('base64'),
     authTag: cipher.getAuthTag().toString('base64'),
     ciphertext: encrypted.toString('base64'),
@@ -52,14 +57,19 @@ export function decryptBackupPayload(encryptedPayload, secret) {
     !SUPPORTED_KEY_DERIVATIONS.includes(encryptedPayload.keyDerivation) ||
     typeof encryptedPayload.iv !== 'string' ||
     typeof encryptedPayload.authTag !== 'string' ||
-    typeof encryptedPayload.ciphertext !== 'string'
+    typeof encryptedPayload.ciphertext !== 'string' ||
+    (encryptedPayload.magic !== undefined && encryptedPayload.magic !== ENCRYPTED_BACKUP_MAGIC) ||
+    (encryptedPayload.salt !== undefined && typeof encryptedPayload.salt !== 'string')
   ) {
     throw new Error('Encrypted backup payload is invalid.');
   }
 
+  const salt = encryptedPayload.salt
+    ? Buffer.from(encryptedPayload.salt, 'base64')
+    : Buffer.from(LEGACY_KEY_DERIVATION_SALT, 'utf8');
   const decipher = createDecipheriv(
     ENCRYPTION_ALGORITHM,
-    deriveKey(secret, encryptedPayload.keyDerivation),
+    deriveKey(secret, encryptedPayload.keyDerivation, salt),
     Buffer.from(encryptedPayload.iv, 'base64')
   );
   decipher.setAuthTag(Buffer.from(encryptedPayload.authTag, 'base64'));

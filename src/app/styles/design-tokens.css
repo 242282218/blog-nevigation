@@ -105,6 +105,10 @@
   /* Focus */
   --focus: #3898ec;
 
+  /* Selection */
+  --selection-bg: var(--terracotta-700);
+  --selection-fg: #ffffff;
+
   /* ============================================
    * LAYER 3: CONTEXTUAL TOKENS
    * Component-specific — derived from semantic

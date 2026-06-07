@@ -40,6 +40,7 @@ function parseSettings(value: CloudflareR2RequestBody['settings']): EditableR2Ba
         bucket: asString(value.bucket),
         accessKeyId: asString(value.accessKeyId),
         secretAccessKey: asString(value.secretAccessKey),
+        backupEncryptionPassphrase: asString(value.backupEncryptionPassphrase),
         prefix: asString(value.prefix),
         endpoint: asString(value.endpoint),
         snapshotOnWrite: value.snapshotOnWrite === true,

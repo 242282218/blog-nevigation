@@ -19,8 +19,8 @@ body {
 }
 
 ::selection {
-    background-color: var(--terracotta-300);
-    color: var(--surface-elevated);
+    background-color: var(--selection-bg);
+    color: var(--selection-fg);
 }
 
 @layer components {

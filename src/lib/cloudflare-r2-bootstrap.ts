@@ -16,6 +16,7 @@ export interface CloudflareR2BootstrapInput {
     globalApiKey: string;
     accountId: string;
     bucket: string;
+    backupEncryptionPassphrase: string;
     prefix: string;
     snapshotOnWrite: boolean;
 }
@@ -58,6 +59,7 @@ function trimBootstrapInput(input: CloudflareR2BootstrapInput): CloudflareR2Boot
         globalApiKey: input.globalApiKey.trim(),
         accountId: input.accountId.trim().toLowerCase(),
         bucket: input.bucket.trim(),
+        backupEncryptionPassphrase: input.backupEncryptionPassphrase.trim(),
         prefix: input.prefix.trim(),
     };
 }
@@ -77,6 +79,10 @@ function assertBootstrapInput(input: CloudflareR2BootstrapInput): void {
 
     if (!input.bucket) {
         throw new CloudflareR2BootstrapError('请填写 R2 Bucket 名称。');
+    }
+
+    if (!input.backupEncryptionPassphrase) {
+        throw new CloudflareR2BootstrapError('请填写备份加密口令。');
     }
 }
 
@@ -244,6 +250,7 @@ export async function bootstrapCloudflareR2Settings(
             bucket: input.bucket,
             accessKeyId: token.accessKeyId,
             secretAccessKey: token.secretAccessKey,
+            backupEncryptionPassphrase: input.backupEncryptionPassphrase,
             prefix: input.prefix,
             endpoint: '',
             snapshotOnWrite: input.snapshotOnWrite,

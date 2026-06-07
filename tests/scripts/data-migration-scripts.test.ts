@@ -280,8 +280,13 @@ describe('runtime data migration scripts', () => {
     const encryptedPayload = JSON.parse(fs.readFileSync(encryptedBackupPath, 'utf8'));
     expect(encryptedPayload).toEqual(
       expect.objectContaining({
+        magic: 'blog-navigation-encrypted-backup',
         version: 1,
         algorithm: 'aes-256-gcm',
+        keyDerivation: 'scrypt',
+        salt: expect.any(String),
+        iv: expect.any(String),
+        authTag: expect.any(String),
         ciphertext: expect.any(String),
       })
     );
