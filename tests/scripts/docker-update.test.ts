@@ -81,9 +81,12 @@ describe('Docker update deployment script', () => {
       [
         '#!/usr/bin/env sh',
         'printf "git %s\\n" "$*" >> "$COMMAND_LOG"',
-        'if [ "$4" = "rev-parse" ]; then',
-        '  printf "abcdef1\\n"',
-        'fi',
+        'for arg in "$@"; do',
+        '  if [ "$arg" = "rev-parse" ]; then',
+        '    printf "abcdef1\\n"',
+        '    exit 0',
+        '  fi',
+        'done',
         'exit 0',
         '',
       ].join('\n')
@@ -160,6 +163,7 @@ describe('Docker update deployment script', () => {
     expect(commands).toContain('.env data');
     expect(commands).toContain('docker compose');
     expect(commands).not.toMatch(/rm\s+-rf\s+.*data/);
+    expect(commands).not.toMatch(/rm\s+-f\s+.*\.env/);
     expect(commands).not.toMatch(/docker\s+rm\s+-f/);
   });
 });

@@ -1,12 +1,50 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ensureEditorWriteRequest } from '@/lib/editor-api-auth';
 import { EDITOR_SESSION_COOKIE, EDITOR_CSRF_COOKIE, EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
+import {
+  createRuntimeEditorSession,
+  resetEnvironmentEditorSessionForTests,
+} from '@/lib/editor-auth-runtime';
+import { resetAppRuntimeConfigCacheForTests } from '@/lib/app-runtime-config';
+import {
+  cleanupTempDirectories,
+  createTempDirectory,
+  restoreEnv,
+} from '../helpers/api-route';
 
 describe('CSRF Protection', () => {
-  const validSession = 'valid-session-token';
   const validCsrfToken = 'valid-csrf-token';
   const requestOrigin = 'http://localhost:3000';
+  const ORIGINAL_ENV = {
+    BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
+    EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
+    EDITOR_AUTH_CONFIG_FILE: process.env.EDITOR_AUTH_CONFIG_FILE,
+    COOKIE_SECURE: process.env.COOKIE_SECURE,
+    TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
+  };
+  const tempDirectories: string[] = [];
+  let validSession = '';
+
+  beforeEach(async () => {
+    process.env.BLOG_DATA_ROOT = createTempDirectory('blog-navigation-csrf-protection-');
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    delete process.env.EDITOR_AUTH_CONFIG_FILE;
+    delete process.env.COOKIE_SECURE;
+    delete process.env.TRUSTED_PROXY_IPS;
+    tempDirectories.push(process.env.BLOG_DATA_ROOT);
+    resetEnvironmentEditorSessionForTests();
+    resetAppRuntimeConfigCacheForTests();
+    validSession = await createRuntimeEditorSession() ?? '';
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    restoreEnv(ORIGINAL_ENV);
+    resetEnvironmentEditorSessionForTests();
+    resetAppRuntimeConfigCacheForTests();
+    cleanupTempDirectories(tempDirectories);
+  });
 
   function createMockRequest(options: {
     method?: string;
@@ -61,8 +99,7 @@ describe('CSRF Protection', () => {
       const response = await ensureEditorWriteRequest(request);
 
       expect(response).not.toBeNull();
-      // Session 验证失败返回 503（未配置），或 CSRF 失败返回 403
-      expect([403, 503]).toContain(response?.status);
+      expect(response?.status).toBe(403);
     });
 
     it('should reject requests without CSRF token header', async () => {
@@ -76,7 +113,7 @@ describe('CSRF Protection', () => {
       const response = await ensureEditorWriteRequest(request);
 
       expect(response).not.toBeNull();
-      expect([403, 503]).toContain(response?.status);
+      expect(response?.status).toBe(403);
     });
 
     it('should reject requests with mismatched CSRF tokens', async () => {
@@ -90,7 +127,7 @@ describe('CSRF Protection', () => {
       const response = await ensureEditorWriteRequest(request);
 
       expect(response).not.toBeNull();
-      expect([403, 503]).toContain(response?.status);
+      expect(response?.status).toBe(403);
     });
 
     it('should reject requests from different origin', async () => {
@@ -104,7 +141,7 @@ describe('CSRF Protection', () => {
       const response = await ensureEditorWriteRequest(request);
 
       expect(response).not.toBeNull();
-      expect([403, 503]).toContain(response?.status);
+      expect(response?.status).toBe(403);
     });
 
     it('should reject requests without origin header', async () => {
@@ -118,7 +155,7 @@ describe('CSRF Protection', () => {
       const response = await ensureEditorWriteRequest(request);
 
       expect(response).not.toBeNull();
-      expect([403, 503]).toContain(response?.status);
+      expect(response?.status).toBe(403);
     });
 
     it('should accept requests with valid CSRF token and same origin', async () => {
@@ -158,7 +195,7 @@ describe('CSRF Protection', () => {
 
       const response1 = await ensureEditorWriteRequest(request1);
       expect(response1).not.toBeNull();
-      expect([403, 503]).toContain(response1?.status);
+      expect(response1?.status).toBe(403);
 
       // 测试相同长度但不同内容
       const request2 = createMockRequest({
@@ -170,7 +207,7 @@ describe('CSRF Protection', () => {
 
       const response2 = await ensureEditorWriteRequest(request2);
       expect(response2).not.toBeNull();
-      expect([403, 503]).toContain(response2?.status);
+      expect(response2?.status).toBe(403);
     });
   });
 });

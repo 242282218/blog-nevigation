@@ -9,6 +9,7 @@ import { EDITOR_JSON_BODY_LIMIT_BYTES } from '@/lib/api-json-body';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import { EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
+import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -90,6 +91,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetEnv();
+  resetEnvironmentEditorSessionForTests();
   cleanupTempDirectories(tempDirectories);
 });
 
@@ -179,6 +181,7 @@ describe('editor data write APIs', () => {
 
   it('adds a CSRF header to authenticated test write requests', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
 
     const request = await createAuthedEditorRequest('http://localhost/api/data/articles');
 

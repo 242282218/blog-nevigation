@@ -311,3 +311,153 @@ release summary：
 - `.env data` 更新前 tar。
 - health check 不探首页。
 - 回滚不覆盖数据。
+
+## 2026-06-08 多 Agent Docker/GitHub 发布增补
+
+本节是后续发布链路优化的最新执行方案。原则：在 GitHub Actions 构建，不在本地构建发布镜像；生产更新保留 `.env` 和 `data/`。
+
+### 当前发布链路复核
+
+```mermaid
+flowchart TD
+  Trigger[push/tag/PR/workflow_dispatch] --> Verify[verify]
+  Verify --> NodeGate[npm audit/check-env/lint/typecheck/test]
+  Verify --> SmokeImage[docker build smoke image]
+  SmokeImage --> DockerSmoke[docker smoke + mounted data]
+  DockerSmoke --> Trivy[Trivy HIGH/CRITICAL gate]
+  Trivy --> BuildPush[build-and-push GHCR]
+  BuildPush --> Digest[build outputs digest]
+  Digest --> Deploy[manual deploy=true]
+  Deploy --> SSH[SSH production]
+  SSH --> Backup[tar .env data]
+  Backup --> Pull[docker pull digest]
+  Pull --> Compose[docker compose up]
+  Compose --> Health[health check]
+  Health --> LastGood[write .last-good-digest]
+```
+
+证据：`.github/workflows/docker-deploy.yml:47`、`:63`、`:69`、`:125`、`:136`、`:249`、`:263`、`:350`、`:374`、`:430`。
+
+### 当前发布风险
+
+1. 基础镜像是浮动 tag：`Dockerfile:1`、`Dockerfile:13`、`Dockerfile:33`。
+2. Dockerfile 内只跑 lint/typecheck/build，不跑 test，但注释容易让人误解为完整质量门禁：`Dockerfile:27`、`:31`。
+3. Trivy 扫本地 smoke image，不是最终 GHCR digest：`.github/workflows/docker-deploy.yml:136`、`:249`、`:263`。
+4. 部署脚本假设服务器已有 `compose.prod.yaml`，workflow 不同步新版 compose：`.github/workflows/docker-deploy.yml:366`、`:427`。
+5. workflow 与 `deploy/git-deploy.sh` 有两套备份/健康/回滚逻辑，容易漂移：`.github/workflows/docker-deploy.yml:374`、`:449`、`deploy/git-deploy.sh:105`、`:258`。
+6. 回滚只回镜像，不回数据；这符合“不自动覆盖数据”的约束，但需要文档化人工恢复数据流程：`.github/workflows/docker-deploy.yml:437`、`deploy/git-deploy.sh:240`。
+
+### GHCR 镜像标签策略
+
+继续保留：
+
+- `latest`：默认分支最新成功构建。
+- `vX.Y.Z`：仅 tag 发布。
+- `vX.Y.Z-build.N`：默认分支构建号。
+- `sha-<short>`：每次构建不可变定位。
+- digest：生产部署唯一推荐引用。
+
+新增建议：
+
+- release tag `vX.Y.Z` 必须匹配 `package.json`。
+- prerelease 不更新 `latest`。
+- 不急着增加 `vX` 浮动 tag，避免误部署。
+- 生产回滚只使用 `.last-good-digest`。
+
+### Dockerfile 优化
+
+优先级：
+
+1. 固定基础镜像到明确版本，例如 `node:24.x.x-alpine`；稳定后再 pin digest。
+2. install 阶段使用 BuildKit cache：
+
+```dockerfile
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+```
+
+3. 明确 Dockerfile 注释：Docker build 内跑 lint/typecheck/build；完整测试由 GitHub Actions 外层负责。
+4. 统一 healthcheck 工具：Dockerfile 与 compose 不要一个 curl 一个 wget。
+5. 减少 root 启动面：长期目标是宿主机预设 `data/` owner，容器直接 non-root。
+
+### build cache
+
+当前 `actions/setup-node cache: npm` 和 Buildx `cache-from/cache-to type=gha,mode=max` 已足够。后续：
+
+- 多架构时按平台拆 cache scope。
+- 文档-only 改动可跳过 Docker build，但涉及 README 部署、Docker、R2、数据脚本时必须全量。
+- 不手写 Trivy DB 缓存，使用 action 默认缓存。
+
+### smoke test
+
+最低 smoke：
+
+- 容器挂载临时数据目录到 `/var/lib/blog-navigation`。
+- 写 marker，restart，验证 marker 保留。
+- 探测 `/`、`/blog`、`/navigation`。
+- 检查容器日志无明显启动错误。
+- 如设置登录 secret，探测 `/editor/login` 可访问。
+
+发布前 smoke 必须测试“将要发布的镜像”。推荐方案：
+
+1. Buildx 构建临时 immutable tag。
+2. 对该 tag 运行 Docker smoke。
+3. 对该 digest 运行 Trivy。
+4. 通过后推稳定 tag。
+
+### rollback
+
+镜像回滚：
+
+- 部署成功后写 `.last-good-digest`。
+- 下一次部署前读取 `.last-good-digest`。
+- 失败时 compose 改回 last-good digest。
+
+数据恢复：
+
+- 不在自动 rollback 中覆盖 `data/`。
+- 部署前 tar `.env data`。
+- 若新镜像写坏数据，由人工按文档选择对应 tar 或 R2 snapshot 恢复。
+- 文档必须写明“镜像回滚不等于数据回滚”。
+
+### release tag
+
+借鉴 Docmost digest-first，但不照搬多架构 release tar。当前先做：
+
+- `workflow_dispatch deploy=true` 只接受 digest 或由当前 run digest 自动传入。
+- summary 输出 image digest、tag、Trivy 结果、smoke 结果。
+- 每次 deploy 输出服务器 `.last-good-digest` 的旧值和新值。
+
+### production deploy
+
+部署前检查：
+
+- `DEPLOY_DIR` 存在。
+- `.env` 存在且不被覆盖。
+- `data/` 存在且是目录。
+- `compose.prod.yaml` sha 与仓库版本一致；短期建议不一致则失败提示人工同步，长期可安全同步 compose 文件。
+- GHCR 镜像可拉取；如果 package 私有，服务器必须配置只读 token。
+
+部署后检查：
+
+- `/`、`/blog`、`/navigation` 返回成功。
+- 容器健康状态正常。
+- 数据 marker 保留。
+- 记录 `.last-good-digest`。
+
+### 安全扫描
+
+当前已有 Trivy 阻断 HIGH/CRITICAL，是正确方向。下一步：
+
+1. 给 workflow 权限增加 `security-events: write`。
+2. 使用 `github/codeql-action/upload-sarif` 上传 SARIF。
+3. Trivy 增加 `fs` 或 `config` scan 覆盖 Dockerfile/compose。
+4. 不默认 `ignore-unfixed: true`，除非建立漏洞例外文档。
+5. 扫描最终 digest，而不是只扫 smoke tag。
+
+### 不适合照搬
+
+- 不照搬 Payload/Docmost 的数据库 compose。
+- 不照搬 Docmost 离线 release tar，除非明确要离线部署。
+- 不照搬大型矩阵和 sharding。
+- 不把生产数据从 bind mount 改成匿名 volume。
+- 不在部署失败时自动覆盖恢复 `data/`。

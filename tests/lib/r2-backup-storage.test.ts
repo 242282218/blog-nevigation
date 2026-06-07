@@ -95,7 +95,13 @@ function resetR2Env(): void {
 }
 
 function clearR2Env(): void {
+  process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
   Object.keys(ORIGINAL_ENV).forEach((name) => {
+    if (name === 'BLOG_DATA_ROOT') {
+      return;
+    }
+
     delete process.env[name];
   });
 }

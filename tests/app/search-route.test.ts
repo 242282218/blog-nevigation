@@ -1,10 +1,16 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/search/route';
 import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
 import { getPostsAsync } from '@/lib/markdown';
+import { resetAppRuntimeConfigCacheForTests } from '@/lib/app-runtime-config';
 import { resetSearchRateLimitForTests } from '@/lib/search-rate-limit';
 import type { PostMeta } from '@/lib/markdown';
+import {
+  cleanupTempDirectories,
+  createTempDirectory,
+  restoreEnv,
+} from '../helpers/api-route';
 
 vi.mock('@/lib/markdown', () => ({
   getPostsAsync: vi.fn(),
@@ -18,9 +24,11 @@ const mockedGetPostsAsync = vi.mocked(getPostsAsync);
 const mockedReadNavigationFromDiskAsync = vi.mocked(readNavigationFromDiskAsync);
 const ORIGINAL_ENV = {
   NODE_ENV: process.env.NODE_ENV,
+  BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
   SKIP_IP_VALIDATION: process.env.SKIP_IP_VALIDATION,
 };
+const tempDirectories: string[] = [];
 
 function createRequest(query: string, headers?: HeadersInit): NextRequest {
   return new NextRequest(`http://localhost/api/search?q=${encodeURIComponent(query)}`, {
@@ -54,9 +62,20 @@ beforeEach(() => {
     }
   }
 
+  process.env.BLOG_DATA_ROOT = createTempDirectory('blog-navigation-search-route-');
+  tempDirectories.push(process.env.BLOG_DATA_ROOT);
   resetSearchRateLimitForTests();
+  resetAppRuntimeConfigCacheForTests();
   mockedGetPostsAsync.mockReset();
   mockedReadNavigationFromDiskAsync.mockReset();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  restoreEnv(ORIGINAL_ENV);
+  resetSearchRateLimitForTests();
+  resetAppRuntimeConfigCacheForTests();
+  cleanupTempDirectories(tempDirectories);
 });
 
 describe('search API', () => {

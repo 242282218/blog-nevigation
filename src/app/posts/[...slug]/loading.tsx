@@ -1,6 +1,7 @@
 export default function PostLoading() {
     return (
-        <div className="mx-auto max-w-3xl pb-10">
+        <div className="mx-auto max-w-3xl pb-10" role="status" aria-live="polite">
+            <span className="sr-only">正在加载文章内容...</span>
             <div className="mb-5 h-9 w-24 animate-pulse rounded-token-button bg-surface" />
             <div className="space-y-4 py-8">
                 <div className="h-4 w-20 animate-pulse rounded bg-surface" />

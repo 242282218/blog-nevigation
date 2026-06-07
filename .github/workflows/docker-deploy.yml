@@ -186,7 +186,7 @@ jobs:
       packages: write
     outputs:
       image-tags: ${{ steps.meta.outputs.tags }}
-      image-digest: ${{ steps.build.outputs.digest }}
+      image-digest: ${{ steps.candidate-build.outputs.digest }}
 
     steps:
       - name: Checkout repository
@@ -246,21 +246,157 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
 
-      - name: Build and push Docker image
-        id: build
+      - name: Create candidate image tag
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ci-${GITHUB_SHA}-${GITHUB_RUN_ATTEMPT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push candidate Docker image
+        id: candidate-build
         # docker/build-push-action@v7
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.candidate.outputs.tag }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
           provenance: true
           sbom: true
+
+      - name: Run candidate Docker smoke test
+        shell: bash
+        env:
+          CANDIDATE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${{ steps.candidate-build.outputs.digest }}" ]; then
+            echo "Candidate build did not produce an image digest."
+            exit 1
+          fi
+
+          echo "Running smoke test against ${CANDIDATE_IMAGE}"
+          docker pull "${CANDIDATE_IMAGE}"
+
+          SMOKE_DATA_ROOT="${PWD}/.tmp/docker-candidate-smoke-data"
+          mkdir -p "${SMOKE_DATA_ROOT}"
+
+          docker run \
+            --detach \
+            --name blog-navigation-candidate-smoke \
+            --publish 127.0.0.1:3211:3000 \
+            --env EDITOR_ACCESS_TOKEN=smoke-secret \
+            --env COOKIE_SECURE=false \
+            --env BLOG_DATA_ROOT=/var/lib/blog-navigation \
+            --env TRUSTED_PROXY_IPS='*' \
+            --volume "${SMOKE_DATA_ROOT}:/var/lib/blog-navigation" \
+            "${CANDIDATE_IMAGE}"
+
+          cleanup() {
+            docker logs --tail=100 blog-navigation-candidate-smoke || true
+            docker rm -f blog-navigation-candidate-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          wait_for_smoke() {
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent --max-time 5 http://127.0.0.1:3211/ >/dev/null; then
+                echo "Container responded after ${attempt} attempts."
+                return 0
+              fi
+
+              if [ "${attempt}" -eq 30 ]; then
+                echo "Container did not become ready."
+                return 1
+              fi
+
+              sleep 2
+            done
+          }
+
+          wait_for_smoke
+
+          docker exec blog-navigation-candidate-smoke sh -c "find /app/content/seeds/posts -name '*.md' | grep -q ."
+          docker exec blog-navigation-candidate-smoke sh -c "printf 'mounted-data' > /var/lib/blog-navigation/smoke-marker.txt"
+
+          docker restart blog-navigation-candidate-smoke
+          wait_for_smoke
+          docker exec blog-navigation-candidate-smoke sh -c 'test "$(cat /var/lib/blog-navigation/smoke-marker.txt)" = "mounted-data"'
+
+          test -f "${SMOKE_DATA_ROOT}/smoke-marker.txt"
+
+          curl --fail --silent --show-error --max-time 10 --output /tmp/blog-candidate.html http://127.0.0.1:3211/blog
+          curl --fail --silent --show-error --max-time 10 --output /tmp/navigation-candidate.html http://127.0.0.1:3211/navigation
+
+      - name: Report candidate image vulnerabilities with Trivy
+        # aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}
+          scanners: vuln
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '0'
+
+      - name: Generate candidate Trivy SARIF artifact
+        # aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}
+          scanners: vuln
+          format: sarif
+          output: trivy-candidate-results.sarif
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '0'
+
+      - name: Enforce candidate image vulnerabilities with Trivy
+        # aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@bfa4b33a029b9aa80ddb784b45574c30e072c59e
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}
+          scanners: vuln
+          format: table
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '1'
+
+      - name: Upload candidate Trivy scan artifact
+        if: always()
+        # actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: trivy-candidate-sarif
+          path: trivy-candidate-results.sarif
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Promote candidate digest to release tags
+        shell: bash
+        env:
+          CANDIDATE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}
+          RELEASE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r tag; do
+            if [ -z "${tag}" ]; then
+              continue
+            fi
+
+            echo "Promoting ${CANDIDATE_IMAGE} to ${tag}"
+            docker buildx imagetools create \
+              --tag "${tag}" \
+              "${CANDIDATE_IMAGE}"
+          done <<< "${RELEASE_TAGS}"
 
       - name: Write Docker release summary
         shell: bash
@@ -271,7 +407,8 @@ jobs:
             echo "| Item | Value |"
             echo "|------|-------|"
             echo "| Image | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}\` |"
-            echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
+            echo "| Candidate | \`${{ steps.candidate.outputs.tag }}\` |"
+            echo "| Digest | \`${{ steps.candidate-build.outputs.digest }}\` |"
             echo "| Latest | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\` |"
             echo "| Build tag | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.package-version.outputs.build_tag }}\` |"
             echo "| Commit tag | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${GITHUB_SHA::7}\` |"

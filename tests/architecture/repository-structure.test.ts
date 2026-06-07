@@ -8,6 +8,18 @@ function resolveRepoPath(...segments: string[]) {
     return path.join(repoRoot, ...segments);
 }
 
+function collectMarkdownFiles(directory: string): string[] {
+    return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        const entryPath = path.join(directory, entry.name);
+
+        if (entry.isDirectory()) {
+            return collectMarkdownFiles(entryPath);
+        }
+
+        return entry.isFile() && entry.name.endsWith('.md') ? [entryPath] : [];
+    });
+}
+
 describe('repository structure migration', () => {
     it('moves application source into src and publishes runtime assets from stable paths', () => {
         const requiredPaths = [
@@ -204,6 +216,17 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).not.toContain('docker build --tag blog-navigation:smoke');
         expect(deployWorkflow).toContain('load: true');
         expect(deployWorkflow).toContain('blog-navigation:smoke-${{ github.sha }}');
+        expect(deployWorkflow).toContain('image-digest: ${{ steps.candidate-build.outputs.digest }}');
+        expect(deployWorkflow).toContain('ci-${GITHUB_SHA}-${GITHUB_RUN_ATTEMPT}');
+        expect(deployWorkflow).toContain('Build and push candidate Docker image');
+        expect(deployWorkflow).toContain('Run candidate Docker smoke test');
+        expect(deployWorkflow).toContain('CANDIDATE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}');
+        expect(deployWorkflow).toContain('image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}');
+        expect(deployWorkflow).toContain('Promote candidate digest to release tags');
+        expect(deployWorkflow).toContain('docker buildx imagetools create');
+        expect(deployWorkflow).toContain('trivy-candidate-results.sarif');
+        expect(deployWorkflow).not.toContain('steps.build.outputs.digest');
+        expect(deployWorkflow).not.toContain('tags: ${{ steps.meta.outputs.tags }}\n          labels:');
         expect(deployWorkflow).toContain('${SMOKE_DATA_ROOT}:/var/lib/blog-navigation');
         expect(deployWorkflow).toContain('/var/lib/blog-navigation/smoke-marker.txt');
         expect(deployWorkflow).not.toMatch(/uses:\s+[^@\n]+@v\d+/);
@@ -244,6 +267,16 @@ describe('repository structure migration', () => {
             expect(source).not.toContain('缺少加密口令');
             expect(source).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
             expect(source).not.toContain('backupEncryptionPassphrase');
+        });
+        collectMarkdownFiles(resolveRepoPath('docs')).forEach((filePath) => {
+            const source = fs.readFileSync(filePath, 'utf8');
+
+            expect(source, filePath).not.toContain('R2 对象必须加密');
+            expect(source, filePath).not.toContain('R2 上传对象不包含明文敏感内容');
+            expect(source, filePath).not.toContain('加密上传');
+            expect(source, filePath).not.toContain('缺少加密口令');
+            expect(source, filePath).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
+            expect(source, filePath).not.toContain('backupEncryptionPassphrase');
         });
         expect(deployWorkflow).toContain('Build did not produce an image digest; refusing to deploy.');
         expect(deployWorkflow).toContain('wait_for_healthcheck "${HEALTHCHECK_URL}" "deployment"');

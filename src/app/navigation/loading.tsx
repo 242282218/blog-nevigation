@@ -1,6 +1,7 @@
 export default function NavigationLoading() {
     return (
-        <div className="space-y-3 pb-8">
+        <div className="space-y-3 pb-8" role="status" aria-live="polite">
+            <span className="sr-only">正在加载导航目录...</span>
             <header className="border-b border-border pb-3">
                 <div className="mb-1.5 flex items-center gap-2">
                     <div className="h-4 w-32 animate-pulse rounded bg-surface" />

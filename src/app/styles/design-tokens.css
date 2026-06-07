@@ -77,7 +77,7 @@
   /* Text */
   --fg: var(--warm-900);
   --muted: var(--warm-600);
-  --subtle: var(--warm-500);
+  --subtle: var(--warm-600);
 
   /* Borders */
   --border: #e3e6de;

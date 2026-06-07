@@ -1,6 +1,7 @@
 export default function BlogLoading() {
     return (
-        <div className="space-y-token-section pb-10">
+        <div className="space-y-token-section pb-10" role="status" aria-live="polite">
+            <span className="sr-only">正在加载博客列表...</span>
             <div className="space-y-4 py-8">
                 <div className="h-4 w-24 animate-pulse rounded bg-surface" />
                 <div className="h-8 w-48 animate-pulse rounded bg-surface" />
