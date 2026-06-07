@@ -1,12 +1,23 @@
-import {
-    drainPendingBackups,
-    queueCurrentBackupToRemote,
-} from '@/lib/editor-remote-backup';
-
 let startupTasksStarted = false;
 let scheduledRemoteBackupTimer: ReturnType<typeof setInterval> | null = null;
 
 export const SCHEDULED_REMOTE_BACKUP_INTERVAL_MS = 3 * 60 * 60 * 1000;
+
+async function drainRemoteBackupQueue(): Promise<void> {
+    const { drainPendingBackups } = await import('@/lib/editor-remote-backup');
+
+    await drainPendingBackups();
+}
+
+async function queueScheduledRemoteBackup(): Promise<void> {
+    const { queueCurrentBackupToRemote } = await import('@/lib/editor-remote-backup');
+
+    queueCurrentBackupToRemote({
+        reason: 'scheduled-3h',
+        writeLatest: true,
+        writeSnapshot: true,
+    });
+}
 
 function schedulePeriodicRemoteBackup(): void {
     if (scheduledRemoteBackupTimer) {
@@ -14,15 +25,9 @@ function schedulePeriodicRemoteBackup(): void {
     }
 
     scheduledRemoteBackupTimer = setInterval(() => {
-        try {
-            queueCurrentBackupToRemote({
-                reason: 'scheduled-3h',
-                writeLatest: true,
-                writeSnapshot: true,
-            });
-        } catch (error) {
+        void queueScheduledRemoteBackup().catch((error) => {
             console.error('[startup-tasks] Failed to queue scheduled remote backup:', error);
-        }
+        });
     }, SCHEDULED_REMOTE_BACKUP_INTERVAL_MS);
 
     scheduledRemoteBackupTimer.unref?.();
@@ -36,7 +41,7 @@ export function startServerStartupTasks(): void {
     startupTasksStarted = true;
     schedulePeriodicRemoteBackup();
 
-    void drainPendingBackups().catch((error) => {
+    void drainRemoteBackupQueue().catch((error) => {
         console.error('[startup-tasks] Failed to drain pending backups:', error);
     });
 }

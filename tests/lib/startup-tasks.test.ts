@@ -34,20 +34,25 @@ afterEach(() => {
 });
 
 describe('server startup tasks', () => {
-  it('drains pending remote backup tasks on startup', () => {
+  it('drains pending remote backup tasks on startup', async () => {
     startServerStartupTasks();
 
-    expect(mockedDrainPendingBackups).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(mockedDrainPendingBackups).toHaveBeenCalledOnce();
+    });
   });
 
-  it('queues a full remote backup every three hours without duplicate timers', () => {
+  it('queues a full remote backup every three hours without duplicate timers', async () => {
     startServerStartupTasks();
     startServerStartupTasks();
 
-    vi.advanceTimersByTime(SCHEDULED_REMOTE_BACKUP_INTERVAL_MS);
+    await vi.advanceTimersByTimeAsync(SCHEDULED_REMOTE_BACKUP_INTERVAL_MS);
 
-    expect(mockedDrainPendingBackups).toHaveBeenCalledOnce();
-    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(mockedDrainPendingBackups).toHaveBeenCalledOnce();
+      expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledOnce();
+    });
+
     expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'scheduled-3h',
       writeLatest: true,
