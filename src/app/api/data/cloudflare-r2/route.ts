@@ -14,6 +14,7 @@ import {
 } from '@/lib/editor-api-auth';
 import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
 import { getRemoteBackupQueueStatus } from '@/lib/editor-remote-backup';
+import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import {
     getEditableR2BackupSettings,
     getR2BackupStatus,
@@ -125,6 +126,17 @@ export async function PUT(request: NextRequest) {
 
     try {
         const savedSettings = saveEditableR2BackupSettings(settings);
+        recordEditorAuditEvent({
+            action: 'r2.settings.update',
+            resource: 'cloudflare-r2',
+            outcome: 'success',
+            metadata: {
+                enabled: savedSettings.enabled,
+                configured: getR2BackupStatus().configured,
+                bucket: savedSettings.bucket || null,
+                prefix: savedSettings.prefix,
+            },
+        });
 
         return NextResponse.json({
             success: true,

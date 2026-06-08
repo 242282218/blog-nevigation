@@ -1,0 +1,88 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { GET } from '@/app/api/health/route';
+import {
+  cleanupTempDirectories,
+  createTempDirectory,
+  restoreEnv,
+} from '../helpers/api-route';
+
+const ORIGINAL_ENV = {
+  BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
+  BLOG_NAVIGATION_DOCKER: process.env.BLOG_NAVIGATION_DOCKER,
+  BLOG_NAVIGATION_VERSION: process.env.BLOG_NAVIGATION_VERSION,
+  BLOG_NAVIGATION_IMAGE_TAG: process.env.BLOG_NAVIGATION_IMAGE_TAG,
+  BLOG_NAVIGATION_REVISION: process.env.BLOG_NAVIGATION_REVISION,
+  BLOG_NAVIGATION_BUILD_TIME: process.env.BLOG_NAVIGATION_BUILD_TIME,
+};
+const tempDirectories: string[] = [];
+
+function createDataRoot(): string {
+  const root = createTempDirectory('blog-navigation-health-');
+  tempDirectories.push(root);
+  return root;
+}
+
+afterEach(() => {
+  restoreEnv(ORIGINAL_ENV);
+  cleanupTempDirectories(tempDirectories);
+});
+
+describe('health API', () => {
+  it('reports version, writable data root, manifest, and backup queue status', async () => {
+    process.env.BLOG_DATA_ROOT = createDataRoot();
+    process.env.BLOG_NAVIGATION_DOCKER = 'true';
+    process.env.BLOG_NAVIGATION_VERSION = '9.8.7';
+    process.env.BLOG_NAVIGATION_IMAGE_TAG = 'v9.8.7';
+    process.env.BLOG_NAVIGATION_REVISION = 'abcdef123456';
+    process.env.BLOG_NAVIGATION_BUILD_TIME = '2026-06-08T00:00:00Z';
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        version: expect.objectContaining({
+          displayVersion: 'v9.8.7',
+          runtime: 'docker',
+        }),
+        dataRoot: {
+          path: process.env.BLOG_DATA_ROOT,
+          source: 'env',
+          writable: true,
+        },
+        manifest: expect.objectContaining({
+          valid: true,
+          path: path.join(process.env.BLOG_DATA_ROOT, 'manifest.json'),
+        }),
+        backupQueue: expect.objectContaining({
+          pending: 0,
+          failed: 0,
+        }),
+      })
+    );
+  });
+
+  it('returns degraded when the configured data root is not writable', async () => {
+    const parent = createDataRoot();
+    process.env.BLOG_DATA_ROOT = path.join(parent, 'missing');
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(fs.existsSync(process.env.BLOG_DATA_ROOT)).toBe(false);
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        dataRoot: expect.objectContaining({
+          writable: false,
+        }),
+      })
+    );
+  });
+});

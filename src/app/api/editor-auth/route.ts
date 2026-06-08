@@ -38,6 +38,7 @@ import {
     getEditorAuthRateLimitResponse,
     recordEditorAuthFailure,
 } from '@/lib/editor-auth-rate-limit';
+import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 
 export async function GET(request: NextRequest) {
     try {
@@ -104,6 +105,12 @@ export async function POST(request: NextRequest) {
 
         if (!(await isValidRuntimeEditorSecret(secret))) {
             recordEditorAuthFailure(request, 'login');
+            recordEditorAuditEvent({
+                action: 'auth.login.failure',
+                resource: 'editor-auth',
+                outcome: 'failure',
+                message: 'invalid_secret',
+            });
             return NextResponse.json(
                 {
                     message: '口令错误。',
@@ -124,6 +131,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        recordEditorAuditEvent({
+            action: 'auth.login.success',
+            resource: 'editor-auth',
+            outcome: 'success',
+        });
         return createEditorSessionResponse(sessionValue);
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
@@ -226,6 +238,11 @@ export async function PUT(request: NextRequest) {
     try {
         const sessionValue = await initializeRuntimeEditorAuth(secret);
         clearEditorAuthFailures(request, 'setup');
+        recordEditorAuditEvent({
+            action: 'auth.setup.success',
+            resource: 'editor-auth',
+            outcome: 'success',
+        });
         return createEditorSessionResponse(sessionValue);
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
@@ -272,6 +289,11 @@ export async function DELETE(request: NextRequest) {
 
     try {
         revokeRuntimeEditorSession();
+        recordEditorAuditEvent({
+            action: 'auth.logout',
+            resource: 'editor-auth',
+            outcome: 'success',
+        });
     } catch (error) {
         const invalidResponse = createEditorAuthConfigInvalidResponse(error);
 

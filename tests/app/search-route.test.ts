@@ -2,10 +2,10 @@ import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET } from '@/app/api/search/route';
 import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
-import { getPostsAsync } from '@/lib/markdown';
+import { getSearchablePostsAsync } from '@/lib/markdown';
 import { resetAppRuntimeConfigCacheForTests } from '@/lib/app-runtime-config';
 import { resetSearchRateLimitForTests } from '@/lib/search-rate-limit';
-import type { PostMeta } from '@/lib/markdown';
+import type { PostMeta, SearchablePost } from '@/lib/markdown';
 import {
   cleanupTempDirectories,
   createTempDirectory,
@@ -13,14 +13,14 @@ import {
 } from '../helpers/api-route';
 
 vi.mock('@/lib/markdown', () => ({
-  getPostsAsync: vi.fn(),
+  getSearchablePostsAsync: vi.fn(),
 }));
 
 vi.mock('@/lib/editor-data-storage', () => ({
   readNavigationFromDiskAsync: vi.fn(),
 }));
 
-const mockedGetPostsAsync = vi.mocked(getPostsAsync);
+const mockedGetSearchablePostsAsync = vi.mocked(getSearchablePostsAsync);
 const mockedReadNavigationFromDiskAsync = vi.mocked(readNavigationFromDiskAsync);
 const ORIGINAL_ENV = {
   NODE_ENV: process.env.NODE_ENV,
@@ -51,6 +51,16 @@ function createPost(partial: Partial<PostMeta> & Pick<PostMeta, 'slug' | 'slugAr
   };
 }
 
+function createSearchablePost(
+  partial: Partial<PostMeta> & Pick<PostMeta, 'slug' | 'slugArray' | 'title'>,
+  content = ''
+): SearchablePost {
+  return {
+    meta: createPost(partial),
+    content,
+  };
+}
+
 beforeEach(() => {
   for (const name of Object.keys(ORIGINAL_ENV) as Array<Exclude<keyof typeof ORIGINAL_ENV, 'NODE_ENV'>>) {
     const value = ORIGINAL_ENV[name];
@@ -66,7 +76,7 @@ beforeEach(() => {
   tempDirectories.push(process.env.BLOG_DATA_ROOT);
   resetSearchRateLimitForTests();
   resetAppRuntimeConfigCacheForTests();
-  mockedGetPostsAsync.mockReset();
+  mockedGetSearchablePostsAsync.mockReset();
   mockedReadNavigationFromDiskAsync.mockReset();
 });
 
@@ -85,20 +95,20 @@ describe('search API', () => {
 
     expect(await emptyResponse.json()).toEqual([]);
     expect(await shortResponse.json()).toEqual([]);
-    expect(mockedGetPostsAsync).not.toHaveBeenCalled();
+    expect(mockedGetSearchablePostsAsync).not.toHaveBeenCalled();
     expect(mockedReadNavigationFromDiskAsync).not.toHaveBeenCalled();
   });
 
   it('normalizes case and whitespace when matching post results', async () => {
-    mockedGetPostsAsync.mockResolvedValue([
-      createPost({
+    mockedGetSearchablePostsAsync.mockResolvedValue([
+      createSearchablePost({
         slug: 'next-runtime-data',
         slugArray: ['next-runtime-data'],
         title: 'Next Runtime Data',
         date: '2026-05-24',
         description: 'Runtime data guide',
       }),
-      createPost({
+      createSearchablePost({
         slug: 'navigation',
         slugArray: ['navigation'],
         title: 'Navigation Index',
@@ -122,9 +132,38 @@ describe('search API', () => {
     ]);
   });
 
+  it('matches post body content without exposing system pages', async () => {
+    mockedGetSearchablePostsAsync.mockResolvedValue([
+      createSearchablePost({
+        slug: 'runtime-notes',
+        slugArray: ['runtime-notes'],
+        title: 'Runtime Notes',
+        description: 'No direct query in metadata',
+      }, 'This article explains container snapshot recovery for operators.'),
+      createSearchablePost({
+        slug: 'navigation',
+        slugArray: ['navigation'],
+        title: 'Navigation Index',
+      }, 'snapshot recovery should not expose the system page'),
+    ]);
+    mockedReadNavigationFromDiskAsync.mockResolvedValue([]);
+
+    const response = await GET(createRequest('snapshot recovery'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual([
+      expect.objectContaining({
+        type: 'post',
+        title: 'Runtime Notes',
+        href: '/posts/runtime-notes',
+      }),
+    ]);
+  });
+
   it('returns tool matches and caps the combined result count', async () => {
-    mockedGetPostsAsync.mockResolvedValue(
-      Array.from({ length: 6 }, (_, index) => createPost({
+    mockedGetSearchablePostsAsync.mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => createSearchablePost({
         slug: `search-post-${index}`,
         slugArray: [`search-post-${index}`],
         title: `Search Post ${index}`,
@@ -165,8 +204,8 @@ describe('search API', () => {
 
   it('rate limits search scans per client IP', async () => {
     process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
-    mockedGetPostsAsync.mockResolvedValue([
-      createPost({
+    mockedGetSearchablePostsAsync.mockResolvedValue([
+      createSearchablePost({
         slug: 'search-post',
         slugArray: ['search-post'],
         title: 'Search Post',
@@ -199,8 +238,8 @@ describe('search API', () => {
 
   it('rate limits search scans with a single forwarded client IP behind a trusted proxy', async () => {
     process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
-    mockedGetPostsAsync.mockResolvedValue([
-      createPost({
+    mockedGetSearchablePostsAsync.mockResolvedValue([
+      createSearchablePost({
         slug: 'search-post',
         slugArray: ['search-post'],
         title: 'Search Post',
@@ -230,8 +269,8 @@ describe('search API', () => {
     vi.stubEnv('NODE_ENV', 'production');
     delete process.env.TRUSTED_PROXY_IPS;
     delete process.env.SKIP_IP_VALIDATION;
-    mockedGetPostsAsync.mockResolvedValue([
-      createPost({
+    mockedGetSearchablePostsAsync.mockResolvedValue([
+      createSearchablePost({
         slug: 'search-post',
         slugArray: ['search-post'],
         title: 'Search Post',
@@ -247,7 +286,7 @@ describe('search API', () => {
         message: expect.stringContaining('TRUSTED_PROXY_IPS'),
       })
     );
-    expect(mockedGetPostsAsync).not.toHaveBeenCalled();
+    expect(mockedGetSearchablePostsAsync).not.toHaveBeenCalled();
     expect(mockedReadNavigationFromDiskAsync).not.toHaveBeenCalled();
   });
 });

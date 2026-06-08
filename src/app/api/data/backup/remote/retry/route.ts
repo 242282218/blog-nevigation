@@ -4,6 +4,7 @@ import {
     ensureEditorWriteRequest,
 } from '@/lib/editor-api-auth';
 import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
+import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import { createRemoteBackupRetryFailedResponse } from '../actions';
 
 export async function POST(request: NextRequest) {
@@ -17,5 +18,13 @@ export async function POST(request: NextRequest) {
         return createEditorDataRootRequiredResponse();
     }
 
-    return createRemoteBackupRetryFailedResponse();
+    const response = createRemoteBackupRetryFailedResponse();
+
+    recordEditorAuditEvent({
+        action: 'r2.backup.retry',
+        resource: 'cloudflare-r2',
+        outcome: 'success',
+    });
+
+    return response;
 }

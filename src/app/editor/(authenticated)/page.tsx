@@ -1,7 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileText, Compass, Download, Upload, CloudDownload, CloudUpload, Settings, SlidersHorizontal } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CloudDownload,
+  CloudUpload,
+  Compass,
+  Download,
+  FileText,
+  RefreshCcw,
+  Settings,
+  SlidersHorizontal,
+  Upload,
+} from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import { LogoutButton } from '../components/LogoutButton';
 import { createRestoreActionMessage } from '../backup-action-message';
@@ -24,14 +36,29 @@ type BackupPayload = {
 };
 
 type BackupActionResponse = {
+  backupQueue?: RemoteBackupQueueStatus;
   remoteBackup?: {
     success?: boolean;
     message?: string;
   };
 };
 
+type RemoteBackupQueueStatus = {
+  pending: number;
+  failed: number;
+  failedTasks: Array<{
+    id: string;
+    reason: string;
+    attempts: number;
+    lastAttemptAt: string | null;
+    lastError: string | null;
+  }>;
+};
+
 type RemoteBackupStatus = {
+  enabled: boolean;
   configured: boolean;
+  backupQueue?: RemoteBackupQueueStatus;
 };
 
 function createBackupFileName(exportedAt?: string): string {
@@ -47,6 +74,7 @@ export default function EditorHomePage() {
   const [isBusy, setIsBusy] = useState(false);
   const [isRemoteStatusLoading, setIsRemoteStatusLoading] = useState(true);
   const [isRemoteConfigured, setIsRemoteConfigured] = useState(false);
+  const [backupQueue, setBackupQueue] = useState<RemoteBackupQueueStatus | null>(null);
   const [message, setMessage] = useState<{ tone: 'success' | 'warning' | 'danger' | 'loading'; text: string } | null>(null);
   const canRunRemoteAction = isRemoteConfigured && !isRemoteStatusLoading && !isBusy;
 
@@ -63,6 +91,7 @@ export default function EditorHomePage() {
 
         if (isMounted) {
           setIsRemoteConfigured(Boolean(response.ok && payload?.configured));
+          setBackupQueue(payload?.backupQueue ?? null);
         }
       } catch (error) {
         console.error('Failed to load remote backup status:', error);
@@ -142,9 +171,39 @@ export default function EditorHomePage() {
       }
 
       setMessage({ tone: 'success', text: '云端备份已同步。' });
+      const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+      setBackupQueue(payload?.backupQueue ?? null);
     } catch (error) {
       console.error('Failed to sync remote backup:', error);
       setMessage({ tone: 'danger', text: '云端备份失败，请检查 R2 配置。' });
+    } finally {
+      setIsBusy(false);
+    }
+  }, []);
+
+  const handleRetryFailedBackups = useCallback(async () => {
+    setIsBusy(true);
+    setMessage({ tone: 'loading', text: '正在重试失败的云端备份...' });
+
+    try {
+      const response = await fetch('/api/data/backup/remote/retry', {
+        method: 'POST',
+        credentials: 'include',
+        headers: createEditorCsrfHeaders({
+          'Content-Type': 'application/json',
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+
+      if (!response.ok) {
+        throw new Error(`remote_retry_failed_${response.status}`);
+      }
+
+      setBackupQueue(payload?.backupQueue ?? null);
+      setMessage({ tone: 'success', text: '失败的云端备份已重新加入队列。' });
+    } catch (error) {
+      console.error('Failed to retry remote backups:', error);
+      setMessage({ tone: 'danger', text: '重试失败，请检查 R2 配置。' });
     } finally {
       setIsBusy(false);
     }
@@ -175,6 +234,7 @@ export default function EditorHomePage() {
 
       const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
 
+      setBackupQueue(payload?.backupQueue ?? null);
       setMessage(createRestoreActionMessage(payload, '云端恢复成功，刷新页面后可见最新数据。'));
     } catch (error) {
       console.error('Failed to restore remote backup:', error);
@@ -294,6 +354,11 @@ export default function EditorHomePage() {
                 {isRemoteStatusLoading ? '正在检查 R2 配置状态。' : 'R2 未配置完整，云端同步和云端恢复暂不可用。'}
               </p>
             ) : null}
+            <BackupHealthSummary
+              isLoading={isRemoteStatusLoading}
+              isConfigured={isRemoteConfigured}
+              backupQueue={backupQueue}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:justify-end">
@@ -335,6 +400,15 @@ export default function EditorHomePage() {
               <CloudDownload className="h-4 w-4" />
               <span>{isBusy ? '处理中...' : '云端恢复'}</span>
             </EditorButton>
+            <EditorButton
+              type="button"
+              onClick={handleRetryFailedBackups}
+              disabled={isBusy || !backupQueue?.failed}
+              className="w-full sm:w-auto"
+            >
+              <RefreshCcw className="h-4 w-4" />
+              <span>{isBusy ? '处理中...' : '重试失败'}</span>
+            </EditorButton>
             <input
               ref={restoreInputRef}
               type="file"
@@ -347,5 +421,55 @@ export default function EditorHomePage() {
         </EditorPanel>
       </EditorMain>
     </EditorPage>
+  );
+}
+
+function BackupHealthSummary({
+  isLoading,
+  isConfigured,
+  backupQueue,
+}: {
+  isLoading: boolean;
+  isConfigured: boolean;
+  backupQueue: RemoteBackupQueueStatus | null;
+}) {
+  if (isLoading) {
+    return null;
+  }
+
+  const failedTask = backupQueue?.failedTasks[0] ?? null;
+  const hasFailure = Boolean(backupQueue?.failed);
+  const hasPending = Boolean(backupQueue?.pending);
+
+  if (!isConfigured) {
+    return (
+      <div className="mt-3 inline-flex items-center gap-2 rounded-token-card border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-600">
+        <AlertTriangle className="h-4 w-4" />
+        R2 未配置，只有本地数据目录和手动 JSON 备份可用。
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 rounded-token-card border border-border-soft bg-surface p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        {hasFailure ? (
+          <AlertTriangle className="h-4 w-4 text-error-600" />
+        ) : (
+          <CheckCircle2 className="h-4 w-4 text-success" />
+        )}
+        <span className="font-medium text-fg">
+          {hasFailure ? '云端备份存在失败任务' : hasPending ? '云端备份正在排队' : '云端备份队列正常'}
+        </span>
+        <span className="font-mono text-xs text-subtle">
+          pending {backupQueue?.pending ?? 0} / failed {backupQueue?.failed ?? 0}
+        </span>
+      </div>
+      {failedTask ? (
+        <p className="mt-2 break-words text-xs leading-5 text-error-600">
+          {failedTask.reason}：{failedTask.lastError || '未知错误'}
+        </p>
+      ) : null}
+    </div>
   );
 }

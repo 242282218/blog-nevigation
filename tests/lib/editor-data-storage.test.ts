@@ -23,6 +23,8 @@ import {
     writeArticlesToDiskIfRevisionMatches,
     EditorDataRestoreIncompleteError,
 } from '@/lib/editor-data-storage';
+import { getSearchIndexFilePath } from '@/lib/search-index';
+import { getEditorAuditLogFilePath } from '@/lib/editor-audit-log';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
 import type { Article } from '@/app/types/article';
 
@@ -127,6 +129,37 @@ describe('editor data storage configuration', () => {
         expect(firstManifest.revision).toBe(manifestAfterWrite.resources.articles?.revision);
         expect(secondManifest.revision).not.toBe(firstManifest.revision);
         expect(fsyncSpy).toHaveBeenCalled();
+    });
+
+    it('writes audit events and a derived search index when articles are committed', async () => {
+        createTempDataRoot();
+        const articles = [createArticle('article-indexed', 'Indexed Article')];
+
+        const manifest = await writeArticlesToDisk(articles);
+        const auditEvents = fs.readFileSync(getEditorAuditLogFilePath(), 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line) as { action: string; resource: string; metadata: Record<string, unknown> });
+        const searchIndex = JSON.parse(fs.readFileSync(getSearchIndexFilePath(), 'utf8')) as {
+            documents: Array<{ type: string; title: string; content?: string }>;
+        };
+
+        expect(auditEvents).toContainEqual(
+            expect.objectContaining({
+                action: 'data.write',
+                resource: 'articles',
+                metadata: expect.objectContaining({
+                    revision: manifest.revision,
+                }),
+            })
+        );
+        expect(searchIndex.documents).toContainEqual(
+            expect.objectContaining({
+                type: 'post',
+                title: 'Indexed Article',
+                content: '# Indexed Article',
+            })
+        );
     });
 
     it('writes articles only when the current revision still matches', async () => {

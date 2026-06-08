@@ -237,6 +237,34 @@ describe('markdown runtime article source', () => {
     );
   });
 
+  it('returns searchable runtime posts with content for full-text search', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot([
+      {
+        id: 'runtime-searchable-article',
+        slug: 'runtime-searchable-article',
+        title: 'Runtime Searchable Article',
+        date: '2026-03-07',
+        description: 'Search metadata',
+        tags: ['runtime'],
+        content: '## Searchable body content',
+        createdAt: 5,
+        updatedAt: 6,
+      },
+    ]);
+
+    const { getSearchablePostsAsync } = await importMarkdownModule();
+
+    await expect(getSearchablePostsAsync()).resolves.toEqual([
+      {
+        meta: expect.objectContaining({
+          slug: 'runtime-searchable-article',
+          title: 'Runtime Searchable Article',
+        }),
+        content: '## Searchable body content',
+      },
+    ]);
+  });
+
   it('returns null instead of throwing when a post slug cannot be decoded', async () => {
     delete process.env.BLOG_DATA_ROOT;
 

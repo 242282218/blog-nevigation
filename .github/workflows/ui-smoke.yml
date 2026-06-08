@@ -114,6 +114,7 @@ jobs:
             sleep 2
           done
 
+          npx --yes @lhci/cli@0.15.1 autorun --config=./lighthouserc.cjs
           BASE_URL=http://127.0.0.1:3210 EDITOR_LOGIN_SECRET=ci-smoke-secret npm run smoke:ui
 
       - name: Upload smoke artifacts
@@ -124,6 +125,7 @@ jobs:
           name: ui-smoke-artifacts
           path: |
             output/playwright
+            output/lighthouse
             output/*.html
             output/*.png
             output/ui-smoke-server.log

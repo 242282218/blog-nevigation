@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
-import { getPostsAsync } from '@/lib/markdown';
+import { getSearchablePostsAsync } from '@/lib/markdown';
+import { readSearchIndexFromDiskAsync, type SearchIndexDocument } from '@/lib/search-index';
 import { getSearchRateLimitResponse } from '@/lib/search-rate-limit';
 import {
     isSearchQueryAllowed,
@@ -11,6 +12,100 @@ export const dynamic = 'force-dynamic';
 
 function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
+}
+
+function normalizeSearchText(value: string): string {
+    return value.toLowerCase();
+}
+
+function getMatchScore(value: string, query: string, weight: number): number {
+    const normalized = normalizeSearchText(value);
+
+    if (normalized.includes(query)) {
+        return weight;
+    }
+
+    const terms = query.split(' ').filter(Boolean);
+
+    if (terms.length > 1 && terms.every((term) => normalized.includes(term))) {
+        return Math.max(1, Math.floor(weight * 0.7));
+    }
+
+    return 0;
+}
+
+function getPostSearchScore(parts: {
+    title: string;
+    description: string;
+    slug: string;
+    tags: string[];
+    content: string;
+}, query: string): number {
+    return (
+        getMatchScore(parts.title, query, 50) +
+        getMatchScore(parts.tags.join(' '), query, 35) +
+        getMatchScore(parts.description, query, 25) +
+        getMatchScore(parts.slug, query, 20) +
+        getMatchScore(parts.content, query, 8)
+    );
+}
+
+function getToolSearchScore(parts: {
+    categoryName: string;
+    title: string;
+    description: string;
+    url: string;
+    tags: string[];
+}, query: string): number {
+    return (
+        getMatchScore(parts.title, query, 50) +
+        getMatchScore(parts.tags.join(' '), query, 35) +
+        getMatchScore(parts.categoryName, query, 25) +
+        getMatchScore(parts.description, query, 20) +
+        getMatchScore(parts.url, query, 10)
+    );
+}
+
+async function getSearchDocuments(): Promise<SearchIndexDocument[]> {
+    const index = await readSearchIndexFromDiskAsync().catch((error: unknown) => {
+        console.warn('[search] Failed to read derived search index; falling back to source data:', error);
+        return null;
+    });
+
+    if (index) {
+        return index.documents;
+    }
+
+    const [posts, navigation] = await Promise.all([
+        getSearchablePostsAsync(),
+        readNavigationFromDiskAsync(),
+    ]);
+    const postDocuments: SearchIndexDocument[] = posts
+        .filter((post) => !post.meta.slugArray.includes('navigation'))
+        .map((post) => ({
+            type: 'post',
+            title: post.meta.title,
+            slug: post.meta.slug,
+            href: `/posts/${post.meta.slug}`,
+            description: post.meta.description ?? '',
+            date: post.meta.date,
+            tags: post.meta.tags,
+            content: post.content,
+        }));
+    const toolDocuments: SearchIndexDocument[] = navigation.flatMap((category) =>
+        category.tools.map((tool) => ({
+            type: 'tool',
+            title: tool.title,
+            slug: tool.url,
+            href: tool.url,
+            description: tool.description,
+            categoryName: category.name,
+            tags: tool.tags,
+            url: tool.url,
+        }))
+    );
+
+    return [...postDocuments, ...toolDocuments];
 }
 
 export async function GET(request: NextRequest) {
@@ -26,16 +121,24 @@ export async function GET(request: NextRequest) {
         return rateLimitResponse;
     }
 
-    const [posts, navigation] = await Promise.all([
-        getPostsAsync(),
-        readNavigationFromDiskAsync(),
-    ]);
+    const documents = await getSearchDocuments();
 
-    const postResults = posts
-        .filter((post) => !post.slugArray.includes('navigation'))
-        .filter((post) => includesQuery([post.title, post.description ?? '', post.slug], query))
-        .slice(0, 5)
+    const postResults = documents
+        .filter((document): document is Extract<SearchIndexDocument, { type: 'post' }> => document.type === 'post')
         .map((post) => ({
+            score: getPostSearchScore({
+                title: post.title,
+                description: post.description,
+                slug: post.slug,
+                tags: post.tags,
+                content: post.content,
+            }, query),
+            post,
+        }))
+        .filter(({ score }) => score > 0)
+        .sort((left, right) => right.score - left.score || right.post.date.localeCompare(left.post.date))
+        .slice(0, 5)
+        .map(({ post }) => ({
             type: 'post' as const,
             title: post.title,
             slug: post.slug,
@@ -45,33 +148,31 @@ export async function GET(request: NextRequest) {
             external: false,
         }));
 
-    const toolResults = navigation
-        .flatMap((category) =>
-            category.tools.map((tool) => ({
-                categoryName: category.name,
-                tool,
-            }))
+    const toolResults = documents
+        .filter((document): document is Extract<SearchIndexDocument, { type: 'tool' }> => document.type === 'tool')
+        .map((tool) => ({
+            score: getToolSearchScore({
+                categoryName: tool.categoryName,
+                title: tool.title,
+                description: tool.description,
+                url: tool.url,
+                tags: tool.tags,
+            }, query),
+            tool,
+        }))
+        .filter(({ score, tool }) =>
+            score > 0 ||
+            includesQuery([tool.categoryName, tool.title, tool.description, tool.url, ...tool.tags], query)
         )
-        .filter(({ categoryName, tool }) =>
-            includesQuery(
-                [
-                    categoryName,
-                    tool.title,
-                    tool.description,
-                    tool.url,
-                    ...tool.tags,
-                ],
-                query
-            )
-        )
+        .sort((left, right) => right.score - left.score)
         .slice(0, 5)
-        .map(({ categoryName, tool }) => ({
+        .map(({ tool }) => ({
             type: 'tool' as const,
             title: tool.title,
             slug: tool.url,
             href: tool.url,
             description: tool.description,
-            meta: categoryName,
+            meta: tool.categoryName,
             external: true,
             tags: tool.tags,
         }));

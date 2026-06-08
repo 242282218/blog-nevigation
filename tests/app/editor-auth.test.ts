@@ -18,6 +18,7 @@ import {
 } from '@/lib/editor-auth';
 import { resetEditorAuthRateLimitForTests } from '@/lib/editor-auth-rate-limit';
 import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
+import { getEditorAuditLogFilePath } from '@/lib/editor-audit-log';
 import {
   cleanupTempDirectories,
   createTempDirectory,
@@ -392,6 +393,10 @@ describe('editor auth API', () => {
     const response = await POST(createJsonRequest({ secret: 'correct-secret' }));
     const setCookie = response.headers.get('set-cookie');
     const legacySession = await createLegacyEditorSessionValue('correct-secret');
+    const auditEvents = fs.readFileSync(getEditorAuditLogFilePath(), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { action: string; outcome: string });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });
@@ -400,6 +405,12 @@ describe('editor auth API', () => {
     expect(setCookie).toContain('SameSite=lax');
     expect(setCookie).toContain('Max-Age=28800');
     expect(setCookie).not.toContain(legacySession);
+    expect(auditEvents).toContainEqual(
+      expect.objectContaining({
+        action: 'auth.login.success',
+        outcome: 'success',
+      })
+    );
   });
 
   it('honors COOKIE_SECURE=false for production HTTP deployments', async () => {

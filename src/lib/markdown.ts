@@ -34,6 +34,11 @@ export interface PostMeta {
     revisionNotes: ArticleRevisionNote[];
 }
 
+export interface SearchablePost {
+    meta: PostMeta;
+    content: string;
+}
+
 const contentDir = path.join(process.cwd(), 'content', 'seeds', 'posts');
 
 function isRuntimeArticleSourceEnabled(): boolean {
@@ -162,6 +167,16 @@ async function getRuntimePostsAsync(): Promise<PostMeta[]> {
     runtimePostsCache = posts;
     runtimePostsCacheTime = now;
     return posts;
+}
+
+async function getRuntimeSearchablePostsAsync(): Promise<SearchablePost[]> {
+    return (await readArticlesFromDiskAsync())
+        .filter((article) => isPublicArticleStatus(article.status))
+        .map((article) => ({
+            meta: mapArticleToPostMeta(article),
+            content: article.content,
+        }))
+        .sort((first, second) => comparePostsByDateDescending(first.meta, second.meta));
 }
 
 let seedPostsCache: PostMeta[] | null = null;
@@ -297,6 +312,42 @@ async function getSeedPostsAsync(): Promise<PostMeta[]> {
 
     seedPostsCache = result;
     seedPostsCacheTime = Date.now();
+    return result;
+}
+
+async function getSeedSearchablePostsAsync(): Promise<SearchablePost[]> {
+    const files = await findMarkdownFiles(contentDir);
+    const result = (await Promise.all(files.map(async (file) => {
+        const fileContent = await fsPromises.readFile(file, 'utf8');
+        const { data, content } = matter(fileContent);
+        const relativePath = path.relative(contentDir, file);
+        const sluggablePath = relativePath.replace(/\\/g, '/').replace(/\.md$/, '');
+        const meta: PostMeta = {
+            slug: sluggablePath,
+            slugArray: sluggablePath.split('/'),
+            title: data.title || path.basename(file, '.md'),
+            date: normalizeDate(data.date),
+            description: data.description || '',
+            updatedDate: normalizeDate(data.updatedDate),
+            tags: normalizeStringArray(data.tags),
+            kind: normalizeArticleKind(data.kind),
+            status: normalizeArticleStatus(data.status),
+            category: normalizeOptionalString(data.category),
+            series: normalizeOptionalString(data.series),
+            featured: Boolean(data.featured),
+            readingMinutes: Math.max(1, Math.ceil(countMarkdownWords(content) / 450)),
+            sourceLinks: normalizeSourceLinks(data.sourceLinks),
+            revisionNotes: normalizeRevisionNotes(data.revisionNotes),
+        };
+
+        return {
+            meta,
+            content,
+        };
+    })))
+        .filter((post) => isPublicArticleStatus(post.meta.status))
+        .sort((first, second) => comparePostsByDateDescending(first.meta, second.meta));
+
     return result;
 }
 
@@ -484,6 +535,15 @@ export async function getPostsAsync(): Promise<PostMeta[]> {
         }
     }
     return getSeedPostsAsync();
+}
+
+export async function getSearchablePostsAsync(): Promise<SearchablePost[]> {
+    if (isRuntimeArticleSourceEnabled()) {
+        if (await isRuntimeArticleDataAvailableAsync()) {
+            return getRuntimeSearchablePostsAsync();
+        }
+    }
+    return getSeedSearchablePostsAsync();
 }
 
 export function getPostBySlugArray(slugArray: string[]) {

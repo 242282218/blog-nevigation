@@ -110,6 +110,11 @@ describe('EditorHomePage', () => {
       createJsonResponse({
         enabled: true,
         configured: true,
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
       })
     );
 
@@ -120,6 +125,65 @@ describe('EditorHomePage', () => {
 
     expect(getButtonByText(container, '同步云端').disabled).toBe(false);
     expect(getButtonByText(container, '云端恢复').disabled).toBe(false);
+    expect(container.textContent).toContain('云端备份队列正常');
+    expect(container.textContent).toContain('pending 0 / failed 0');
+  });
+
+  it('shows failed remote backup health and retries failed tasks', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          enabled: true,
+          configured: true,
+          backupQueue: {
+            pending: 0,
+            failed: 1,
+            failedTasks: [
+              {
+                id: 'failed-task-1',
+                reason: 'articles-write',
+                attempts: 3,
+                lastAttemptAt: '2026-06-08T00:00:00.000Z',
+                lastError: 'R2 upload failed.',
+              },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          retried: 1,
+          backupQueue: {
+            pending: 1,
+            failed: 0,
+            failedTasks: [],
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorHomePage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('云端备份存在失败任务');
+    expect(container.textContent).toContain('articles-write：R2 upload failed.');
+    expect(getButtonByText(container, '重试失败').disabled).toBe(false);
+
+    await act(async () => {
+      getButtonByText(container, '重试失败').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/data/backup/remote/retry',
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
+    expect(container.textContent).toContain('失败的云端备份已重新加入队列。');
+    expect(container.textContent).toContain('云端备份正在排队');
+    expect(container.textContent).toContain('pending 1 / failed 0');
   });
 
   it('keeps local restore available through an accessible file input', async () => {

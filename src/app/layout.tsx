@@ -30,6 +30,11 @@ export async function generateMetadata(): Promise<Metadata> {
             default: settings.siteName,
         },
         description: settings.siteDescription,
+        alternates: {
+            types: {
+                'application/rss+xml': '/feed.xml',
+            },
+        },
         openGraph: {
             title: settings.siteName,
             description: settings.siteDescription,

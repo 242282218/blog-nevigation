@@ -13,6 +13,8 @@ import {
 } from '@/lib/site-settings';
 import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 import { resetEditorRuntimeCaches } from '@/lib/editor-runtime-cache';
+import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
+import { writeSearchIndexForData } from '@/lib/search-index';
 import { writeJsonAtomically as writeJsonAtomicallyShared } from '@/lib/atomic-json-writer';
 import {
     commitResourceManifestTransaction,
@@ -460,6 +462,24 @@ function writeJsonFile(filePath: string | null, value: unknown): void {
     }
 }
 
+function refreshSearchIndexAfterResourceWrite(
+    resource: EditorDataResourceName,
+    value: unknown
+): void {
+    if (resource !== 'articles' && resource !== 'navigation') {
+        return;
+    }
+
+    try {
+        writeSearchIndexForData({
+            articles: resource === 'articles' ? value as Article[] : readArticlesFromDisk(),
+            navigation: resource === 'navigation' ? value as Category[] : readNavigationFromDisk(),
+        });
+    } catch (error) {
+        console.warn('[editor-data-storage] Failed to refresh derived search index:', error);
+    }
+}
+
 function createRestoreDirectory(root: string, name: string): string {
     const directory = path.join(root, `${name}-${process.pid}-${Date.now()}`);
     fs.mkdirSync(directory, { recursive: true });
@@ -853,6 +873,7 @@ function commitEditorDataResourceWrite(
     }
 
     const manifest = readEditorDataManifest();
+    const previousManifest = manifest.resources[resource] ?? null;
     const resourceManifest = createResourceManifest(value);
     const nextManifest: EditorDataManifest = {
         version: MANIFEST_VERSION,
@@ -875,6 +896,17 @@ function commitEditorDataResourceWrite(
     setCachedJsonFile(resourcePath, value);
     setCachedJsonFile(manifestPath, nextManifest);
     resetEditorRuntimeCaches();
+    refreshSearchIndexAfterResourceWrite(resource, value);
+    recordEditorAuditEvent({
+        action: 'data.write',
+        resource,
+        outcome: 'success',
+        metadata: {
+            previousRevision: previousManifest?.revision ?? null,
+            revision: resourceManifest.revision,
+            hash: resourceManifest.hash,
+        },
+    });
 
     return resourceManifest;
 }
@@ -1214,6 +1246,24 @@ export async function restoreEditorDataRootAtomically(data: {
             restoreCommitted = true;
             restoreStateResolved = true;
             clearEditorDataCache();
+            try {
+                writeSearchIndexForData({
+                    articles: data.articles,
+                    navigation: data.navigation,
+                });
+            } catch (error) {
+                console.warn('[editor-data-storage] Failed to refresh derived search index after restore:', error);
+            }
+            recordEditorAuditEvent({
+                action: 'data.restore',
+                resource: 'editor-data',
+                outcome: 'success',
+                metadata: {
+                    articles: data.articles.length,
+                    navigation: data.navigation.length,
+                    manifestRevision: manifest.updatedAt,
+                },
+            });
 
             return manifest;
         } catch (error) {
