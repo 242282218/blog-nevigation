@@ -571,6 +571,67 @@ describe('EditorSettingsPage', () => {
     expect(container.textContent).toContain('运行时数据目录不可用，当前无法保存。');
   });
 
+  it('shows project and Docker version metadata in settings', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+          version: {
+            projectVersion: '2.0.1',
+            displayVersion: 'v2.0.1-build.42',
+            runtime: 'docker',
+            docker: {
+              enabled: true,
+              imageTag: 'v2.0.1-build.42',
+              revision: 'abcdef1234567890',
+              buildTime: '2026-06-08T08:00:00Z',
+            },
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            accessKeyId: '',
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'default',
+            message: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('版本信息');
+    expect(container.textContent).toContain('v2.0.1-build.42');
+    expect(container.textContent).toContain('2.0.1');
+    expect(container.textContent).toContain('Docker 镜像');
+    expect(container.textContent).toContain('abcdef123456');
+    expect(container.textContent).toContain('2026-06-08T08:00:00Z');
+  });
+
   it('syncs remote backups from settings through the resource endpoint', async () => {
     fetchMock
       .mockResolvedValueOnce(

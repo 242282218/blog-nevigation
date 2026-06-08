@@ -8,6 +8,7 @@ import {
     SITE_SETTING_KEYS,
     type SiteSettings,
 } from '@/lib/site-settings';
+import type { AppVersionInfo } from '@/lib/app-version';
 import { CloudflareR2SettingsPanel } from './CloudflareR2SettingsPanel';
 import { createEditorCsrfHeaders } from '../../editor-csrf';
 import { LogoutButton } from '../../components/LogoutButton';
@@ -30,6 +31,7 @@ type SettingsResponse = {
     persistent?: boolean;
     settings?: SiteSettings;
     revision?: string | null;
+    version?: AppVersionInfo;
     message?: string;
 };
 
@@ -183,10 +185,21 @@ function trimSettings(settings: SiteSettings): SiteSettings {
     return nextSettings;
 }
 
+function formatVersionValue(value: string | null | undefined): string {
+    return value?.trim() || '未注入';
+}
+
+function formatRevision(value: string | null | undefined): string {
+    const revision = value?.trim();
+
+    return revision ? revision.slice(0, 12) : '未注入';
+}
+
 export default function EditorSettingsPage() {
     const [settings, setSettings] = useState<SiteSettings>(createDefaultSiteSettings);
     const [persistent, setPersistent] = useState(false);
     const [revision, setRevision] = useState<string | null>(null);
+    const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState<SettingsMessage | null>(null);
@@ -213,6 +226,7 @@ export default function EditorSettingsPage() {
                     setSettings(payload?.settings ?? createDefaultSiteSettings());
                     setPersistent(Boolean(payload?.persistent));
                     setRevision(typeof payload?.revision === 'string' ? payload.revision : null);
+                    setVersionInfo(payload?.version ?? null);
                 }
             } catch (error) {
                 console.error('Failed to load site settings:', error);
@@ -308,6 +322,7 @@ export default function EditorSettingsPage() {
 
                 setSettings(payload?.settings ?? nextSettings);
                 setRevision(typeof payload?.revision === 'string' ? payload.revision : revision);
+                setVersionInfo(payload?.version ?? versionInfo);
                 setMessage({ tone: 'success', text: '站点设置已保存，刷新公开页面后生效。' });
             } catch (error) {
                 console.error('Failed to save site settings:', error);
@@ -319,7 +334,7 @@ export default function EditorSettingsPage() {
                 setIsSaving(false);
             }
         },
-        [persistent, revision, settings]
+        [persistent, revision, settings, versionInfo]
     );
 
     return (
@@ -565,6 +580,53 @@ export default function EditorSettingsPage() {
                         </form>
 
                         <aside className="space-y-4">
+                            {versionInfo ? (
+                                <EditorPanel className="p-4">
+                                    <div className="flex items-center gap-2 text-sm font-medium text-fg">
+                                        <Info className="h-4 w-4 text-accent" />
+                                        版本信息
+                                    </div>
+                                    <dl className="mt-3 space-y-3 text-sm">
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">current</dt>
+                                            <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                                {versionInfo.displayVersion}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">project</dt>
+                                            <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                                {versionInfo.projectVersion}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">runtime</dt>
+                                            <dd className="mt-1 text-muted">
+                                                {versionInfo.runtime === 'docker' ? 'Docker 镜像' : '本地运行'}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">image tag</dt>
+                                            <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                                {formatVersionValue(versionInfo.docker.imageTag)}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">revision</dt>
+                                            <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                                {formatRevision(versionInfo.docker.revision)}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="font-mono text-xs text-subtle">build time</dt>
+                                            <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                                {formatVersionValue(versionInfo.docker.buildTime)}
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                </EditorPanel>
+                            ) : null}
+
                             <EditorPanel className="p-4">
                                 <div className="flex items-center gap-2 text-sm font-medium text-fg">
                                     <Info className="h-4 w-4 text-accent" />

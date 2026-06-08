@@ -130,6 +130,10 @@ describe('repository structure migration', () => {
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
         expect(dockerfile).toContain('FROM node:24-alpine AS runner');
+        expect(dockerfile).toContain('ARG APP_VERSION=unknown');
+        expect(dockerfile).toContain('ARG APP_IMAGE_TAG=unknown');
+        expect(dockerfile).toContain('ARG APP_REVISION=unknown');
+        expect(dockerfile).toContain('ARG APP_BUILD_TIME=unknown');
         expect(dockerfile).toContain('RUN npm ci --prefer-offline --no-audit');
         expect(dockerfile).not.toContain('--legacy-peer-deps');
         expect(dockerfile).toContain('npm run lint');
@@ -150,6 +154,11 @@ describe('repository structure migration', () => {
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/public ./public');
         expect(dockerfile).toContain('COPY --from=builder --chown=nextjs:nodejs /app/content/seeds ./content/seeds');
         expect(dockerfile).toContain('COPY --chmod=755 deploy/docker-entrypoint.sh /usr/local/bin/');
+        expect(dockerfile).toContain('ENV BLOG_NAVIGATION_DOCKER=true');
+        expect(dockerfile).toContain('ENV BLOG_NAVIGATION_VERSION=${APP_VERSION}');
+        expect(dockerfile).toContain('ENV BLOG_NAVIGATION_IMAGE_TAG=${APP_IMAGE_TAG}');
+        expect(dockerfile).toContain('ENV BLOG_NAVIGATION_REVISION=${APP_REVISION}');
+        expect(dockerfile).toContain('ENV BLOG_NAVIGATION_BUILD_TIME=${APP_BUILD_TIME}');
         expect(dockerfile).toContain('ENTRYPOINT ["docker-entrypoint.sh"]');
         expect(dockerfile).toContain('CMD ["node", "server.js"]');
         expect(dockerEntrypoint).toContain('mkdir -p "$DATA_ROOT/articles" "$DATA_ROOT/navigation" "$DATA_ROOT/settings"');
@@ -219,6 +228,11 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).toContain('image-digest: ${{ steps.candidate-build.outputs.digest }}');
         expect(deployWorkflow).toContain('ci-${GITHUB_SHA}-${GITHUB_RUN_ATTEMPT}');
         expect(deployWorkflow).toContain('Build and push candidate Docker image');
+        expect(deployWorkflow).toContain('APP_VERSION=${{ steps.package-version.outputs.version }}');
+        expect(deployWorkflow).toContain('APP_IMAGE_TAG=${{ steps.package-version.outputs.runtime_image_tag }}');
+        expect(deployWorkflow).toContain('APP_REVISION=${{ github.sha }}');
+        expect(deployWorkflow).toContain('APP_BUILD_TIME=${{ steps.package-version.outputs.build_time }}');
+        expect(deployWorkflow).toContain('APP_IMAGE_TAG=${{ steps.smoke-package-version.outputs.image_tag }}');
         expect(deployWorkflow).toContain('Run candidate Docker smoke test');
         expect(deployWorkflow).toContain('CANDIDATE_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}');
         expect(deployWorkflow).toContain('image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.candidate-build.outputs.digest }}');

@@ -14,6 +14,7 @@ import {
     saveAppRuntimeConfig,
     type EditableAppRuntimeConfig,
 } from '@/lib/app-runtime-config';
+import { getAppVersionInfo } from '@/lib/app-version';
 import { ensureEditorSession, ensureEditorWriteRequest } from '@/lib/editor-api-auth';
 import {
     RuntimeEditorAuthInvalidSecretError,
@@ -85,6 +86,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             config: getSafeAppRuntimeConfig(),
             editable: getEditableAppRuntimeConfig(),
+            version: getAppVersionInfo(),
         });
     } catch (error) {
         const invalidResponse = createInvalidRuntimeConfigResponse(error);
@@ -151,6 +153,7 @@ export async function PUT(request: NextRequest) {
                 success: true,
                 config: getSafeAppRuntimeConfig(),
                 editable: getEditableAppRuntimeConfig(),
+                version: getAppVersionInfo(),
             });
         }
 
@@ -159,6 +162,7 @@ export async function PUT(request: NextRequest) {
             success: true,
             config: getSafeAppRuntimeConfig(),
             editable: getEditableAppRuntimeConfig(),
+            version: getAppVersionInfo(),
         }), sessionValue);
     } catch (error) {
         const invalidResponse = createInvalidRuntimeConfigResponse(error);

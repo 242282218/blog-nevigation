@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { KeyRound, Save, ShieldCheck } from 'lucide-react';
+import { Info, KeyRound, Save, ShieldCheck } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
+import type { AppVersionInfo } from '@/lib/app-version';
 import { createEditorCsrfHeaders } from '../../../editor-csrf';
 import { LogoutButton } from '../../../components/LogoutButton';
 import {
@@ -22,6 +23,7 @@ type RuntimeConfigResponse = {
             requiresRestart?: boolean;
         };
     };
+    version?: AppVersionInfo;
     message?: string;
 };
 
@@ -160,11 +162,22 @@ function RuntimeToggle({
     );
 }
 
+function formatVersionValue(value: string | null | undefined): string {
+    return value?.trim() || '未注入';
+}
+
+function formatRevision(value: string | null | undefined): string {
+    const revision = value?.trim();
+
+    return revision ? revision.slice(0, 12) : '未注入';
+}
+
 export default function RuntimeSettingsPage() {
     const [form, setForm] = useState<RuntimeForm>(createEmptyRuntimeForm);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [requiresRestart, setRequiresRestart] = useState(false);
+    const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null);
     const [message, setMessage] = useState<RuntimeMessage | null>(null);
     const [confirmSecretError, setConfirmSecretError] = useState<RuntimeFieldError | null>(null);
 
@@ -196,6 +209,7 @@ export default function RuntimeSettingsPage() {
                     confirmEditorSecret: '',
                 });
                 setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+                setVersionInfo(payload?.version ?? null);
             } catch (error) {
                 if (isMounted) {
                     setMessage({
@@ -276,6 +290,7 @@ export default function RuntimeSettingsPage() {
                 confirmEditorSecret: '',
             }));
             setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+            setVersionInfo(payload?.version ?? versionInfo);
             setMessage({
                 tone: 'success',
                 text: payload?.config?.dataRoot?.requiresRestart
@@ -290,7 +305,7 @@ export default function RuntimeSettingsPage() {
         } finally {
             setIsSaving(false);
         }
-    }, [form]);
+    }, [form, versionInfo]);
 
     return (
         <EditorPage className="pb-12">
@@ -332,6 +347,59 @@ export default function RuntimeSettingsPage() {
                         <div className="animate-pulse text-sm text-subtle">加载运行时配置...</div>
                     </EditorPanel>
                 ) : (
+                    <>
+                    {versionInfo ? (
+                        <EditorPanel className="p-4">
+                            <div className="mb-4 flex items-start gap-3">
+                                <Info className="mt-1 h-5 w-5 text-accent" />
+                                <div>
+                                    <h2 className="text-lg font-semibold text-fg">版本信息</h2>
+                                    <p className="mt-1 text-sm leading-6 text-muted">
+                                        当前后台服务对应的项目版本和 Docker 镜像构建信息。
+                                    </p>
+                                </div>
+                            </div>
+                            <dl className="grid gap-3 text-sm md:grid-cols-2">
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">current</dt>
+                                    <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                        {versionInfo.displayVersion}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">project</dt>
+                                    <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                        {versionInfo.projectVersion}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">runtime</dt>
+                                    <dd className="mt-1 text-muted">
+                                        {versionInfo.runtime === 'docker' ? 'Docker 镜像' : '本地运行'}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">image tag</dt>
+                                    <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                        {formatVersionValue(versionInfo.docker.imageTag)}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">revision</dt>
+                                    <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                        {formatRevision(versionInfo.docker.revision)}
+                                    </dd>
+                                </div>
+                                <div>
+                                    <dt className="font-mono text-xs text-subtle">build time</dt>
+                                    <dd className="mt-1 break-all font-mono text-xs text-muted">
+                                        {formatVersionValue(versionInfo.docker.buildTime)}
+                                    </dd>
+                                </div>
+                            </dl>
+                        </EditorPanel>
+                    ) : null}
+
                     <form id="runtime-config-form" onSubmit={handleSubmit} className="grid gap-4">
                         <EditorPanel className="p-4">
                             <div className="mb-4 flex items-start gap-3">
@@ -409,6 +477,7 @@ export default function RuntimeSettingsPage() {
                             </div>
                         </EditorPanel>
                     </form>
+                    </>
                 )}
             </EditorMain>
         </EditorPage>

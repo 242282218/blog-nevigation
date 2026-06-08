@@ -26,6 +26,11 @@ const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
   TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
+  BLOG_NAVIGATION_DOCKER: process.env.BLOG_NAVIGATION_DOCKER,
+  BLOG_NAVIGATION_VERSION: process.env.BLOG_NAVIGATION_VERSION,
+  BLOG_NAVIGATION_IMAGE_TAG: process.env.BLOG_NAVIGATION_IMAGE_TAG,
+  BLOG_NAVIGATION_REVISION: process.env.BLOG_NAVIGATION_REVISION,
+  BLOG_NAVIGATION_BUILD_TIME: process.env.BLOG_NAVIGATION_BUILD_TIME,
 };
 const tempDirectories: string[] = [];
 
@@ -240,6 +245,33 @@ describe('editor data write APIs', () => {
         resource: 'settings',
       })
     );
+  });
+
+  it('returns project and Docker version metadata with editor settings', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    process.env.BLOG_NAVIGATION_DOCKER = 'true';
+    process.env.BLOG_NAVIGATION_VERSION = '2.0.1';
+    process.env.BLOG_NAVIGATION_IMAGE_TAG = 'v2.0.1-build.42';
+    process.env.BLOG_NAVIGATION_REVISION = 'abcdef1234567890';
+    process.env.BLOG_NAVIGATION_BUILD_TIME = '2026-06-08T08:00:00Z';
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const response = await getSettings(await createAuthedEditorRequest('http://localhost/api/data/settings'));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.version).toEqual({
+      projectVersion: '2.0.1',
+      displayVersion: 'v2.0.1-build.42',
+      runtime: 'docker',
+      docker: {
+        enabled: true,
+        imageTag: 'v2.0.1-build.42',
+        revision: 'abcdef1234567890',
+        buildTime: '2026-06-08T08:00:00Z',
+      },
+    });
   });
 
   it('rejects malformed article JSON without writing or remote sync', async () => {

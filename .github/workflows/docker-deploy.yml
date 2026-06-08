@@ -62,6 +62,22 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
+      - name: Read package version for smoke image
+        id: smoke-package-version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid package version: ${VERSION}" >&2
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "image_tag=smoke-${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "${GITHUB_OUTPUT}"
+
       - name: Set up Docker Buildx
         # docker/setup-buildx-action@v4
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
@@ -77,6 +93,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ steps.smoke-package-version.outputs.version }}
+            APP_IMAGE_TAG=${{ steps.smoke-package-version.outputs.image_tag }}
+            APP_REVISION=${{ github.sha }}
+            APP_BUILD_TIME=${{ steps.smoke-package-version.outputs.build_time }}
 
       - name: Run Docker smoke test
         shell: bash
@@ -224,6 +245,13 @@ jobs:
 
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
           echo "build_tag=v${VERSION}-build.${GITHUB_RUN_NUMBER}" >> "${GITHUB_OUTPUT}"
+          echo "build_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            echo "runtime_image_tag=v${VERSION}" >> "${GITHUB_OUTPUT}"
+          else
+            echo "runtime_image_tag=v${VERSION}-build.${GITHUB_RUN_NUMBER}" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Extract metadata
         id: meta
@@ -239,7 +267,7 @@ jobs:
             type=raw,value=${{ steps.package-version.outputs.build_tag }},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
           labels: |
-            org.opencontainers.image.version=${{ steps.package-version.outputs.build_tag }}
+            org.opencontainers.image.version=${{ steps.package-version.outputs.runtime_image_tag }}
             org.opencontainers.image.title=blog-navigation
             org.opencontainers.image.description=Developer blog and navigation site built with Next.js
             org.opencontainers.image.source=${{ github.repositoryUrl }}
@@ -267,6 +295,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+          build-args: |
+            APP_VERSION=${{ steps.package-version.outputs.version }}
+            APP_IMAGE_TAG=${{ steps.package-version.outputs.runtime_image_tag }}
+            APP_REVISION=${{ github.sha }}
+            APP_BUILD_TIME=${{ steps.package-version.outputs.build_time }}
           provenance: true
           sbom: true
 

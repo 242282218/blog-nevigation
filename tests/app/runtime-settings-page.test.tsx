@@ -103,4 +103,44 @@ describe('RuntimeSettingsPage', () => {
     expect(document.activeElement).toBe(confirmInput);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('shows Docker version metadata on the runtime settings page', async () => {
+    fetchMock.mockResolvedValueOnce(
+      createJsonResponse({
+        editable: {
+          publicSiteUrl: 'https://example.com',
+          cookieSecure: true,
+          trustedProxyIps: ['127.0.0.1'],
+          dataRootPath: '/var/lib/blog-navigation',
+        },
+        config: {
+          dataRoot: {
+            pendingPath: null,
+            requiresRestart: false,
+          },
+        },
+        version: {
+          projectVersion: '2.0.1',
+          displayVersion: 'v2.0.1-build.42',
+          runtime: 'docker',
+          docker: {
+            enabled: true,
+            imageTag: 'v2.0.1-build.42',
+            revision: 'abcdef1234567890',
+            buildTime: '2026-06-08T08:00:00Z',
+          },
+        },
+      })
+    );
+
+    await act(async () => {
+      root.render(<RuntimeSettingsPage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('版本信息');
+    expect(container.textContent).toContain('v2.0.1-build.42');
+    expect(container.textContent).toContain('Docker 镜像');
+    expect(container.textContent).toContain('abcdef123456');
+  });
 });

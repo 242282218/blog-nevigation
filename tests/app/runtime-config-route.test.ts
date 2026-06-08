@@ -35,6 +35,11 @@ const ORIGINAL_ENV = {
   R2_PREFIX: process.env.R2_PREFIX,
   R2_ENDPOINT: process.env.R2_ENDPOINT,
   R2_SNAPSHOT_ON_WRITE: process.env.R2_SNAPSHOT_ON_WRITE,
+  BLOG_NAVIGATION_DOCKER: process.env.BLOG_NAVIGATION_DOCKER,
+  BLOG_NAVIGATION_VERSION: process.env.BLOG_NAVIGATION_VERSION,
+  BLOG_NAVIGATION_IMAGE_TAG: process.env.BLOG_NAVIGATION_IMAGE_TAG,
+  BLOG_NAVIGATION_REVISION: process.env.BLOG_NAVIGATION_REVISION,
+  BLOG_NAVIGATION_BUILD_TIME: process.env.BLOG_NAVIGATION_BUILD_TIME,
 };
 const TEMP_DIRECTORIES: string[] = [];
 
@@ -383,6 +388,13 @@ describe('runtime setup and config APIs', () => {
         }),
       })
     );
+    expect(payload.version).toEqual(
+      expect.objectContaining({
+        runtime: 'local',
+        projectVersion: expect.any(String),
+        displayVersion: expect.any(String),
+      })
+    );
 
     const getResponse = await getRuntimeConfig(createRequestWithResponseCookies(response, 'http://localhost/api/runtime-config'));
     const getPayload = await getResponse.json();
@@ -393,6 +405,12 @@ describe('runtime setup and config APIs', () => {
         publicSiteUrl: 'https://runtime.example',
         cookieSecure: false,
         trustedProxyIps: ['198.51.100.1'],
+      })
+    );
+    expect(getPayload.version).toEqual(
+      expect.objectContaining({
+        runtime: 'local',
+        projectVersion: expect.any(String),
       })
     );
 

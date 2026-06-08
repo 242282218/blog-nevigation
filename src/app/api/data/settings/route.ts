@@ -21,6 +21,7 @@ import {
     writeSiteSettingsToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { getAppVersionInfo } from '@/lib/app-version';
 import { parseSiteSettings } from '@/lib/site-settings';
 
 type SettingsRequestBody = {
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
             persistent: isEditorDataRootConfigured(),
             revision: resourceManifest?.revision ?? null,
             settings,
+            version: getAppVersionInfo(),
         });
     } catch (error) {
         const invalidResponse = createEditorDataFileInvalidResponse(error);
@@ -134,5 +136,6 @@ export async function PUT(request: NextRequest) {
         settings,
         revision: writeResult.resourceManifest.revision,
         remoteBackup,
+        version: getAppVersionInfo(),
     });
 }
