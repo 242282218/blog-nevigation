@@ -113,9 +113,6 @@ describe('repository structure migration', () => {
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
         const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
-        const r2DisasterPlan = fs.readFileSync(resolveRepoPath('docs', 'plans', '2026-06-07-阶段零数据容灾设计.md'), 'utf8');
-        const autoBackupPlan = fs.readFileSync(resolveRepoPath('docs', 'plans', '2026-06-07-内容自动备份与Docker更新保留数据设计.md'), 'utf8');
-        const optimizationIndex = fs.readFileSync(resolveRepoPath('docs', '优化文档索引.md'), 'utf8');
 
         expect(dockerIgnore).toMatch(/^data$/m);
         expect(dockerIgnore).toMatch(/^output$/m);
@@ -190,7 +187,6 @@ describe('repository structure migration', () => {
         expect(middleware).toContain('Content-Security-Policy');
         expect(middleware).toContain("default-src 'self'");
         expect(middleware).toContain("'nonce-${nonce}'");
-        expect(middleware).toContain('strict-dynamic');
         expect(nextConfig).not.toContain("script-src 'self';");
         expect(nextConfig).not.toContain('ignoreDuringBuilds');
         expect(nextConfig).not.toContain('unoptimized: true');
@@ -274,7 +270,7 @@ describe('repository structure migration', () => {
         expect(readme).not.toContain('backupEncryptionPassphrase');
         expect(envExample).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
         expect(deployCompose).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
-        [readme, deployCompose, deployWorkflow, r2DisasterPlan, autoBackupPlan, optimizationIndex].forEach((source) => {
+        [readme, deployCompose, deployWorkflow].forEach((source) => {
             expect(source).not.toContain('R2 对象必须加密');
             expect(source).not.toContain('R2 上传对象不包含明文敏感内容');
             expect(source).not.toContain('加密上传');

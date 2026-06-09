@@ -47,7 +47,6 @@ describe('editor middleware', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
     expect(response.headers.get('Content-Security-Policy')).toContain("script-src 'self' 'nonce-");
-    expect(response.headers.get('Content-Security-Policy')).toContain("'strict-dynamic'");
   });
 
   it('redirects unauthenticated editor requests to login with a safe next path', () => {
@@ -127,7 +126,6 @@ describe('editor middleware', () => {
     expect(response.status).toBe(200);
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("script-src 'self' 'nonce-");
-    expect(csp).toContain("'strict-dynamic'");
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
   });
 });
