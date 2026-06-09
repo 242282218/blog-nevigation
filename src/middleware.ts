@@ -18,8 +18,8 @@ function normalizeCspHeader(value: string): string {
 
 function createContentSecurityPolicy(nonce: string): string {
     const scriptSrc = process.env.NODE_ENV === 'development'
-        ? `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`
-        : `'self' 'nonce-${nonce}' 'strict-dynamic'`;
+        ? `'self' 'nonce-${nonce}' 'unsafe-eval'`
+        : `'self' 'nonce-${nonce}'`;
 
     return normalizeCspHeader(`
         default-src 'self';
@@ -27,7 +27,7 @@ function createContentSecurityPolicy(nonce: string): string {
         style-src 'self' 'unsafe-inline';
         img-src 'self' data: blob: https:;
         font-src 'self' data:;
-        connect-src 'self';
+        connect-src 'self' https://cloudflareinsights.com;
         frame-ancestors 'none';
         base-uri 'self';
         form-action 'self'
