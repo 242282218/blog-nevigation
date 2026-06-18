@@ -119,13 +119,24 @@ describe('editor middleware', () => {
     expect(response.headers.get('location')).toBeNull();
   });
 
-  it('attaches CSP nonce headers to non-editor document routes', () => {
+  it('uses a static-compatible CSP for non-editor document routes', () => {
     const response = middleware(createEditorRequest('/blog'));
     const csp = response.headers.get('Content-Security-Policy');
 
     expect(response.status).toBe(200);
     expect(csp).toContain("default-src 'self'");
-    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain('https://static.cloudflareinsights.com');
+    expect(csp).not.toContain('nonce-');
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
+  });
+
+  it('keeps setup on nonce CSP because it is a configuration page', () => {
+    const response = middleware(createEditorRequest('/setup'));
+    const csp = response.headers.get('Content-Security-Policy');
+
+    expect(response.status).toBe(200);
+    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(csp).not.toContain("'unsafe-inline' https://static.cloudflareinsights.com");
   });
 });

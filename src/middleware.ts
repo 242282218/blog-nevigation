@@ -9,14 +9,14 @@ const CSP_NONCE_HEADER = 'x-nonce';
 
 interface SecurityHeaders {
     contentSecurityPolicy: string;
-    requestHeaders: Headers;
+    requestHeaders?: Headers;
 }
 
 function normalizeCspHeader(value: string): string {
     return value.replace(/\s{2,}/g, ' ').trim();
 }
 
-function createContentSecurityPolicy(nonce: string): string {
+function createNonceContentSecurityPolicy(nonce: string): string {
     const scriptSrc = process.env.NODE_ENV === 'development'
         ? `'self' 'nonce-${nonce}' 'unsafe-eval'`
         : `'self' 'nonce-${nonce}'`;
@@ -34,9 +34,27 @@ function createContentSecurityPolicy(nonce: string): string {
     `);
 }
 
-function createSecurityHeaders(request: NextRequest): SecurityHeaders {
+function createStaticContentSecurityPolicy(): string {
+    const scriptSrc = process.env.NODE_ENV === 'development'
+        ? `'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com`
+        : `'self' 'unsafe-inline' https://static.cloudflareinsights.com`;
+
+    return normalizeCspHeader(`
+        default-src 'self';
+        script-src ${scriptSrc};
+        style-src 'self' 'unsafe-inline';
+        img-src 'self' data: blob: https:;
+        font-src 'self' data:;
+        connect-src 'self' https://cloudflareinsights.com;
+        frame-ancestors 'none';
+        base-uri 'self';
+        form-action 'self'
+    `);
+}
+
+function createNonceSecurityHeaders(request: NextRequest): SecurityHeaders {
     const nonce = Buffer.from(crypto.randomUUID()).toString('base64');
-    const contentSecurityPolicy = createContentSecurityPolicy(nonce);
+    const contentSecurityPolicy = createNonceContentSecurityPolicy(nonce);
     const requestHeaders = new Headers(request.headers);
 
     requestHeaders.set(CSP_NONCE_HEADER, nonce);
@@ -48,12 +66,20 @@ function createSecurityHeaders(request: NextRequest): SecurityHeaders {
     };
 }
 
+function createStaticSecurityHeaders(): SecurityHeaders {
+    return {
+        contentSecurityPolicy: createStaticContentSecurityPolicy(),
+    };
+}
+
 function createSecurityHeadersResponse(securityHeaders: SecurityHeaders): NextResponse {
-    const response = NextResponse.next({
-        request: {
-            headers: securityHeaders.requestHeaders,
-        },
-    });
+    const response = securityHeaders.requestHeaders
+        ? NextResponse.next({
+            request: {
+                headers: securityHeaders.requestHeaders,
+            },
+        })
+        : NextResponse.next();
 
     response.headers.set('Content-Security-Policy', securityHeaders.contentSecurityPolicy);
 
@@ -76,10 +102,14 @@ function setSecurityHeaders(response: NextResponse, securityHeaders: SecurityHea
 
 export function middleware(request: NextRequest) {
     const { pathname, search } = request.nextUrl;
-    const securityHeaders = createSecurityHeaders(request);
+    const isEditorDocument = pathname.startsWith('/editor');
+    const usesNonceCsp = isEditorDocument || pathname === '/setup';
+    const securityHeaders = usesNonceCsp
+        ? createNonceSecurityHeaders(request)
+        : createStaticSecurityHeaders();
     const response = createSecurityHeadersResponse(securityHeaders);
 
-    if (!pathname.startsWith('/editor') || pathname === '/editor/login') {
+    if (!isEditorDocument || pathname === '/editor/login') {
         return response;
     }
 
