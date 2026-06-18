@@ -494,38 +494,90 @@ jobs:
       url: ${{ vars.SITE_URL || 'https://blog.example.com' }}
 
     steps:
-      - name: Validate deployment secrets
+      - name: Resolve deployment target
+        id: target
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_SITE_HOST: ${{ secrets.DEPLOY_SITE_HOST }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          missing=0
-          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_PATH; do
-            if [ -z "${!name}" ]; then
-              echo "::error::Missing secret ${name}"
-              missing=1
-            fi
-          done
+          set -euo pipefail
 
-          if [ "$missing" -ne 0 ]; then
+          target_host="${DEPLOY_HOST}"
+          target_user="${DEPLOY_USER:-root}"
+          target_port="${DEPLOY_PORT:-22}"
+          target_path="${DEPLOY_PATH:-/opt/blog-nevigation}"
+          site_host="${DEPLOY_SITE_HOST:-blog.999639.xyz}"
+
+          if [ -z "${DEPLOY_SSH_KEY}" ] && [ -z "${DEPLOY_PASSWORD}" ]; then
+            echo "::error::Set either DEPLOY_SSH_KEY or DEPLOY_PASSWORD."
             exit 1
           fi
+
+          if [ -z "${target_host}" ]; then
+            if [ -z "${CLOUDFLARE_API_TOKEN}" ]; then
+              echo "::error::Set DEPLOY_HOST, or set CLOUDFLARE_API_TOKEN so the workflow can resolve ${site_host}."
+              exit 1
+            fi
+
+            zone_name="$(awk -F. '{ print $(NF-1) "." $NF }' <<< "${site_host}")"
+            zone_id="$(
+              curl --fail --silent --show-error \
+                --request GET \
+                --url "https://api.cloudflare.com/client/v4/zones?name=${zone_name}" \
+                --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                --header "Content-Type: application/json" \
+              | jq -r '.result[0].id // empty'
+            )"
+
+            if [ -z "${zone_id}" ]; then
+              echo "::error::Could not resolve Cloudflare zone for ${site_host}."
+              exit 1
+            fi
+
+            target_host="$(
+              curl --fail --silent --show-error \
+                --request GET \
+                --url "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?name=${site_host}&per_page=1" \
+                --header "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                --header "Content-Type: application/json" \
+              | jq -r '.result[0].content // empty'
+            )"
+
+            if [ -z "${target_host}" ]; then
+              echo "::error::Could not resolve DNS record for ${site_host}."
+              exit 1
+            fi
+          fi
+
+          echo "::add-mask::${target_host}"
+          echo "host=${target_host}" >> "${GITHUB_OUTPUT}"
+          echo "user=${target_user}" >> "${GITHUB_OUTPUT}"
+          echo "port=${target_port}" >> "${GITHUB_OUTPUT}"
+          echo "path=${target_path}" >> "${GITHUB_OUTPUT}"
+          echo "site_host=${site_host}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved deployment target for ${site_host}."
 
       - name: Deploy via SSH
         # appleboy/ssh-action@v1
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ steps.target.outputs.user }}
+          port: ${{ steps.target.outputs.port }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script_stop: true
           script: |
             set -euo pipefail
 
-            DEPLOY_DIR="${{ secrets.DEPLOY_PATH }}"
+            DEPLOY_DIR="${{ steps.target.outputs.path }}"
             IMAGE_DIGEST="${{ needs.build-and-push.outputs.image-digest }}"
             IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${IMAGE_DIGEST}"
             LAST_GOOD_DIGEST_FILE="${DEPLOY_DIR}/.last-good-digest"
@@ -543,6 +595,11 @@ jobs:
             echo "========================================="
 
             cd "${DEPLOY_DIR}"
+
+            if [ ! -f "${DEPLOY_DIR}/.env" ]; then
+              echo "Missing ${DEPLOY_DIR}/.env; refusing to deploy because runtime config must be preserved."
+              exit 1
+            fi
 
             get_healthcheck_url() {
               local port
@@ -644,7 +701,7 @@ jobs:
             echo "| Item | Value |"
             echo "|------|-------|"
             echo "| Image | \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}\` |"
-            echo "| Target host | \`${{ secrets.DEPLOY_HOST }}\` |"
+            echo "| Target | \`${{ steps.target.outputs.site_host }}\` |"
             echo "| Trigger | ${{ github.event_name }} |"
             echo "| Commit | \`${{ github.sha }}\` |"
             echo "| Status | ${{ job.status }} |"
