@@ -329,7 +329,29 @@ def main() -> None:
         expect(mobile_page.locator("[data-editor-workspace]")).to_be_visible()
         assert_no_horizontal_overflow(mobile_page)
 
-        mobile_page.route(
+        mobile_context.close()
+
+        mobile_list_article = {
+            "id": "mobile-touch-target",
+            "slug": "mobile-touch-target",
+            "title": "Mobile Touch Target",
+            "date": "2026-05-27",
+            "description": "Mobile list action sizing check.",
+            "tags": ["smoke"],
+            "content": "# Mobile Touch Target",
+            "status": "published",
+            "kind": "essay",
+            "featured": False,
+            "createdAt": 1779820000000,
+            "updatedAt": 1779820000000,
+        }
+        mobile_list_context = create_authenticated_context(browser, BASE_URL, {"width": 390, "height": 844}, "local-dev-only-secret")
+        mobile_list_context.add_init_script(
+            f"""
+              window.localStorage.setItem('blog-local-articles', JSON.stringify([{json.dumps(mobile_list_article)}]));
+            """
+        )
+        mobile_list_context.route(
             "**/api/data/articles",
             lambda route: route.fulfill(
                 status=503,
@@ -337,24 +359,9 @@ def main() -> None:
                 body='{"message":"smoke list touch target uses local articles"}',
             ),
         )
-        mobile_page.evaluate(
-            """() => {
-              window.localStorage.setItem('blog-local-articles', JSON.stringify([{
-                id: 'mobile-touch-target',
-                slug: 'mobile-touch-target',
-                title: 'Mobile Touch Target',
-                date: '2026-05-27',
-                description: 'Mobile list action sizing check.',
-                tags: ['smoke'],
-                content: '# Mobile Touch Target',
-                status: 'published',
-                kind: 'essay',
-                featured: false,
-                createdAt: 1779820000000,
-                updatedAt: 1779820000000
-              }]));
-            }"""
-        )
+        mobile_page = mobile_list_context.new_page()
+        mobile_page.set_default_timeout(90000)
+        mobile_page.set_default_navigation_timeout(90000)
         mobile_page.goto(f"{BASE_URL}/editor/blog", wait_until="domcontentloaded", timeout=90000)
         expect(mobile_page.get_by_role("heading", name="博客管理")).to_be_visible()
         assert_min_touch_target(
@@ -411,6 +418,7 @@ def main() -> None:
         )
 
         mobile_page.screenshot(path=str(MOBILE_SCREENSHOT_PATH), full_page=True)
+        mobile_list_context.close()
         browser.close()
 
 
