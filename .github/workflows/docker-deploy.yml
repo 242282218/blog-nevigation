@@ -573,7 +573,6 @@ jobs:
           port: ${{ steps.target.outputs.port }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
-          script_stop: true
           script: |
             set -euo pipefail
 
