@@ -422,16 +422,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          while IFS= read -r tag; do
-            if [ -z "${tag}" ]; then
-              continue
-            fi
+          mapfile -t unique_tags < <(printf '%s\n' "${RELEASE_TAGS}" | sed '/^$/d' | sort -u)
 
+          if [ "${#unique_tags[@]}" -eq 0 ]; then
+            echo "No release tags were generated."
+            exit 1
+          fi
+
+          printf 'Promoting candidate digest to %s unique tag(s):\n' "${#unique_tags[@]}"
+          printf '  %s\n' "${unique_tags[@]}"
+
+          for tag in "${unique_tags[@]}"; do
             echo "Promoting ${CANDIDATE_IMAGE} to ${tag}"
             docker buildx imagetools create \
               --tag "${tag}" \
               "${CANDIDATE_IMAGE}"
-          done <<< "${RELEASE_TAGS}"
+          done
 
       - name: Write Docker release summary
         shell: bash
