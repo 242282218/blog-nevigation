@@ -23,6 +23,7 @@ type RuntimeConfigResponse = {
             requiresRestart?: boolean;
         };
     };
+    revision?: string | null;
     version?: AppVersionInfo;
     message?: string;
 };
@@ -177,6 +178,7 @@ export default function RuntimeSettingsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [requiresRestart, setRequiresRestart] = useState(false);
+    const [revision, setRevision] = useState<string | null>(null);
     const [versionInfo, setVersionInfo] = useState<AppVersionInfo | null>(null);
     const [message, setMessage] = useState<RuntimeMessage | null>(null);
     const [confirmSecretError, setConfirmSecretError] = useState<RuntimeFieldError | null>(null);
@@ -209,6 +211,7 @@ export default function RuntimeSettingsPage() {
                     confirmEditorSecret: '',
                 });
                 setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+                setRevision(payload?.revision ?? null);
                 setVersionInfo(payload?.version ?? null);
             } catch (error) {
                 if (isMounted) {
@@ -276,6 +279,7 @@ export default function RuntimeSettingsPage() {
                     },
                     editorSecret: form.editorSecret.trim(),
                     confirmEditorSecret: form.confirmEditorSecret.trim(),
+                    revision,
                 }),
             });
             const payload = (await response.json().catch(() => null)) as RuntimeConfigResponse | null;
@@ -290,6 +294,7 @@ export default function RuntimeSettingsPage() {
                 confirmEditorSecret: '',
             }));
             setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
+            setRevision(payload?.revision ?? revision);
             setVersionInfo(payload?.version ?? versionInfo);
             setMessage({
                 tone: 'success',
@@ -305,7 +310,7 @@ export default function RuntimeSettingsPage() {
         } finally {
             setIsSaving(false);
         }
-    }, [form, versionInfo]);
+    }, [form, revision, versionInfo]);
 
     return (
         <EditorPage className="pb-12">

@@ -9,14 +9,17 @@ import { POST as POST_SYNC } from '@/app/api/data/backup/remote/sync/route';
 import {
   downloadLatestBackupPayloadFromR2,
   getR2BackupStatus,
+  R2BackupPayloadTooLargeError,
   R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
+import { restoreEditorMediaAssetsFromR2 } from '@/lib/editor-media-remote';
 import {
   getRemoteBackupQueueStatus,
   retryFailedRemoteBackups,
   syncCurrentBackupToRemote,
 } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -39,13 +42,25 @@ vi.mock('@/lib/r2-backup-storage', () => {
     }
   }
 
+  class R2BackupPayloadTooLargeError extends Error {
+    constructor(public readonly limitBytes = 5 * 1024 * 1024) {
+      super(`R2 backup payload exceeds ${limitBytes} bytes.`);
+      this.name = 'R2BackupPayloadTooLargeError';
+    }
+  }
+
   return {
     R2BackupNotConfiguredError,
+    R2BackupPayloadTooLargeError,
     R2BackupSettingsInvalidError,
     downloadLatestBackupPayloadFromR2: vi.fn(),
     getR2BackupStatus: vi.fn(),
   };
 });
+
+vi.mock('@/lib/editor-media-remote', () => ({
+  restoreEditorMediaAssetsFromR2: vi.fn(),
+}));
 
 vi.mock('@/lib/editor-remote-backup', () => ({
   getRemoteBackupQueueStatus: vi.fn(),
@@ -53,11 +68,17 @@ vi.mock('@/lib/editor-remote-backup', () => ({
   syncCurrentBackupToRemote: vi.fn(),
 }));
 
+vi.mock('@/lib/public-cache-invalidation', () => ({
+  invalidatePublicContentCache: vi.fn(),
+}));
+
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedDownloadLatestBackupPayloadFromR2 = vi.mocked(downloadLatestBackupPayloadFromR2);
+const mockedRestoreEditorMediaAssetsFromR2 = vi.mocked(restoreEditorMediaAssetsFromR2);
 const mockedGetRemoteBackupQueueStatus = vi.mocked(getRemoteBackupQueueStatus);
 const mockedRetryFailedRemoteBackups = vi.mocked(retryFailedRemoteBackups);
 const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
+const mockedInvalidatePublicContentCache = vi.mocked(invalidatePublicContentCache);
 
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
@@ -97,6 +118,13 @@ beforeEach(() => {
     pending: 0,
     failed: 0,
     failedTasks: [],
+  });
+  mockedRestoreEditorMediaAssetsFromR2.mockResolvedValue({
+    total: 0,
+    restored: 0,
+    skipped: 0,
+    failed: 0,
+    failures: [],
   });
   mockedRetryFailedRemoteBackups.mockReturnValue({
     retried: 0,
@@ -406,6 +434,45 @@ describe('remote backup API', () => {
     );
   });
 
+  it('reports oversized remote backup downloads without treating the request body as too large', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockRejectedValue(
+      new R2BackupPayloadTooLargeError(128 * 1024 * 1024)
+    );
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        code: 'remote_backup_too_large',
+        message: expect.stringContaining('R2 远端备份文件超过'),
+      })
+    );
+    expect(payload.code).not.toBe('body_too_large');
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid R2 restore payloads without replacing local data', async () => {
     const dataRoot = createTempDataRoot();
     const existingArticle = {
@@ -526,6 +593,7 @@ describe('remote backup API', () => {
       reason: 'remote-restore',
       writeSnapshot: true,
     });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('remote-restore');
   });
 
   it('does not restore remote data when the pre-restore snapshot fails', async () => {

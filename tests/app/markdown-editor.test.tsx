@@ -244,4 +244,71 @@ describe('MarkdownEditor', () => {
 
     expect(onChange).toHaveBeenLastCalledWith('> Existing quote');
   });
+
+  it('uploads pasted clipboard images and replaces the temporary markdown placeholder', async () => {
+    let currentValue = 'Intro\n';
+    const onChange = vi.fn((nextValue: string) => {
+      currentValue = nextValue;
+      act(() => {
+        root.render(
+          <MarkdownEditor
+            value={currentValue}
+            onChange={onChange}
+            onUploadPastedImage={onUploadPastedImage}
+            textareaId="markdown-editor-test"
+          />
+        );
+      });
+    });
+    const imageFile = new File(['image'], 'clipboard.png', { type: 'image/png' });
+    const onUploadPastedImage = vi.fn(async () => '![clipboard](/media/files/2026/06/image.png)');
+
+    act(() => {
+      root.render(
+        <MarkdownEditor
+          value={currentValue}
+          onChange={onChange}
+          onUploadPastedImage={onUploadPastedImage}
+          textareaId="markdown-editor-test"
+        />
+      );
+    });
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('#markdown-editor-test');
+    const pasteEvent = new Event('paste', {
+      bubbles: true,
+      cancelable: true,
+    }) as Event & {
+      clipboardData: {
+        items: Array<{
+          kind: string;
+          type: string;
+          getAsFile: () => File;
+        }>;
+      };
+    };
+
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => imageFile,
+          },
+        ],
+      },
+    });
+
+    await act(async () => {
+      textarea?.focus();
+      textarea?.setSelectionRange(currentValue.length, currentValue.length);
+      textarea?.dispatchEvent(pasteEvent);
+      await Promise.resolve();
+    });
+
+    expect(onUploadPastedImage).toHaveBeenCalledWith(imageFile);
+    expect(onChange).toHaveBeenCalledWith(expect.stringContaining('![图片上传中 1](uploading://clipboard-image-'));
+    expect(onChange).toHaveBeenLastCalledWith('Intro\n![clipboard](/media/files/2026/06/image.png)');
+  });
 });

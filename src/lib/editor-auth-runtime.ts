@@ -524,6 +524,10 @@ export function getRuntimeEditorAuthSetupToken(): string | null {
     return token ? token : null;
 }
 
+function isProductionRuntime(): boolean {
+    return process.env.NODE_ENV === 'production';
+}
+
 function isRuntimeEditorAuthAlreadyInitialized(): boolean {
     return Boolean(readRuntimeEditorAuthConfig() || getEditorAccessToken());
 }
@@ -533,22 +537,26 @@ export function isRuntimeEditorAuthSetupEnabled(): boolean {
         return false;
     }
 
-    if (getRuntimeEditorAuthSetupToken()) {
+    if (!isProductionRuntime()) {
         return true;
     }
 
-    return true;
-}
-
-export function isRuntimeEditorAuthSetupTokenRequired(): boolean {
     return Boolean(getRuntimeEditorAuthSetupToken());
 }
 
+export function isRuntimeEditorAuthSetupTokenRequired(): boolean {
+    return isRuntimeEditorAuthSetupEnabled() && Boolean(getRuntimeEditorAuthSetupToken());
+}
+
 export function isValidRuntimeEditorAuthSetupToken(candidate: string): boolean {
+    if (!isRuntimeEditorAuthSetupEnabled()) {
+        return false;
+    }
+
     const setupToken = getRuntimeEditorAuthSetupToken();
 
     if (!setupToken) {
-        return !isRuntimeEditorAuthAlreadyInitialized();
+        return true;
     }
 
     return safeEqual(candidate.trim(), setupToken);

@@ -170,4 +170,67 @@ describe('useNavigationData', () => {
     expect(container.textContent).toContain('服务器返回的导航冲突数据格式无效');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('flushes pending navigation edits with keepalive before unload', async () => {
+    fetchMock.mockResolvedValue(
+      createJsonResponse({
+        categories: [remoteCategory],
+        revision: 'revision-1',
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        <TestNavigationData
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      currentApi?.updateCategory(0, { name: 'Unload Tools' });
+    });
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/data/navigation', expect.objectContaining({
+      keepalive: true,
+      method: 'PUT',
+      body: expect.stringContaining('Unload Tools'),
+    }));
+  });
+
+  it('loads valid navigation updates from storage events in another tab', async () => {
+    fetchMock.mockResolvedValue(
+      createJsonResponse({
+        categories: [remoteCategory],
+        revision: 'revision-1',
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        <TestNavigationData
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'blog-navigation-data',
+        newValue: JSON.stringify([localCategory]),
+        storageArea: window.localStorage,
+      }));
+    });
+
+    expect(currentApi?.data).toHaveLength(1);
+    expect(currentApi?.data[0]?.name).toBe('Local Tools');
+  });
 });

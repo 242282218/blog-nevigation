@@ -43,8 +43,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1052.0",
+    "@smithy/node-http-handler": "^4.7.4",
     "date-fns": "^3.6.0",
-    "framer-motion": "^11.0.0",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.390.0",
@@ -81,7 +81,7 @@
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.4.0",
-    "vite": "^7.3.2",
+    "vite": "^7.3.5",
     "vitest": "^4.0.18"
   },
   "engines": {
@@ -106,6 +106,7 @@
     "jsdom": {
       "undici": "7.25.0"
     },
+    "esbuild": "0.28.1",
     "postcss": "$postcss"
   }
 }

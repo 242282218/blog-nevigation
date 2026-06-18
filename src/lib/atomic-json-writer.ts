@@ -27,14 +27,24 @@ export function fsyncDirectory(directoryPath: string): void {
     }
 }
 
-export function writeJsonAtomically(filePath: string, value: unknown): void {
+export function writeJsonAtomically(
+    filePath: string,
+    value: unknown,
+    options: { mode?: number } = {}
+): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
 
     try {
         fs.writeFileSync(tempFilePath, JSON.stringify(value, null, 2), 'utf8');
+        if (options.mode !== undefined) {
+            fs.chmodSync(tempFilePath, options.mode);
+        }
         fsyncFile(tempFilePath);
         fs.renameSync(tempFilePath, filePath);
+        if (options.mode !== undefined) {
+            fs.chmodSync(filePath, options.mode);
+        }
         fsyncDirectory(path.dirname(filePath));
     } catch (error) {
         fs.rmSync(tempFilePath, { force: true });

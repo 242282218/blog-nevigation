@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PUT } from '@/app/api/setup/route';
+import { PUT, GET } from '@/app/api/setup/route';
 import { resetAppRuntimeConfigCacheForTests } from '@/lib/app-runtime-config';
 import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
 import {
@@ -17,6 +17,8 @@ const ORIGINAL_ENV = {
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
   EDITOR_AUTH_CONFIG_FILE: process.env.EDITOR_AUTH_CONFIG_FILE,
   EDITOR_RUNTIME_AUTH_SETUP_TOKEN: process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN,
+  EDITOR_ALLOW_RUNTIME_AUTH_SETUP: process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP,
+  NODE_ENV: process.env.NODE_ENV,
   COOKIE_SECURE: process.env.COOKIE_SECURE,
   TRUSTED_PROXY_IPS: process.env.TRUSTED_PROXY_IPS,
   NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
@@ -70,6 +72,89 @@ afterEach(() => {
 });
 
 describe('setup API R2 flow', () => {
+  it('rejects first setup in production when runtime auth setup is not enabled', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createTempDataRoot();
+    vi.stubEnv('NODE_ENV', 'production');
+
+    const response = await PUT(createSetupRequest({
+      ...createBaseSetupBody(dataRoot),
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('首次初始化未启用'),
+      })
+    );
+  });
+
+  it('rejects first setup in production when setup opt-in is enabled without a setup token', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createTempDataRoot();
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP = 'true';
+
+    const response = await PUT(createSetupRequest({
+      ...createBaseSetupBody(dataRoot),
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('首次初始化未启用'),
+      })
+    );
+  });
+
+  it('allows first setup in production when a setup token is configured', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createTempDataRoot();
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
+
+    const response = await PUT(createSetupRequest({
+      ...createBaseSetupBody(dataRoot),
+      setupToken: 'setup-token',
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(expect.objectContaining({ success: true }));
+  });
+
   it('lets first setup explicitly skip R2 and saves disabled settings', async () => {
     clearRuntimeEnv();
     const dataRoot = createTempDataRoot();
@@ -216,5 +301,59 @@ describe('setup API R2 flow', () => {
     expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
     expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
     expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
+  });
+});
+
+describe('setup API GET', () => {
+  it('returns full initialization info before setup is complete', async () => {
+    clearRuntimeEnv();
+    createTempDataRoot();
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        setupCompleted: false,
+        authConfigured: expect.any(Boolean),
+        setupEnabled: expect.any(Boolean),
+        editable: expect.any(Object),
+        r2Settings: expect.any(Object),
+      })
+    );
+  });
+
+  it('returns only setupCompleted after setup is complete', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createTempDataRoot();
+
+    const setupResponse = await PUT(createSetupRequest({
+      ...createBaseSetupBody(dataRoot),
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    }));
+
+    expect(setupResponse.status).toBe(200);
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({ setupCompleted: true });
+    expect(payload).not.toHaveProperty('editable');
+    expect(payload).not.toHaveProperty('r2Settings');
+    expect(payload).not.toHaveProperty('r2Status');
+    expect(payload).not.toHaveProperty('config');
+    expect(payload).not.toHaveProperty('authConfigured');
   });
 });

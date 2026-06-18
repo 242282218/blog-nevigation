@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { Category, Tool } from '@/app/types/navigation';
 import defaultNavData from '@/content/seeds/navigation/data/tools.json';
 import { useSyncedResource } from '@/app/hooks/useSyncedResource';
@@ -146,6 +146,23 @@ async function saveNavDataToServer(
   }
 }
 
+function flushNavDataToServer(
+  categories: Category[],
+  context: { revision: string | null }
+): void {
+  void fetch(NAVIGATION_API_PATH, {
+    method: 'PUT',
+    credentials: 'include',
+    keepalive: true,
+    headers: createEditorCsrfHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ categories, revision: context.revision }),
+  }).catch((error: unknown) => {
+    console.error('Failed to flush navigation before unload:', error);
+  });
+}
+
 export function useNavigationData() {
   const { data, setData, isLoaded, lastConflictAt, lastRemoteLoadError, lastRemoteSaveError } = useSyncedResource<Category[]>({
     initialValue: () => parseNavigationData(defaultNavData) ?? [],
@@ -153,7 +170,32 @@ export function useNavigationData() {
     saveLocal: saveNavDataToStorage,
     loadRemote: loadNavDataFromServer,
     saveRemote: saveNavDataToServer,
+    flushRemote: flushNavDataToServer,
   });
+
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage || event.key !== STORAGE_KEY || event.newValue === null) {
+        return;
+      }
+
+      try {
+        const parsed = parseNavigationData(JSON.parse(event.newValue));
+
+        if (parsed) {
+          setData(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to sync navigation data from localStorage event:', error);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [setData]);
 
   const addCategory = useCallback((category: Omit<Category, 'tools'> & { tools?: Tool[] }): Category => {
     const newCategory: Category = {

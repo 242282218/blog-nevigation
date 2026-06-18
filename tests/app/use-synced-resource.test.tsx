@@ -427,4 +427,41 @@ describe('useSyncedResource', () => {
     });
     expect(container.textContent).toBe('second-local-edit');
   });
+
+  it('flushes pending local changes before unload', async () => {
+    const loadRemote = vi.fn().mockResolvedValue({
+      data: ['remote'],
+      revision: 'revision-1',
+    });
+    const saveRemote = vi.fn().mockResolvedValue({
+      revision: 'revision-2',
+    });
+    const saveLocal = vi.fn();
+    let setResourceData: ((value: string[]) => void) | null = null;
+
+    await act(async () => {
+      root.render(
+        <TestSyncedResource
+          loadRemote={loadRemote}
+          saveLocal={saveLocal}
+          saveRemote={saveRemote}
+          onReady={(setData) => {
+            setResourceData = setData;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      setResourceData?.(['remote', 'local-change']);
+    });
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(saveLocal).toHaveBeenCalledWith(['remote', 'local-change']);
+    expect(saveRemote).toHaveBeenCalledWith(['remote', 'local-change'], {
+      revision: 'revision-1',
+    });
+  });
 });

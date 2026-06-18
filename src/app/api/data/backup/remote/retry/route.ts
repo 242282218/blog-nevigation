@@ -1,9 +1,7 @@
 import { NextRequest } from 'next/server';
 import {
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
 } from '@/lib/editor-api-auth';
-import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
 import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import { createRemoteBackupRetryFailedResponse } from '../actions';
 
@@ -12,10 +10,6 @@ export async function POST(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     const response = createRemoteBackupRetryFailedResponse();

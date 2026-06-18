@@ -3,7 +3,7 @@ import { readNavigationFromDiskAsync } from '@/lib/editor-data-storage';
 import { NavigationDirectory } from './NavigationDirectory';
 import { createOgImagePath } from '@/lib/site-url';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 300;
 
 export async function generateMetadata(): Promise<Metadata> {
     const title = '常用链接导航';

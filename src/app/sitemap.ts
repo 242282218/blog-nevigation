@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 import { getPostsAsync } from '@/lib/markdown';
 import { getSiteUrl } from '@/lib/site-url';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 3600;
 
 function createUrl(pathname: string): string {
     return new URL(pathname, getSiteUrl()).toString();

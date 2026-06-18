@@ -52,6 +52,7 @@ type RemoteBackupQueueStatus = {
 type CloudflareR2Response = {
     persistent?: boolean;
     settings?: CloudflareR2Settings;
+    revision?: string | null;
     status?: CloudflareR2Status;
     backupQueue?: RemoteBackupQueueStatus;
     message?: string;
@@ -263,6 +264,7 @@ export function CloudflareR2SettingsPanel() {
     const [bootstrapForm, setBootstrapForm] = useState<CloudflareR2BootstrapForm>(createEmptyCloudflareR2BootstrapForm);
     const [status, setStatus] = useState<CloudflareR2Status | null>(null);
     const [backupQueue, setBackupQueue] = useState<RemoteBackupQueueStatus | null>(null);
+    const [revision, setRevision] = useState<string | null>(null);
     const [hasSecretAccessKey, setHasSecretAccessKey] = useState(false);
     const [persistent, setPersistent] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -293,6 +295,7 @@ export function CloudflareR2SettingsPanel() {
                     setPersistent(Boolean(payload?.persistent));
                     setForm(toCloudflareR2Form(payload?.settings));
                     setBootstrapForm(toCloudflareR2BootstrapForm(payload?.settings));
+                    setRevision(payload?.revision ?? null);
                     setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
                     setStatus(payload?.status ?? null);
                     setBackupQueue(payload?.backupQueue ?? null);
@@ -385,7 +388,10 @@ export function CloudflareR2SettingsPanel() {
                 headers: createEditorCsrfHeaders({
                     'Content-Type': 'application/json',
                 }),
-                body: JSON.stringify({ bootstrap: bootstrapForm }),
+                body: JSON.stringify({
+                    bootstrap: bootstrapForm,
+                    revision,
+                }),
             });
             const payload = (await response.json().catch(() => null)) as CloudflareR2Response | null;
 
@@ -400,6 +406,7 @@ export function CloudflareR2SettingsPanel() {
                 globalApiKey: '',
             });
             setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
+            setRevision(payload?.revision ?? revision);
             setStatus(payload?.status ?? null);
             setMessage({ tone: 'success', text: 'Cloudflare R2 已自动配置完成。' });
         } catch (error) {
@@ -411,7 +418,7 @@ export function CloudflareR2SettingsPanel() {
         } finally {
             setIsBootstrapping(false);
         }
-    }, [bootstrapForm]);
+    }, [bootstrapForm, revision]);
 
     const handleSubmit = useCallback(
         async (event: React.FormEvent<HTMLFormElement>) => {
@@ -442,7 +449,10 @@ export function CloudflareR2SettingsPanel() {
                     headers: createEditorCsrfHeaders({
                         'Content-Type': 'application/json',
                     }),
-                    body: JSON.stringify({ settings: form }),
+                    body: JSON.stringify({
+                        settings: form,
+                        revision,
+                    }),
                 });
                 const payload = (await response.json().catch(() => null)) as CloudflareR2Response | null;
 
@@ -452,9 +462,10 @@ export function CloudflareR2SettingsPanel() {
 
                 setForm(toCloudflareR2Form(payload?.settings));
                 setHasSecretAccessKey(Boolean(payload?.settings?.hasSecretAccessKey));
-            setStatus(payload?.status ?? null);
-            setBackupQueue(payload?.backupQueue ?? null);
-            setMessage({ tone: 'success', text: 'Cloudflare R2 配置已保存。' });
+                setRevision(payload?.revision ?? revision);
+                setStatus(payload?.status ?? null);
+                setBackupQueue(payload?.backupQueue ?? null);
+                setMessage({ tone: 'success', text: 'Cloudflare R2 配置已保存。' });
             } catch (error) {
                 console.error('Failed to save Cloudflare R2 settings:', error);
                 setMessage({
@@ -465,7 +476,7 @@ export function CloudflareR2SettingsPanel() {
                 setIsSaving(false);
             }
         },
-        [form, hasSecretAccessKey]
+        [form, hasSecretAccessKey, revision]
     );
 
     const handleRemoteAction = useCallback(async (action: 'sync' | 'restore') => {

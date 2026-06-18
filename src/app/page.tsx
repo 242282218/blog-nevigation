@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { EmptyState, PostCard } from './components/ui';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 
 export default async function Home() {
     const [posts, navigation, settings] = await Promise.all([

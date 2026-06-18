@@ -202,6 +202,55 @@ describe('search API', () => {
     );
   });
 
+  it('caps fallback tool documents and warns when navigation exceeds the limit', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      mockedGetSearchablePostsAsync.mockResolvedValue([]);
+      // The first FALLBACK_MAX_TOOLS tools do not match the query; the only
+      // matching tool sits at index FALLBACK_MAX_TOOLS, which gets truncated
+      // by the fallback cap, so no tool results should be returned.
+      mockedReadNavigationFromDiskAsync.mockResolvedValue([
+        {
+          name: 'Other Tools',
+          icon: 'link',
+          slug: 'other-tools',
+          tools: Array.from({ length: 1000 }, (_, index) => ({
+            icon: 'link',
+            title: `Other Tool ${index}`,
+            description: 'Unrelated description',
+            url: `https://example.com/other-${index}`,
+            tags: ['other'],
+          })),
+        },
+        {
+          name: 'Search Tools',
+          icon: 'search',
+          slug: 'search-tools',
+          tools: [
+            {
+              icon: 'link',
+              title: 'Search Target',
+              description: 'Should be capped out',
+              url: 'https://example.com/search-target',
+              tags: ['search'],
+            },
+          ],
+        },
+      ]);
+
+      const response = await GET(createRequest('search'));
+      const payload = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(payload).toEqual([]);
+      expect(consoleWarn).toHaveBeenCalledWith(
+        expect.stringContaining('Fallback path scanned 1001 tools; capping to 1000')
+      );
+    } finally {
+      consoleWarn.mockRestore();
+    }
+  });
+
   it('rate limits search scans per client IP', async () => {
     process.env.TRUSTED_PROXY_IPS = '203.0.113.1';
     mockedGetSearchablePostsAsync.mockResolvedValue([

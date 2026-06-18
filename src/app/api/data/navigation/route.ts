@@ -10,18 +10,17 @@ import {
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
     getEditorDataResourceManifest,
-    isEditorDataRootConfigured,
     readNavigationFromDisk,
     writeNavigationToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { parseNavigationData } from '@/lib/navigation-data';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 
 type NavigationRequestBody = {
     categories?: unknown;
@@ -40,7 +39,7 @@ export async function GET(request: NextRequest) {
         const resourceManifest = getEditorDataResourceManifest('navigation', categories);
 
         return NextResponse.json({
-            persistent: isEditorDataRootConfigured(),
+            persistent: true,
             revision: resourceManifest?.revision ?? null,
             categories,
         });
@@ -60,10 +59,6 @@ export async function PUT(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     let body: NavigationRequestBody | null;
@@ -128,6 +123,7 @@ export async function PUT(request: NextRequest) {
     const remoteBackup = queueCurrentBackupToRemote({
         reason: 'navigation-write',
     });
+    invalidatePublicContentCache('navigation-write');
 
     return NextResponse.json({
         success: true,

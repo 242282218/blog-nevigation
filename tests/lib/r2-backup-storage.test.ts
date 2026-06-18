@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import {
   createEditorDataManifestHash,
   type EditorBackupPayload,
@@ -13,11 +14,13 @@ import {
   getEditableR2BackupSettings,
   getR2BackupConfig,
   getR2BackupStatus,
-  R2BackupSettingsInvalidError,
   R2BackupPayloadTooLargeError,
+  R2BackupSettingsInvalidError,
   saveEditableR2BackupSettings,
   uploadBackupPayloadToR2,
+  uploadMediaAssetToR2,
 } from '@/lib/r2-backup-storage';
+import type { EditorMediaAsset } from '@/lib/editor-media-storage';
 
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
@@ -33,6 +36,8 @@ const ORIGINAL_ENV = {
 const tempDirectories: string[] = [];
 const sentCommands: Array<GetObjectCommand | PutObjectCommand> = [];
 let latestUploadedBody = '';
+let latestDownloadedBody: unknown = null;
+let latestDownloadedContentLength: number | null = null;
 
 vi.mock('@aws-sdk/client-s3', async () => {
   const actual = await vi.importActual<typeof import('@aws-sdk/client-s3')>('@aws-sdk/client-s3');
@@ -45,14 +50,23 @@ vi.mock('@aws-sdk/client-s3', async () => {
         sentCommands.push(command);
 
         if (command instanceof actual.PutObjectCommand) {
-          latestUploadedBody = String(command.input.Body);
+          if (command.input.ContentType === 'application/json; charset=utf-8') {
+            latestUploadedBody = String(command.input.Body);
+          }
           return {};
         }
 
         if (command instanceof actual.GetObjectCommand) {
+          const body = latestDownloadedBody ?? latestUploadedBody;
+          const contentLength = latestDownloadedContentLength ?? (
+            body instanceof Uint8Array
+              ? body.byteLength
+              : Buffer.byteLength(String(body), 'utf8')
+          );
+
           return {
-            Body: latestUploadedBody,
-            ContentLength: Buffer.byteLength(latestUploadedBody),
+            Body: body,
+            ContentLength: contentLength,
           };
         }
 
@@ -117,6 +131,8 @@ afterEach(() => {
 beforeEach(() => {
   sentCommands.length = 0;
   latestUploadedBody = '';
+  latestDownloadedBody = null;
+  latestDownloadedContentLength = null;
   vi.mocked(S3Client).mockClear();
 });
 
@@ -448,7 +464,70 @@ describe('R2 backup configuration', () => {
     await expect(downloadLatestBackupPayloadFromR2()).resolves.toEqual(payload);
   });
 
-  it('rejects plaintext backup bodies that exceed the R2 object size limit', async () => {
+  it('uploads media as separate R2 objects without changing plaintext JSON backups', async () => {
+    clearR2Env();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
+    process.env.R2_BUCKET = 'blog-data';
+    process.env.R2_ACCESS_KEY_ID = 'access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
+    const asset: EditorMediaAsset = {
+      id: 'a'.repeat(64),
+      path: `files/2026/06/${'a'.repeat(64)}.png`,
+      publicPath: `/media/files/2026/06/${'a'.repeat(64)}.png`,
+      mimeType: 'image/png',
+      size: 9,
+      hash: 'a'.repeat(64),
+      createdAt: '2026-06-17T00:00:00.000Z',
+      updatedAt: '2026-06-17T00:00:00.000Z',
+    };
+    const backupPayload: EditorBackupPayload = {
+      version: 1,
+      exportedAt: '2026-06-17T00:00:00.000Z',
+      source: 'local',
+      persistent: true,
+      dataRoot: '/var/lib/blog-navigation',
+      data: {
+        articles: [],
+        navigation: [],
+        settings: createDefaultSiteSettings(),
+        media: {
+          version: 1,
+          updatedAt: '2026-06-17T00:00:00.000Z',
+          assets: [asset],
+        },
+      },
+      manifest: {
+        version: 1,
+        updatedAt: '2026-06-17T00:00:00.000Z',
+        resources: {},
+      },
+    };
+
+    await uploadBackupPayloadToR2(backupPayload, {
+      reason: 'manual-sync',
+      writeSnapshot: false,
+    });
+    const jsonBackupBody = latestUploadedBody;
+    const mediaResult = await uploadMediaAssetToR2(asset, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]));
+
+    expect(mediaResult).toEqual({
+      enabled: true,
+      success: true,
+      key: `blog-navigation/media/${asset.path}`,
+    });
+    expect(sentCommands).toHaveLength(2);
+    expect(sentCommands[0].input.Key).toBe('blog-navigation/latest/backup.json');
+    expect(sentCommands[1].input.Key).toBe(`blog-navigation/media/${asset.path}`);
+    expect((sentCommands[1] as PutObjectCommand).input.ContentType).toBe('image/png');
+    expect((sentCommands[1] as PutObjectCommand).input.Body).toBeInstanceOf(Buffer);
+    expect(latestUploadedBody).toBe(jsonBackupBody);
+    expect(JSON.parse(latestUploadedBody)).toEqual(backupPayload);
+    expect(latestUploadedBody).not.toContain('data:image');
+    expect(latestUploadedBody).not.toContain('iVBOR');
+  });
+
+  it('uploads plaintext backup bodies larger than the former 5MB limit', async () => {
     clearR2Env();
     process.env.R2_BACKUP_ENABLED = 'true';
     process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
@@ -467,7 +546,7 @@ describe('R2 backup configuration', () => {
             id: 'large-article',
             title: 'Large Article',
             date: '2026-05-26',
-            description: 'Large enough to exceed the R2 object size limit.',
+            description: 'Large enough to exceed the former local backup body limit.',
             tags: ['backup'],
             content: 'x'.repeat(6 * 1024 * 1024),
             createdAt: 1,
@@ -487,8 +566,60 @@ describe('R2 backup configuration', () => {
     await expect(uploadBackupPayloadToR2(payload, {
       reason: 'manual-sync',
       writeSnapshot: false,
-    })).rejects.toBeInstanceOf(R2BackupPayloadTooLargeError);
-    expect(sentCommands).toHaveLength(0);
+    })).resolves.toEqual({
+      latestKey: 'blog-navigation/latest/backup.json',
+      snapshotKey: null,
+    });
+    expect(sentCommands).toHaveLength(1);
+    expect(Buffer.byteLength(latestUploadedBody, 'utf8')).toBeGreaterThan(5 * 1024 * 1024);
+    expect(JSON.parse(latestUploadedBody)).toEqual(payload);
+  });
+
+  it('rejects downloaded backup bodies that exceed the download safety limit', async () => {
+    clearR2Env();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
+    process.env.R2_BUCKET = 'blog-data';
+    process.env.R2_ACCESS_KEY_ID = 'access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'secret-key';
+    latestDownloadedBody = '{"version":1,"data":{"articles":[],"navigation":[]}}';
+    latestDownloadedContentLength = 129 * 1024 * 1024;
+
+    await expect(downloadLatestBackupPayloadFromR2()).rejects.toThrow(R2BackupPayloadTooLargeError);
+  });
+
+  it('configures bounded timeouts for the R2 client request handler', async () => {
+    clearR2Env();
+    process.env.R2_BACKUP_ENABLED = 'true';
+    process.env.R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef';
+    process.env.R2_BUCKET = 'blog-data';
+    process.env.R2_ACCESS_KEY_ID = 'timeout-check-access-key';
+    process.env.R2_SECRET_ACCESS_KEY = 'timeout-check-secret-key';
+
+    await uploadBackupPayloadToR2({
+      version: 1,
+      exportedAt: '2026-05-26T00:00:00.000Z',
+      source: 'local',
+      persistent: true,
+      dataRoot: '/var/lib/blog-navigation',
+      data: {
+        articles: [],
+        navigation: [],
+        settings: createDefaultSiteSettings(),
+      },
+      manifest: {
+        version: 1,
+        updatedAt: '2026-05-26T00:00:00.000Z',
+        resources: {},
+      },
+    }, {
+      reason: 'manual-sync',
+      writeSnapshot: false,
+    });
+
+    const firstCall = vi.mocked(S3Client).mock.calls[0]?.[0];
+
+    expect(firstCall?.requestHandler).toBeInstanceOf(NodeHttpHandler);
   });
 
   it('uploads immutable snapshots before updating latest', async () => {

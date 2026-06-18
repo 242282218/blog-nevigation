@@ -336,6 +336,7 @@ describe('Cloudflare R2 settings API', () => {
             endpoint: '',
             snapshotOnWrite: true,
           },
+          revision: getPayload.revision,
         }),
       })
     );
@@ -351,6 +352,69 @@ describe('Cloudflare R2 settings API', () => {
         snapshotOnWrite: true,
       })
     );
+  });
+
+  it('rejects stale settings revisions without overwriting R2 credentials', async () => {
+    clearR2Env();
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+    const createResponse = await PUT(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            accessKeyId: 'access-key',
+            secretAccessKey: 'secret-key',
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          revision: null,
+        }),
+      })
+    );
+    const createPayload = await createResponse.json();
+
+    expect(createResponse.status).toBe(200);
+    expect(createPayload.revision).toEqual(expect.any(String));
+
+    const staleResponse = await PUT(
+      await createAuthedEditorRequest('http://localhost/api/data/cloudflare-r2', {
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'stale-bucket',
+            accessKeyId: 'stale-access-key',
+            secretAccessKey: 'stale-secret-key',
+            prefix: 'stale-prefix',
+            endpoint: '',
+            snapshotOnWrite: true,
+          },
+          revision: null,
+        }),
+      })
+    );
+    const stalePayload = await staleResponse.json();
+    const storedSettings = JSON.parse(fs.readFileSync(getSettingsFile(process.env.BLOG_DATA_ROOT), 'utf8'));
+
+    expect(staleResponse.status).toBe(409);
+    expect(stalePayload).toEqual(expect.objectContaining({
+      message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+      revision: createPayload.revision,
+    }));
+    expect(storedSettings).toEqual(expect.objectContaining({
+      bucket: 'blog-data',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      prefix: 'blog-navigation',
+      snapshotOnWrite: false,
+    }));
   });
 
   it('automatically configures R2 from a one-time Cloudflare global key without returning secrets', async () => {

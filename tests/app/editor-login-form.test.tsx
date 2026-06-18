@@ -250,9 +250,14 @@ describe('EditorLoginForm', () => {
     });
 
     const input = container.querySelector<HTMLInputElement>('#editor-login-secret');
+    const runtimeConfigLink = container.querySelector<HTMLAnchorElement>(
+      'a[href="/editor/login?next=%2Feditor%2Fsettings%2Fruntime"]'
+    );
 
     expect(container.textContent).not.toContain('初次使用初始化引导');
+    expect(container.textContent).toContain('运行时配置');
     expect(input?.disabled).toBe(false);
+    expect(runtimeConfigLink?.textContent).toContain('登录后进入运行时配置');
   });
 
   it('keeps the home link touch friendly on mobile', () => {

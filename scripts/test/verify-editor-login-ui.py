@@ -53,6 +53,7 @@ def verify_page(browser, viewport, screenshot_name: str) -> None:
 
     expect(page.get_by_label("编辑口令")).to_be_visible()
     expect(page.get_by_role("button", name="进入编辑区")).to_be_visible()
+    expect(page.get_by_role("link", name="登录后进入运行时配置")).to_be_visible()
     expect(page.get_by_role("link", name="返回首页")).to_be_visible()
     assert_no_horizontal_overflow(page)
 
@@ -64,6 +65,10 @@ def verify_page(browser, viewport, screenshot_name: str) -> None:
         assert_min_touch_target(
             page.get_by_role("button", name="进入编辑区").first,
             "mobile editor login submit action",
+        )
+        assert_min_touch_target(
+            page.get_by_role("link", name="登录后进入运行时配置").first,
+            "mobile runtime config link",
         )
         assert_min_touch_target(
             page.get_by_role("link", name="返回首页").first,

@@ -120,7 +120,8 @@ jobs:
 
           cleanup() {
             docker logs --tail=100 blog-navigation-smoke || true
-            docker rm -f blog-navigation-smoke >/dev/null 2>&1 || true
+            docker stop -t 10 blog-navigation-smoke >/dev/null 2>&1 || true
+            docker rm blog-navigation-smoke >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
@@ -334,7 +335,8 @@ jobs:
 
           cleanup() {
             docker logs --tail=100 blog-navigation-candidate-smoke || true
-            docker rm -f blog-navigation-candidate-smoke >/dev/null 2>&1 || true
+            docker stop -t 10 blog-navigation-candidate-smoke >/dev/null 2>&1 || true
+            docker rm blog-navigation-candidate-smoke >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
 
@@ -463,7 +465,8 @@ jobs:
             echo "APP_DIR=/opt/blog-nevigation"
             echo "CONTAINER_NAME=blog-navigation"
             echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-            echo 'docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true'
+            echo 'docker stop -t 30 "${CONTAINER_NAME}" 2>/dev/null || true'
+            echo 'docker rm "${CONTAINER_NAME}" 2>/dev/null || true'
             echo 'docker run -d \'
             echo '  --name "${CONTAINER_NAME}" \'
             echo '  --restart unless-stopped \'

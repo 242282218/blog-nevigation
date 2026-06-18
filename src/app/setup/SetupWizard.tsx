@@ -44,6 +44,7 @@ type CloudflareR2SetupForm = {
 
 type SetupResponse = {
     authConfigured?: boolean;
+    setupEnabled?: boolean;
     setupTokenRequired?: boolean;
     editable?: {
         publicSiteUrl: string;
@@ -173,6 +174,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
     const [cloudflareR2SetupForm, setCloudflareR2SetupForm] = useState<CloudflareR2SetupForm>(createEmptyCloudflareR2SetupForm);
     const [r2RiskAccepted, setR2RiskAccepted] = useState(false);
     const [authConfigured, setAuthConfigured] = useState(false);
+    const [setupEnabled, setSetupEnabled] = useState(true);
     const [setupTokenRequired, setSetupTokenRequired] = useState(false);
     const [setupToken, setSetupToken] = useState('');
     const [editorSecret, setEditorSecret] = useState('');
@@ -201,6 +203,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                 }
 
                 setAuthConfigured(Boolean(payload?.authConfigured));
+                setSetupEnabled(payload?.setupEnabled !== false);
                 setSetupTokenRequired(Boolean(payload?.setupTokenRequired));
                 setRuntimeForm({
                     publicSiteUrl: payload?.editable?.publicSiteUrl ?? '',
@@ -315,6 +318,14 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
     const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
 
+        if (!authConfigured && !setupEnabled) {
+            setMessage({
+                tone: 'danger',
+                text: '服务器未开启网页首次初始化，请先配置 EDITOR_RUNTIME_AUTH_SETUP_TOKEN 或 EDITOR_ACCESS_TOKEN。',
+            });
+            return;
+        }
+
         if (!authConfigured && editorSecret.trim().length < 12) {
             setMessage({ tone: 'danger', text: '编辑口令至少需要 12 个字符。' });
             return;
@@ -381,7 +392,7 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                         type="submit"
                         form="setup-form"
                         variant="primary"
-                        disabled={isLoading || isSaving}
+                        disabled={isLoading || isSaving || (!authConfigured && !setupEnabled)}
                     >
                         <Save className="h-4 w-4" />
                         {isSaving ? '保存中...' : '完成初始化'}
@@ -426,6 +437,17 @@ export function SetupWizard({ nextPath }: { nextPath: string }) {
                                     <p className="mt-1 text-sm leading-6 text-muted">对应 EDITOR_ACCESS_TOKEN，保存为服务器运行时口令哈希。</p>
                                 </div>
                             </div>
+                            {!authConfigured && !setupEnabled ? (
+                                <StatusMessage tone="danger">
+                                    当前服务器未开启网页首次初始化。生产环境请先配置
+                                    {' '}
+                                    <code className="rounded border border-border-soft bg-surface px-1 py-0.5 font-mono text-xs">EDITOR_RUNTIME_AUTH_SETUP_TOKEN</code>
+                                    ，或直接提供
+                                    {' '}
+                                    <code className="rounded border border-border-soft bg-surface px-1 py-0.5 font-mono text-xs">EDITOR_ACCESS_TOKEN</code>
+                                    。
+                                </StatusMessage>
+                            ) : null}
                             <div className="grid gap-4 md:grid-cols-2">
                                 {setupTokenRequired ? (
                                     <div className="md:col-span-2">

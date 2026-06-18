@@ -792,10 +792,6 @@ export function getEditorDataRoot(): string | null {
     return getRuntimeDataRootPath();
 }
 
-export function isEditorDataRootConfigured(): boolean {
-    return true;
-}
-
 export function getArticlesDataFilePath(): string | null {
     const root = getEditorDataRoot();
     return root ? path.join(root, 'articles', ARTICLES_FILE_NAME) : null;
@@ -915,10 +911,6 @@ export function getEditorDataResourceManifest(
     resource: EditorDataResourceName,
     value: unknown
 ): EditorDataResourceManifest | null {
-    if (!isEditorDataRootConfigured()) {
-        return null;
-    }
-
     const manifest = readEditorDataManifest();
     const resourceManifest = manifest.resources[resource];
     const currentHash = hashJson(value);

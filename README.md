@@ -1,5 +1,7 @@
 # Blog Navigation Docker 部署指南
 
+> **命名说明**：GitHub 仓库名与 GHCR 镜像名为 `blog-nevigation`（历史拼写），容器名与 `package.json` 名为 `blog-navigation`（正确拼写）。部署目录 `/opt/blog-nevigation` 与镜像名保持一致，容器内部数据路径 `/var/lib/blog-navigation` 使用正确拼写。两者 intentionally 共存，重命名仓库需要 GitHub 侧操作，不影响运行。
+
 [![Docker Build & Publish](https://github.com/242282218/blog-nevigation/actions/workflows/docker-deploy.yml/badge.svg?branch=main)](https://github.com/242282218/blog-nevigation/actions/workflows/docker-deploy.yml)
 
 GHCR 镜像已公开，可以直接拉取：
@@ -137,7 +139,10 @@ create_runtime_backup() {
 
 run_container() {
   docker pull "${IMAGE}"
-  docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+    docker stop -t 30 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rm "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  fi
   docker run -d \
     --name "${CONTAINER_NAME}" \
     --restart unless-stopped \
@@ -229,7 +234,10 @@ create_runtime_backup() {
 
 create_runtime_backup
 docker pull "${IMAGE}"
-docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+  docker stop -t 30 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rm "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+fi
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --restart unless-stopped \
@@ -263,6 +271,14 @@ grep '^EDITOR_ACCESS_TOKEN=' /opt/blog-nevigation/.env
 R2 备份可以在 `/setup` 或 `/editor/settings` 里配置。保存后配置文件位于 `/opt/blog-nevigation/data/settings/cloudflare-r2.json`，它会完整优先于 `.env` 中的 R2 变量。
 
 启用 R2 后，编辑器每次保存文章、导航或站点设置都会把当前数据加入远端备份队列。服务运行期间还会每 3 小时自动写入一次 `latest` 和 `snapshot` 备份。R2 备份是明文 JSON，方便直接检查和迁移；Docker 更新前的本地 `.tgz` 备份只用于更新兜底，不能替代 R2 远端备份。
+
+文章编辑器支持直接粘贴剪切板图片。图片会先保存到本地持久化目录 `/opt/blog-nevigation/data/media/files/`，文章里插入 `/media/files/...` 链接；如果 R2 已启用，同一套 R2 自动备份配置会同时把图片上传到 `<R2_PREFIX>/media/files/...`。`latest/backup.json` 和 `snapshots/*.json` 仍然只保存明文 JSON 数据与媒体清单，不保存图片二进制或 base64；媒体文件是独立 R2 object。
+
+媒体同步不需要、也不支持单独的 `R2_MEDIA_*` 配置。恢复 R2 备份时，系统会先恢复 JSON 数据和媒体清单，再按清单从 R2 拉取本地缺失的图片。
+
+同一个运行时数据目录一次只应挂载给一个 `blog-navigation` 应用实例独占写入。不要把同一个 `/opt/blog-nevigation/data` 同时提供给多个容器、副本或独立 Next.js 进程。
+
+公开站点默认读取运行时数据目录。首次通过 `/setup` 完成初始化后，文章会从 `data/articles/articles.json` 读取，导航会从 `data/navigation/tools.json` 读取，完全替代仓库内置的 `content/seeds/` 种子数据。运行时文章源一旦初始化，就不会再回退混合 seeds 文章；如需恢复种子文章，请删除 `data/articles/articles.json` 或从备份恢复。
 
 如果改用 `.env` 启用 R2，至少需要配置：
 
@@ -332,8 +348,11 @@ if grep -q '^NEXT_PUBLIC_SITE_URL=http://.*:3000$' "${APP_DIR}/.env"; then
   sed -i "s#^\(NEXT_PUBLIC_SITE_URL=http://.*\):3000\$#\1:${APP_PORT}#" "${APP_DIR}/.env"
 fi
 
-docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 docker pull "${IMAGE}"
+if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+  docker stop -t 30 "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rm "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+fi
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --restart unless-stopped \
@@ -350,7 +369,8 @@ curl -I "http://127.0.0.1:${APP_PORT}/"
 停止服务：
 
 ```bash
-docker rm -f blog-navigation
+docker stop -t 30 blog-navigation
+docker rm blog-navigation
 ```
 
 备份数据和配置：

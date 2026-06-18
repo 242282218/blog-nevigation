@@ -38,6 +38,7 @@ interface UseSyncedResourceOptions<T> {
   saveLocal: (value: T) => void;
   loadRemote: () => Promise<T | RemoteResource<T> | RemoteLoadError | null>;
   saveRemote: (value: T, context: SaveRemoteContext) => Promise<SaveRemoteResult<T>>;
+  flushRemote?: (value: T, context: SaveRemoteContext) => void;
   saveDelayMs?: number;
 }
 
@@ -88,6 +89,7 @@ export function useSyncedResource<T>({
   saveLocal,
   loadRemote,
   saveRemote,
+  flushRemote,
   saveDelayMs = 300,
 }: UseSyncedResourceOptions<T>): SyncedResourceState<T> {
   const [data, setStateData] = useState<T>(initialValue);
@@ -113,11 +115,13 @@ export function useSyncedResource<T>({
   const queuedSaveRef = useRef<{ value: T; generation: number } | null>(null);
   const inFlightSaveRef = useRef<{ sequence: number; generation: number } | null>(null);
   const mountedRef = useRef(true);
+  const isLoadedRef = useRef(false);
   const handlersRef = useRef({
     loadLocal,
     saveLocal,
     loadRemote,
     saveRemote,
+    flushRemote,
   });
 
   const setData = useCallback<Dispatch<SetStateAction<T>>>((value) => {
@@ -256,18 +260,47 @@ export function useSyncedResource<T>({
       saveLocal,
       loadRemote,
       saveRemote,
+      flushRemote,
     };
-  }, [loadLocal, loadRemote, saveLocal, saveRemote]);
+  }, [flushRemote, loadLocal, loadRemote, saveLocal, saveRemote]);
+
+  const flushPendingBeforeUnload = useCallback(() => {
+    if (!isLoadedRef.current) {
+      return;
+    }
+
+    clearLocalSaveTimer();
+    clearPendingSaveTimer();
+
+    const handlers = handlersRef.current;
+    handlers.saveLocal(dataRef.current);
+
+    if (inFlightSaveRef.current || !queuedSaveRef.current) {
+      return;
+    }
+
+    const saveRequest = queuedSaveRef.current;
+
+    if (handlers.flushRemote) {
+      queuedSaveRef.current = null;
+      handlers.flushRemote(saveRequest.value, { revision: revisionRef.current });
+      return;
+    }
+
+    flushRemoteSaveQueue();
+  }, [clearLocalSaveTimer, clearPendingSaveTimer, flushRemoteSaveQueue]);
 
   useEffect(() => {
     mountedRef.current = true;
+    window.addEventListener('beforeunload', flushPendingBeforeUnload);
 
     return () => {
+      window.removeEventListener('beforeunload', flushPendingBeforeUnload);
       mountedRef.current = false;
       clearPendingSaveTimer();
       clearLocalSaveTimer();
     };
-  }, [clearLocalSaveTimer, clearPendingSaveTimer]);
+  }, [clearLocalSaveTimer, clearPendingSaveTimer, flushPendingBeforeUnload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -314,6 +347,7 @@ export function useSyncedResource<T>({
         }
       }
 
+      isLoadedRef.current = true;
       setIsLoaded(true);
     }
 

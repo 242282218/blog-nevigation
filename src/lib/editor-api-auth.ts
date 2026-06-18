@@ -99,15 +99,6 @@ export async function ensureEditorWriteRequest(request: NextRequest): Promise<Ne
     return null;
 }
 
-export function createEditorDataRootRequiredResponse(): NextResponse {
-    return NextResponse.json(
-        {
-            message: '运行时数据目录不可用，无法写入服务器。',
-        },
-        { status: 503 }
-    );
-}
-
 export function createEditorDataFileInvalidResponse(error: unknown): NextResponse | null {
     if (!(error instanceof EditorDataFileInvalidError)) {
         return null;

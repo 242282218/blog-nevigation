@@ -11,17 +11,16 @@ import { parseArticlesData } from '@/lib/article-data';
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
-    isEditorDataRootConfigured,
     getEditorDataResourceManifest,
     readArticlesFromDisk,
     writeArticlesToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 
 type ArticlesRequestBody = {
     articles?: unknown;
@@ -40,7 +39,7 @@ export async function GET(request: NextRequest) {
         const resourceManifest = getEditorDataResourceManifest('articles', articles);
 
         return NextResponse.json({
-            persistent: isEditorDataRootConfigured(),
+            persistent: true,
             revision: resourceManifest?.revision ?? null,
             articles,
         });
@@ -60,10 +59,6 @@ export async function PUT(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     let body: ArticlesRequestBody | null;
@@ -128,6 +123,7 @@ export async function PUT(request: NextRequest) {
     const remoteBackup = queueCurrentBackupToRemote({
         reason: 'articles-write',
     });
+    invalidatePublicContentCache('articles-write');
 
     return NextResponse.json({
         success: true,

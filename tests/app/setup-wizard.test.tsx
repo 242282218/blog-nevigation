@@ -25,6 +25,7 @@ function createJsonResponse(body: unknown, init?: ResponseInit): Response {
 function createSetupLoadResponse() {
   return {
     authConfigured: false,
+    setupEnabled: true,
     setupTokenRequired: false,
     editable: {
       publicSiteUrl: 'https://example.com',
@@ -212,5 +213,20 @@ describe('SetupWizard', () => {
         }),
       })
     );
+  });
+
+  it('blocks submit when runtime setup is disabled for first initialization', async () => {
+    fetchMock.mockResolvedValue(createJsonResponse({
+      ...createSetupLoadResponse(),
+      setupEnabled: false,
+    }));
+
+    await renderWizard();
+    await fillEditorSecret();
+
+    const submitButton = getButtonByText(container, '完成初始化');
+
+    expect(submitButton.disabled).toBe(true);
+    expect(container.textContent).toContain('服务器未开启网页首次初始化');
   });
 });

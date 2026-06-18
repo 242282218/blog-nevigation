@@ -9,7 +9,6 @@ import {
     getDefaultNavigationSeedFilePath,
     getEditorDataRoot,
     getEditorDataResourceManifest,
-    isEditorDataRootConfigured,
     readArticlesFromDisk,
     readArticlesFromDiskAsync,
     readEditorDataManifest,
@@ -23,6 +22,7 @@ import {
     writeArticlesToDiskIfRevisionMatches,
     EditorDataRestoreIncompleteError,
 } from '@/lib/editor-data-storage';
+import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 import { getSearchIndexFilePath } from '@/lib/search-index';
 import { getEditorAuditLogFilePath } from '@/lib/editor-audit-log';
 import { DEFAULT_SITE_SETTINGS } from '@/lib/site-settings';
@@ -92,7 +92,7 @@ describe('editor data storage configuration', () => {
         process.chdir(tempProjectRoot);
 
         expect(getEditorDataRoot()).toBe(path.join(tempProjectRoot, 'data'));
-        expect(isEditorDataRootConfigured()).toBe(true);
+        expect(getRuntimeDataRootPath()).toBe(path.join(tempProjectRoot, 'data'));
     });
 
     it('keeps committed navigation seed data under content/seeds', () => {

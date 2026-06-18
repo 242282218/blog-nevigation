@@ -29,15 +29,12 @@ vi.mock('next/link', () => ({
 }));
 
 describe('BlogPage', () => {
-  it('renders archive filters with mobile touch and keyboard focus affordances', async () => {
-    const html = renderToStaticMarkup(await BlogPage({ searchParams: Promise.resolve({}) }));
+  it('renders the static archive shell without reading request search params', async () => {
+    const html = renderToStaticMarkup(await BlogPage());
 
     expect(html).toContain('文章归档');
-    expect(html).toContain('全部类型');
-    expect(html).toContain('全部分类');
-    expect(html).toContain('共 1 篇');
-    expect(html).toContain('min-h-[44px]');
-    expect(html).toContain('focus-visible:outline-2');
-    expect(html).toContain('focus-visible:outline-focus');
+    expect(html).toContain('1 posts');
+    expect(html).toContain('1 年归档');
+    expect(html).toContain('加载归档...');
   });
 });

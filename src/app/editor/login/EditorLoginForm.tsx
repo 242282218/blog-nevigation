@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { KeyRound, Lock, LogIn, Terminal } from 'lucide-react';
+import { KeyRound, Lock, LogIn, SlidersHorizontal, Terminal } from 'lucide-react';
 import { StatusMessage } from '@/app/components/ui';
 import {
     EditorButton,
@@ -33,6 +33,8 @@ const SETUP_FIELD_IDS: Record<SetupValidationField, string> = {
     secret: 'editor-setup-secret',
     confirmSecret: 'editor-setup-confirm-secret',
 };
+
+const RUNTIME_CONFIG_LOGIN_HREF = `/editor/login?next=${encodeURIComponent('/editor/settings/runtime')}`;
 
 function focusField(id: string): void {
     window.requestAnimationFrame(() => {
@@ -254,6 +256,21 @@ export function EditorLoginForm({
                             <LogIn className="h-4 w-4" />
                             <span>{isSubmitting ? '登录中...' : '进入编辑区'}</span>
                         </EditorButton>
+
+                        <div className="border-t border-border-soft pt-4 text-sm leading-6 text-muted">
+                            <div className="flex items-start gap-2">
+                                <SlidersHorizontal className="mt-1 h-4 w-4 shrink-0 text-accent" />
+                                <div>
+                                    <p>公开站点 URL、Cookie、代理和数据目录在运行时配置里调整。</p>
+                                    <Link
+                                        href={RUNTIME_CONFIG_LOGIN_HREF}
+                                        className="mt-2 inline-flex min-h-11 items-center rounded-token-card text-fg underline underline-offset-4 transition hover:bg-surface focus:ring-2 focus:ring-link focus:ring-offset-2 sm:min-h-9"
+                                    >
+                                        登录后进入运行时配置
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
                     </form>
                 ) : setupEnabled ? (
                     <form className="mt-8 space-y-4" onSubmit={handleInitialize}>

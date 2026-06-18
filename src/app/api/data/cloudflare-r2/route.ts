@@ -8,23 +8,25 @@ import {
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
 import {
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
-import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
 import { getRemoteBackupQueueStatus } from '@/lib/editor-remote-backup';
 import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import {
     getEditableR2BackupSettings,
     getR2BackupStatus,
+    getR2BackupSettingsRevision,
     R2BackupSettingsInvalidError,
+    R2BackupSettingsRevisionMismatchError,
     saveEditableR2BackupSettings,
     type EditableR2BackupSettings,
 } from '@/lib/r2-backup-storage';
+import { withRuntimeDataRootLock } from '@/lib/runtime-data-lock';
 
 type CloudflareR2RequestBody = {
     settings?: Partial<Record<keyof EditableR2BackupSettings, unknown>>;
+    revision?: unknown;
 };
 
 function asString(value: unknown): string {
@@ -70,8 +72,9 @@ export async function GET(request: NextRequest) {
 
     try {
         return NextResponse.json({
-            persistent: isEditorDataRootConfigured(),
+            persistent: true,
             settings: getEditableR2BackupSettings(),
+            revision: getR2BackupSettingsRevision(),
             status: getR2BackupStatus(),
             backupQueue: getRemoteBackupQueueStatus(),
         });
@@ -91,10 +94,6 @@ export async function PUT(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     let body: CloudflareR2RequestBody | null;
@@ -125,7 +124,10 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
-        const savedSettings = saveEditableR2BackupSettings(settings);
+        const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
+        const savedSettings = await withRuntimeDataRootLock(() => {
+            return saveEditableR2BackupSettings(settings, { expectedRevision });
+        });
         recordEditorAuditEvent({
             action: 'r2.settings.update',
             resource: 'cloudflare-r2',
@@ -141,6 +143,7 @@ export async function PUT(request: NextRequest) {
         return NextResponse.json({
             success: true,
             settings: savedSettings,
+            revision: getR2BackupSettingsRevision(),
             status: getR2BackupStatus(),
             backupQueue: getRemoteBackupQueueStatus(),
         });
@@ -149,6 +152,19 @@ export async function PUT(request: NextRequest) {
 
         if (invalidResponse) {
             return invalidResponse;
+        }
+
+        if (error instanceof R2BackupSettingsRevisionMismatchError) {
+            return NextResponse.json(
+                {
+                    message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+                    settings: getEditableR2BackupSettings(),
+                    revision: error.currentRevision,
+                    status: getR2BackupStatus(),
+                    backupQueue: getRemoteBackupQueueStatus(),
+                },
+                { status: 409 }
+            );
         }
 
         const knownPrefixes = [

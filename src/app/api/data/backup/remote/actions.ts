@@ -16,6 +16,7 @@ import {
     parseEditorBackupData,
     restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
+import { restoreEditorMediaAssetsFromR2 } from '@/lib/editor-media-remote';
 import {
     getRemoteBackupQueueStatus,
     retryFailedRemoteBackups,
@@ -28,6 +29,7 @@ import {
     R2BackupPayloadTooLargeError,
     R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
     createRestoreConflictResponse,
     createRestorePreconditionRequiredResponse,
@@ -76,6 +78,16 @@ function createRemoteBackupFailureResponse(
         {
             status: 'invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration ? 500 : 502,
         }
+    );
+}
+
+function createRemoteBackupPayloadTooLargeResponse(error: R2BackupPayloadTooLargeError): NextResponse {
+    return NextResponse.json(
+        {
+            code: 'remote_backup_too_large',
+            message: `R2 远端备份文件超过 ${error.limitBytes} 字节，恢复失败。`,
+        },
+        { status: 413 }
     );
 }
 
@@ -209,10 +221,12 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
             );
         }
 
+        const mediaRestore = await restoreEditorMediaAssetsFromR2(data.media);
         const remoteBackup = await syncCurrentBackupToRemote({
             reason: 'remote-restore',
             writeSnapshot: true,
         });
+        invalidatePublicContentCache('remote-restore');
 
         return NextResponse.json({
             success: true,
@@ -220,7 +234,12 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
                 articles: result.articles,
                 categories: result.categories,
                 settings: result.settings,
+                media: result.media,
             },
+            mediaRestore,
+            warnings: mediaRestore.failed > 0
+                ? [`${mediaRestore.failed} 个媒体文件恢复失败，请检查 R2 媒体对象。`]
+                : [],
             remoteBackup,
         });
     } catch (error) {
@@ -249,7 +268,7 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
         }
 
         if (error instanceof R2BackupPayloadTooLargeError) {
-            return createJsonBodyTooLargeResponse();
+            return createRemoteBackupPayloadTooLargeResponse(error);
         }
 
         const status = error instanceof R2BackupSettingsInvalidError

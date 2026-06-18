@@ -18,6 +18,7 @@ import {
     RuntimeEditorAuthInvalidSecretError,
     initializeRuntimeEditorAuth,
     isRuntimeEditorAuthConfigured,
+    isRuntimeEditorAuthSetupEnabled,
     isRuntimeEditorAuthSetupTokenRequired,
     isValidRuntimeEditorAuthSetupToken,
     updateRuntimeEditorAuthSecret,
@@ -172,9 +173,16 @@ function createInvalidRuntimeConfigResponse(error: unknown): NextResponse | null
 
 export async function GET() {
     try {
+        if (isApplicationSetupComplete()) {
+            return NextResponse.json({
+                setupCompleted: true,
+            });
+        }
+
         return NextResponse.json({
-            setupCompleted: isApplicationSetupComplete(),
+            setupCompleted: false,
             authConfigured: isRuntimeEditorAuthConfigured(),
+            setupEnabled: isRuntimeEditorAuthSetupEnabled(),
             setupTokenRequired: isRuntimeEditorAuthSetupTokenRequired(),
             config: getSafeAppRuntimeConfig(),
             editable: getEditableAppRuntimeConfig(),
@@ -229,6 +237,8 @@ export async function PUT(request: NextRequest) {
     const editorSecret = asString(body?.editorSecret).trim();
     const confirmEditorSecret = asString(body?.confirmEditorSecret).trim();
     const setupToken = asString(body?.setupToken);
+    const authConfigured = isRuntimeEditorAuthConfigured();
+    const authSetupEnabled = isRuntimeEditorAuthSetupEnabled();
 
     if (!config || !r2Settings || (r2SetupMode === 'cloudflare' && !cloudflareR2Setup)) {
         return NextResponse.json(
@@ -236,6 +246,15 @@ export async function PUT(request: NextRequest) {
                 message: '初始化配置格式无效。',
             },
             { status: 400 }
+        );
+    }
+
+    if (!authConfigured && !authSetupEnabled) {
+        return NextResponse.json(
+            {
+                message: '首次初始化未启用，请先在服务器配置初始化密钥或编辑口令环境变量。',
+            },
+            { status: 403 }
         );
     }
 
@@ -248,7 +267,7 @@ export async function PUT(request: NextRequest) {
         );
     }
 
-    if (!isRuntimeEditorAuthConfigured() && !editorSecret) {
+    if (!authConfigured && !editorSecret) {
         return NextResponse.json(
             {
                 message: '请设置编辑口令。',
@@ -291,7 +310,7 @@ export async function PUT(request: NextRequest) {
         let sessionValue: string | null = null;
 
         if (editorSecret) {
-            sessionValue = isRuntimeEditorAuthConfigured()
+            sessionValue = authConfigured
                 ? await updateRuntimeEditorAuthSecret(editorSecret)
                 : await initializeRuntimeEditorAuth(editorSecret);
         }

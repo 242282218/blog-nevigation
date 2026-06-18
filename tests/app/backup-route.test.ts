@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/data/backup/route';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -16,7 +17,12 @@ vi.mock('@/lib/editor-remote-backup', () => ({
   syncCurrentBackupToRemote: vi.fn(),
 }));
 
+vi.mock('@/lib/public-cache-invalidation', () => ({
+  invalidatePublicContentCache: vi.fn(),
+}));
+
 const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
+const mockedInvalidatePublicContentCache = vi.mocked(invalidatePublicContentCache);
 
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
@@ -243,11 +249,12 @@ describe('backup API', () => {
     expect(payload).toEqual(
       expect.objectContaining({
         success: true,
-        counts: {
+        counts: expect.objectContaining({
           articles: 1,
           categories: 0,
           settings: true,
-        },
+          media: 0,
+        }),
       })
     );
     expect(restoredArticles).toEqual([
@@ -260,6 +267,7 @@ describe('backup API', () => {
       reason: 'local-restore',
       writeSnapshot: true,
     });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('local-restore');
   });
 
   it('rejects stale local restores without replacing newer data', async () => {

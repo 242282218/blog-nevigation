@@ -1,6 +1,6 @@
 # API 接口契约与运行时数据格式
 
-更新时间：2026-06-08
+更新时间：2026-06-17
 
 ## 范围
 
@@ -103,11 +103,48 @@
 
 实际 `settings` 必须包含完整 `SiteSettings` 字段。
 
+### `POST /api/data/media`
+
+上传编辑器图片。主要用于文章编辑器从剪切板粘贴图片，也支持普通 `multipart/form-data` 上传。请求必须通过编辑器写接口认证。
+
+支持的请求体：
+
+- `multipart/form-data`，字段名为 `file`。
+- 原始 `image/*` body，作为编辑器粘贴上传的兼容路径。
+
+成功返回：
+
+```json
+{
+  "success": true,
+  "asset": {
+    "id": "sha256",
+    "path": "files/2026/06/sha256.png",
+    "publicPath": "/media/files/2026/06/sha256.png",
+    "mimeType": "image/png",
+    "size": 1234,
+    "hash": "sha256",
+    "createdAt": "2026-06-17T00:00:00.000Z",
+    "updatedAt": "2026-06-17T00:00:00.000Z"
+  },
+  "remoteMedia": {
+    "enabled": true,
+    "success": true,
+    "key": "blog-navigation/media/files/2026/06/sha256.png"
+  },
+  "remoteBackup": {
+    "queued": true
+  }
+}
+```
+
+仅支持 PNG、JPEG、WebP 和 GIF，单文件最大 5 MiB。图片先写入本地 `data/media/files/`，再复用现有 R2 自动备份配置上传到独立 R2 object。R2 媒体同步失败不会回滚本地上传；响应中的 `remoteMedia.success=false` 会提示编辑器展示警告。
+
 ## 备份 API
 
 ### `GET /api/data/backup`
 
-导出当前文章、导航、站点设置和 manifest envelope。该 JSON 可直接检查和迁移。
+导出当前文章、导航、站点设置、媒体清单和 manifest envelope。该 JSON 可直接检查和迁移；媒体二进制不写入备份 JSON。
 
 ### `POST /api/data/backup`
 
@@ -123,13 +160,17 @@
 
 ### `POST /api/data/backup/remote/restore`
 
-从 R2 latest 备份恢复。恢复前会先生成当前数据的远端快照。
+从 R2 latest 备份恢复。恢复前会先生成当前数据的远端快照；恢复 JSON 数据后，会按媒体清单从 R2 独立 object 拉取本地缺失图片。
 
 ### `POST /api/data/backup/remote/retry`
 
 将失败的备份任务重新加入队列。
 
 ## 公开 API
+
+### `GET /media/files/...`
+
+读取本地媒体文件，供文章 Markdown 图片链接使用。路径必须位于 `data/media/files/` 下，非法路径或文件不存在返回 `404`。
 
 ### `GET /api/search?q=...`
 
@@ -181,6 +222,8 @@
 articles/articles.json
 navigation/tools.json
 settings/site.json
+media/manifest.json
+media/files/yyyy/mm/<sha256>.<ext>
 manifest.json
 ```
 
@@ -235,6 +278,41 @@ manifest.json
 ### `settings/site.json`
 
 完整 `SiteSettings`。缺失时使用默认设置；文件存在但结构非法时返回错误，不静默回退。
+
+### `media/manifest.json`
+
+媒体清单只记录图片元数据，不包含二进制内容：
+
+```json
+{
+  "version": 1,
+  "updatedAt": "2026-06-17T00:00:00.000Z",
+  "assets": [
+    {
+      "id": "sha256",
+      "path": "files/2026/06/sha256.png",
+      "publicPath": "/media/files/2026/06/sha256.png",
+      "mimeType": "image/png",
+      "size": 1234,
+      "hash": "sha256",
+      "createdAt": "2026-06-17T00:00:00.000Z",
+      "updatedAt": "2026-06-17T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+`path` 必须是 `files/` 下的安全相对路径。文件名使用内容 SHA-256，重复粘贴同一图片会复用同一个文件。
+
+### R2 媒体对象
+
+媒体文件不写入 `latest/backup.json` 或 `snapshots/*.json`。启用 R2 后，每个媒体文件单独上传：
+
+```text
+<R2_PREFIX>/media/files/yyyy/mm/<sha256>.<ext>
+```
+
+R2 配置完全复用现有自动备份配置，不新增媒体专用环境变量或 UI 字段。JSON 备份仍保持明文 JSON，必须能直接 `JSON.parse`。
 
 ### `manifest.json`
 

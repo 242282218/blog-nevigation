@@ -58,7 +58,7 @@ function createSecurityHeadersResponse(securityHeaders: SecurityHeaders): NextRe
     response.headers.set('Content-Security-Policy', securityHeaders.contentSecurityPolicy);
 
     if (process.env.NODE_ENV === 'production') {
-        response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
     }
 
     return response;
@@ -68,7 +68,7 @@ function setSecurityHeaders(response: NextResponse, securityHeaders: SecurityHea
     response.headers.set('Content-Security-Policy', securityHeaders.contentSecurityPolicy);
 
     if (process.env.NODE_ENV === 'production') {
-        response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
     }
 
     return response;

@@ -10,6 +10,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+// Caps the number of documents scanned in the fallback path (when the derived
+// search index is missing) to bound memory and CPU usage on large datasets.
+const FALLBACK_MAX_DOCUMENTS = 500;
+const FALLBACK_MAX_TOOLS = 1000;
+
 function includesQuery(parts: string[], query: string): boolean {
     return parts.join('\n').toLowerCase().includes(query);
 }
@@ -80,8 +85,16 @@ async function getSearchDocuments(): Promise<SearchIndexDocument[]> {
         getSearchablePostsAsync(),
         readNavigationFromDiskAsync(),
     ]);
-    const postDocuments: SearchIndexDocument[] = posts
-        .filter((post) => !post.meta.slugArray.includes('navigation'))
+    const filteredPosts = posts.filter((post) => !post.meta.slugArray.includes('navigation'));
+
+    if (filteredPosts.length > FALLBACK_MAX_DOCUMENTS) {
+        console.warn(
+            `[search] Fallback path scanned ${filteredPosts.length} posts; capping to ${FALLBACK_MAX_DOCUMENTS}.`
+        );
+    }
+
+    const postDocuments: SearchIndexDocument[] = filteredPosts
+        .slice(0, FALLBACK_MAX_DOCUMENTS)
         .map((post) => ({
             type: 'post',
             title: post.meta.title,
@@ -92,7 +105,7 @@ async function getSearchDocuments(): Promise<SearchIndexDocument[]> {
             tags: post.meta.tags,
             content: post.content,
         }));
-    const toolDocuments: SearchIndexDocument[] = navigation.flatMap((category) =>
+    const allToolDocuments: SearchIndexDocument[] = navigation.flatMap((category) =>
         category.tools.map((tool) => ({
             type: 'tool',
             title: tool.title,
@@ -104,6 +117,14 @@ async function getSearchDocuments(): Promise<SearchIndexDocument[]> {
             url: tool.url,
         }))
     );
+
+    if (allToolDocuments.length > FALLBACK_MAX_TOOLS) {
+        console.warn(
+            `[search] Fallback path scanned ${allToolDocuments.length} tools; capping to ${FALLBACK_MAX_TOOLS}.`
+        );
+    }
+
+    const toolDocuments = allToolDocuments.slice(0, FALLBACK_MAX_TOOLS);
 
     return [...postDocuments, ...toolDocuments];
 }

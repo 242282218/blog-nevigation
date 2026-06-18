@@ -6,7 +6,6 @@ import {
     createEditorDataManifestSnapshot,
     EDITOR_DATA_SCHEMA_VERSION,
     getEditorDataRoot,
-    isEditorDataRootConfigured,
     readArticlesFromDisk,
     readNavigationFromDisk,
     readSiteSettingsFromDisk,
@@ -21,6 +20,12 @@ import {
     parseSiteSettings,
     type SiteSettings,
 } from '@/lib/site-settings';
+import {
+    parseEditorMediaManifest,
+    readEditorMediaManifest,
+    writeRestoredEditorMediaManifest,
+    type EditorMediaManifest,
+} from '@/lib/editor-media-storage';
 
 export const EDITOR_BACKUP_VERSION = 1;
 
@@ -30,6 +35,7 @@ export interface EditorBackupData {
     articles: Article[];
     navigation: Category[];
     settings: SiteSettings;
+    media?: EditorMediaManifest;
 }
 
 export interface EditorBackupPayload {
@@ -47,6 +53,7 @@ export interface RestoreBackupResult {
     articles: number;
     categories: number;
     settings: boolean;
+    media: number;
 }
 
 interface RestoreBackupOptions {
@@ -70,6 +77,7 @@ function readCurrentEditorBackupData(): EditorBackupData {
         articles: readArticlesFromDisk(),
         navigation: readNavigationFromDisk(),
         settings: readSiteSettingsFromDisk(),
+        media: readEditorMediaManifest(),
     };
 }
 
@@ -164,17 +172,13 @@ export function createEditorBackupPayload(
         schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
         exportedAt: new Date().toISOString(),
         source,
-        persistent: isEditorDataRootConfigured(),
+        persistent: true,
         dataRoot: getEditorDataRoot(),
-        manifest: isEditorDataRootConfigured() ? createEditorDataManifestSnapshot(data) : undefined,
+        manifest: createEditorDataManifestSnapshot(data),
         data,
     };
 }
 export async function createCurrentEditorBackupPayload(): Promise<EditorBackupPayload> {
-    if (!isEditorDataRootConfigured()) {
-        return createEditorBackupPayload(readCurrentEditorBackupData());
-    }
-
     return withEditorDataRootLock(() => createEditorBackupPayload(readCurrentEditorBackupData()));
 }
 
@@ -197,8 +201,11 @@ export function parseEditorBackupData(value: unknown): EditorBackupData | null {
         source.settings === undefined
             ? createDefaultSiteSettings()
             : parseSiteSettings(source.settings);
+    const media = source.media === undefined
+        ? undefined
+        : parseEditorMediaManifest(source.media);
 
-    if (!articles || !navigation || !settings) {
+    if (!articles || !navigation || !settings || (source.media !== undefined && !media)) {
         return null;
     }
 
@@ -206,6 +213,7 @@ export function parseEditorBackupData(value: unknown): EditorBackupData | null {
         articles,
         navigation,
         settings,
+        ...(media ? { media } : {}),
     };
 }
 
@@ -226,10 +234,15 @@ export async function restoreEditorBackupPayload(
 
         await restoreEditorDataRootAtomically(data);
 
+        if (data.media) {
+            writeRestoredEditorMediaManifest(data.media);
+        }
+
         return {
             articles: data.articles.length,
             categories: data.navigation.length,
             settings: true,
+            media: data.media?.assets.length ?? 0,
         };
     });
 }

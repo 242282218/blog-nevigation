@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import {
   Bold,
   Code2,
@@ -25,6 +25,7 @@ interface MarkdownEditorProps {
   placeholder?: string;
   textareaId?: string;
   onSave?: () => void;
+  onUploadPastedImage?: (file: File) => Promise<string>;
 }
 
 interface CursorMetrics {
@@ -37,6 +38,21 @@ const LINE_PREFIX_PATTERNS = {
   list: /^((?:[-*+]\s+)|(?:\d+\.\s+)|(?:- \[[ xX]\]\s+))/,
   quote: /^(>\s?)/,
 };
+
+function getClipboardImageFiles(event: ClipboardEvent<HTMLTextAreaElement>): File[] {
+  return Array.from(event.clipboardData.items)
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+}
+
+function createUploadPlaceholder(index: number): string {
+  return `![图片上传中 ${index}](uploading://clipboard-image-${crypto.randomUUID()})`;
+}
+
+function createUploadFailureText(message: string): string {
+  return `[图片上传失败：${message.replace(/[\r\n[\]]+/g, ' ').trim() || '请稍后重试'}]`;
+}
 
 function getCursorMetrics(value: string, cursorIndex: number): CursorMetrics {
   const beforeCursor = value.slice(0, cursorIndex);
@@ -72,11 +88,15 @@ export function MarkdownEditor({
   placeholder,
   textareaId,
   onSave,
+  onUploadPastedImage,
 }: MarkdownEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const latestValueRef = useRef(value);
   const [cursorIndex, setCursorIndex] = useState(0);
   const cursorMetrics = useMemo(() => getCursorMetrics(value, cursorIndex), [cursorIndex, value]);
   const wordCount = useMemo(() => getWordCount(value), [value]);
+
+  latestValueRef.current = value;
 
   const restoreSelection = useCallback((start: number, end = start) => {
     window.requestAnimationFrame(() => {
@@ -231,6 +251,52 @@ export function MarkdownEditor({
     setCursorIndex(textareaRef.current?.selectionStart || 0);
   };
 
+  const replaceUploadPlaceholder = useCallback((placeholder: string, replacement: string) => {
+    const latestValue = latestValueRef.current;
+
+    if (!latestValue.includes(placeholder)) {
+      return;
+    }
+
+    const nextValue = latestValue.replace(placeholder, replacement);
+    latestValueRef.current = nextValue;
+    onChange(nextValue);
+  }, [onChange]);
+
+  const handlePaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!onUploadPastedImage) {
+      return;
+    }
+
+    const files = getClipboardImageFiles(event);
+    const textarea = textareaRef.current;
+
+    if (!files.length || !textarea) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const placeholders = files.map((_, index) => createUploadPlaceholder(index + 1));
+    const insertion = placeholders.join('\n\n');
+    const nextValue = value.slice(0, start) + insertion + value.slice(end);
+    const nextCursor = start + insertion.length;
+
+    latestValueRef.current = nextValue;
+    replaceSelection(nextValue, nextCursor);
+
+    placeholders.forEach((uploadPlaceholder, index) => {
+      void onUploadPastedImage(files[index])
+        .then((markdown) => replaceUploadPlaceholder(uploadPlaceholder, markdown))
+        .catch((error: unknown) => {
+          const message = error instanceof Error && error.message ? error.message : '请稍后重试';
+          replaceUploadPlaceholder(uploadPlaceholder, createUploadFailureText(message));
+        });
+    });
+  }, [onUploadPastedImage, replaceSelection, replaceUploadPlaceholder, value]);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="relative border-b border-border bg-background/80">
@@ -303,6 +369,7 @@ export function MarkdownEditor({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         onClick={handleCursorChange}
         onKeyUp={handleCursorChange}
         onSelect={handleCursorChange}

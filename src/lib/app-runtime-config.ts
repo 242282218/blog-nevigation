@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@/lib/article-data';
+import { writeJsonAtomically } from '@/lib/atomic-json-writer';
 import { registerEditorRuntimeCacheReset } from '@/lib/editor-runtime-cache';
+import { createJsonRevision } from '@/lib/json-revision';
 import {
     getRuntimeDataRoot,
     getRuntimeDataRootPath,
@@ -69,6 +71,13 @@ export class AppRuntimeConfigInvalidError extends Error {
     constructor(public readonly filePath: string) {
         super('Stored app runtime config is invalid.');
         this.name = 'AppRuntimeConfigInvalidError';
+    }
+}
+
+export class AppRuntimeConfigRevisionMismatchError extends Error {
+    constructor(public readonly currentRevision: string | null) {
+        super('App runtime config revision does not match.');
+        this.name = 'AppRuntimeConfigRevisionMismatchError';
     }
 }
 
@@ -272,19 +281,6 @@ function parseStoredAppRuntimeConfig(value: unknown, filePath: string): AppRunti
     };
 }
 
-function writeJsonAtomically(filePath: string, value: unknown): void {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-
-    try {
-        fs.writeFileSync(tempFilePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-        fs.renameSync(tempFilePath, filePath);
-    } catch (error) {
-        fs.rmSync(tempFilePath, { force: true });
-        throw error;
-    }
-}
-
 export function getAppRuntimeConfigFilePath(): string {
     return getRuntimeSettingsFilePath(APP_RUNTIME_CONFIG_FILE_NAME);
 }
@@ -352,11 +348,25 @@ export function getEditableAppRuntimeConfig(): EditableAppRuntimeConfig {
     };
 }
 
+function createAppRuntimeConfigRevision(config: AppRuntimeConfig | null): string | null {
+    return config ? createJsonRevision(config) : null;
+}
+
+export function getAppRuntimeConfigRevision(): string | null {
+    return createAppRuntimeConfigRevision(readStoredAppRuntimeConfig());
+}
+
 export function saveAppRuntimeConfig(
     input: EditableAppRuntimeConfig,
-    options: { markSetupComplete?: boolean } = {}
+    options: { markSetupComplete?: boolean; expectedRevision?: string | null } = {}
 ): AppRuntimeConfig {
     const existing = readStoredAppRuntimeConfig();
+    const currentRevision = createAppRuntimeConfigRevision(existing);
+
+    if (options.expectedRevision !== undefined && options.expectedRevision !== currentRevision) {
+        throw new AppRuntimeConfigRevisionMismatchError(currentRevision);
+    }
+
     const normalizedPublicSiteUrl = normalizePublicSiteUrl(input.publicSiteUrl);
 
     if (normalizedPublicSiteUrl === null) {

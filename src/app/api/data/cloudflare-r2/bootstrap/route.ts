@@ -12,15 +12,16 @@ import {
     bootstrapCloudflareR2Settings,
     type CloudflareR2BootstrapInput,
 } from '@/lib/cloudflare-r2-bootstrap';
+import { ensureEditorWriteRequest } from '@/lib/editor-api-auth';
 import {
-    createEditorDataRootRequiredResponse,
-    ensureEditorWriteRequest,
-} from '@/lib/editor-api-auth';
-import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
-import { R2BackupSettingsInvalidError } from '@/lib/r2-backup-storage';
+    getR2BackupSettingsRevision,
+    R2BackupSettingsInvalidError,
+    R2BackupSettingsRevisionMismatchError,
+} from '@/lib/r2-backup-storage';
 
 type CloudflareR2BootstrapRequestBody = {
     bootstrap?: Partial<Record<keyof CloudflareR2BootstrapInput, unknown>>;
+    revision?: unknown;
 };
 
 function asString(value: unknown): string {
@@ -62,10 +63,6 @@ export async function POST(request: NextRequest) {
         return authError;
     }
 
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
-    }
-
     let body: CloudflareR2BootstrapRequestBody | null;
 
     try {
@@ -97,11 +94,13 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-        const result = await bootstrapCloudflareR2Settings(bootstrap);
+        const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
+        const result = await bootstrapCloudflareR2Settings(bootstrap, { expectedRevision });
 
         return NextResponse.json({
             success: true,
             settings: result.settings,
+            revision: getR2BackupSettingsRevision(),
             status: result.status,
             bucketCreated: result.bucketCreated,
             tokenName: result.tokenName,
@@ -111,6 +110,16 @@ export async function POST(request: NextRequest) {
 
         if (invalidResponse) {
             return invalidResponse;
+        }
+
+        if (error instanceof R2BackupSettingsRevisionMismatchError) {
+            return NextResponse.json(
+                {
+                    message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+                    revision: error.currentRevision,
+                },
+                { status: 409 }
+            );
         }
 
         if (error instanceof CloudflareR2BootstrapError) {

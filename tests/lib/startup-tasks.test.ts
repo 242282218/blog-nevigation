@@ -4,6 +4,9 @@ import {
   queueCurrentBackupToRemote,
 } from '@/lib/editor-remote-backup';
 import {
+  verifyEditorMediaStorageConsistency,
+} from '@/lib/editor-media-storage';
+import {
   resetServerStartupTasksForTests,
   SCHEDULED_REMOTE_BACKUP_INTERVAL_MS,
   startServerStartupTasks,
@@ -19,8 +22,19 @@ vi.mock('@/lib/editor-remote-backup', () => ({
   })),
 }));
 
+vi.mock('@/lib/editor-media-storage', () => ({
+  verifyEditorMediaStorageConsistency: vi.fn(async () => ({
+    checkedAssets: 0,
+    checkedFiles: 0,
+    missingFiles: [],
+    hashMismatches: [],
+    orphanFiles: [],
+  })),
+}));
+
 const mockedDrainPendingBackups = vi.mocked(drainPendingBackups);
 const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
+const mockedVerifyEditorMediaStorageConsistency = vi.mocked(verifyEditorMediaStorageConsistency);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -57,6 +71,31 @@ describe('server startup tasks', () => {
       reason: 'scheduled-3h',
       writeLatest: true,
       writeSnapshot: true,
+    });
+  });
+
+  it('verifies media storage consistency on startup and only warns on drift', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockedVerifyEditorMediaStorageConsistency.mockResolvedValueOnce({
+      checkedAssets: 1,
+      checkedFiles: 2,
+      missingFiles: ['files/2026/06/missing.png'],
+      hashMismatches: [],
+      orphanFiles: ['files/2026/06/orphan.png'],
+    });
+
+    startServerStartupTasks();
+
+    await vi.waitFor(() => {
+      expect(mockedVerifyEditorMediaStorageConsistency).toHaveBeenCalledOnce();
+      expect(consoleWarn).toHaveBeenCalledWith(
+        '[startup-tasks] Media storage consistency issues detected:',
+        expect.objectContaining({
+          missingFiles: ['files/2026/06/missing.png'],
+          orphanFiles: ['files/2026/06/orphan.png'],
+        })
+      );
+      expect(mockedDrainPendingBackups).toHaveBeenCalledOnce();
     });
   });
 });

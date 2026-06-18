@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { getPostBySlugArrayAsync, getRelatedPostsAsync } from '@/lib/markdown';
+import { getPostBySlugArrayAsync, getPostsAsync, getRelatedPostsAsync } from '@/lib/markdown';
 import { MarkdownContent } from '@/app/components/markdown';
 import { PageHero, PostCard, ReadingProgress, TableOfContents } from '@/app/components/ui';
 import { notFound } from 'next/navigation';
@@ -7,9 +7,25 @@ import Link from 'next/link';
 import { ArrowLeft, CalendarDays, Clock3, History, LinkIcon, Tag } from 'lucide-react';
 import { getArticleKindLabel, getArticleStatusLabel } from '@/lib/article-metadata';
 import { getMarkdownHeadings } from '@/lib/article-quality';
-import { createOgImagePath } from '@/lib/site-url';
+import { createOgImagePath, getSiteUrl } from '@/lib/site-url';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
+
+function createPostPath(slugArray: string[]): string {
+    return `/posts/${slugArray.map((segment) => encodeURIComponent(segment)).join('/')}`;
+}
+
+function createPostCanonicalUrl(slugArray: string[]): string {
+    return new URL(createPostPath(slugArray), getSiteUrl()).toString();
+}
+
+export async function generateStaticParams(): Promise<Array<{ slug: string[] }>> {
+    const posts = await getPostsAsync();
+
+    return posts.map((post) => ({
+        slug: post.slugArray,
+    }));
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string[] }> }): Promise<Metadata> {
     const resolvedParams = await params;
@@ -22,6 +38,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     return {
         title: post.meta.title,
         description: post.meta.description,
+        alternates: {
+            canonical: createPostCanonicalUrl(post.meta.slugArray),
+        },
         openGraph: {
             title: post.meta.title,
             description: post.meta.description,

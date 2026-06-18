@@ -184,7 +184,7 @@ describe('editor auth API', () => {
       configured: true,
       authenticated: true,
       setupEnabled: false,
-      setupTokenRequired: true,
+      setupTokenRequired: false,
     });
 
     const loginResponse = await POST(createJsonRequest({ secret: 'new-secret-12chars' }));
@@ -266,7 +266,7 @@ describe('editor auth API', () => {
     });
   });
 
-  it('allows first-use initialization in production without external setup variables', async () => {
+  it('rejects first-use initialization in production without a setup token', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
     delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
     delete process.env.EDITOR_ALLOW_RUNTIME_AUTH_SETUP;
@@ -286,14 +286,18 @@ describe('editor auth API', () => {
     expect(await statusBeforeSetup.json()).toEqual({
       configured: false,
       authenticated: false,
-      setupEnabled: true,
+      setupEnabled: false,
       setupTokenRequired: false,
     });
-    expect(setupResponse.status).toBe(200);
-    expect(await setupResponse.json()).toEqual({ success: true });
+    expect(setupResponse.status).toBe(403);
+    expect(await setupResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('首次初始化未启用'),
+      })
+    );
   });
 
-  it('does not require a setup token when production runtime setup opt-in is present without a token', async () => {
+  it('ignores production runtime setup opt-in without a setup token', async () => {
     delete process.env.EDITOR_ACCESS_TOKEN;
     delete process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN;
     vi.stubEnv('NODE_ENV', 'production');
@@ -314,9 +318,42 @@ describe('editor auth API', () => {
     expect(await statusResponse.json()).toEqual({
       configured: false,
       authenticated: false,
-      setupEnabled: true,
+      setupEnabled: false,
       setupTokenRequired: false,
     });
+    expect(setupResponse.status).toBe(403);
+    expect(await setupResponse.json()).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('首次初始化未启用'),
+      })
+    );
+  });
+
+  it('requires the configured setup token for production first-use initialization', async () => {
+    delete process.env.EDITOR_ACCESS_TOKEN;
+    vi.stubEnv('NODE_ENV', 'production');
+    process.env.EDITOR_RUNTIME_AUTH_SETUP_TOKEN = 'setup-token';
+    process.env.SKIP_IP_VALIDATION = 'true';
+    process.env.EDITOR_AUTH_CONFIG_FILE = path.join(
+      createTempDirectoryWithCleanup('editor-auth-production-setup-token-'),
+      'editor-auth.json'
+    );
+
+    const statusResponse = await GET(new NextRequest('http://localhost/api/editor-auth'));
+
+    expect(await statusResponse.json()).toEqual({
+      configured: false,
+      authenticated: false,
+      setupEnabled: true,
+      setupTokenRequired: true,
+    });
+
+    const setupResponse = await PUT(createJsonRequest({
+      secret: 'new-secret-12chars',
+      confirmSecret: 'new-secret-12chars',
+      setupToken: 'setup-token',
+    }));
+
     expect(setupResponse.status).toBe(200);
     expect(await setupResponse.json()).toEqual({ success: true });
   });

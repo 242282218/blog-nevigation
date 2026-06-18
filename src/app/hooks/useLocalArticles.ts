@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { Article, Frontmatter } from '@/app/types/article';
 import { useSyncedResource } from '@/app/hooks/useSyncedResource';
 import {
@@ -164,6 +164,23 @@ async function saveArticlesToServer(
   }
 }
 
+function flushArticlesToServer(
+  articles: Article[],
+  context: { revision: string | null }
+): void {
+  void fetch(ARTICLES_API_PATH, {
+    method: 'PUT',
+    credentials: 'include',
+    keepalive: true,
+    headers: createEditorCsrfHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ articles, revision: context.revision }),
+  }).catch((error: unknown) => {
+    console.error('Failed to flush articles before unload:', error);
+  });
+}
+
 export function useLocalArticles() {
   const {
     data: articles,
@@ -178,7 +195,32 @@ export function useLocalArticles() {
     saveLocal: saveArticlesToStorage,
     loadRemote: loadArticlesFromServer,
     saveRemote: saveArticlesToServer,
+    flushRemote: flushArticlesToServer,
   });
+
+  useEffect(() => {
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage || event.key !== STORAGE_KEY || event.newValue === null) {
+        return;
+      }
+
+      try {
+        const parsed = parseArticlesData(JSON.parse(event.newValue));
+
+        if (parsed) {
+          setArticles(parsed);
+        }
+      } catch (error) {
+        console.error('Failed to sync articles from localStorage event:', error);
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [setArticles]);
 
   const createArticle = useCallback((frontmatter: Frontmatter, content: string): Article => {
     const now = Date.now();

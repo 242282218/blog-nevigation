@@ -6,6 +6,7 @@ import {
     type R2BackupStatus,
     type SafeR2BackupSettings,
 } from '@/lib/r2-backup-storage';
+import { withRuntimeDataRootLock } from '@/lib/runtime-data-lock';
 
 const CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4';
 const R2_BUCKET_ITEM_READ_PERMISSION_GROUP_NAME = 'Workers R2 Storage Bucket Item Read';
@@ -214,7 +215,8 @@ async function deleteR2Bucket(auth: CloudflareAuth, accountId: string, bucket: s
 }
 
 export async function bootstrapCloudflareR2Settings(
-    rawInput: CloudflareR2BootstrapInput
+    rawInput: CloudflareR2BootstrapInput,
+    options: { expectedRevision?: string | null } = {}
 ): Promise<CloudflareR2BootstrapResult> {
     const input = trimBootstrapInput(rawInput);
     assertBootstrapInput(input);
@@ -238,16 +240,19 @@ export async function bootstrapCloudflareR2Settings(
         const token = await createR2Token(auth, input.accountId, input.bucket, tokenName, permissionGroupIds);
         accessKeyId = token.accessKeyId;
 
-        const settings = saveEditableR2BackupSettings({
-            enabled: true,
-            accountId: input.accountId,
-            bucket: input.bucket,
-            accessKeyId: token.accessKeyId,
-            secretAccessKey: token.secretAccessKey,
-            prefix: input.prefix,
-            endpoint: '',
-            snapshotOnWrite: input.snapshotOnWrite,
-        });
+        const settings = await withRuntimeDataRootLock(() => saveEditableR2BackupSettings(
+            {
+                enabled: true,
+                accountId: input.accountId,
+                bucket: input.bucket,
+                accessKeyId: token.accessKeyId,
+                secretAccessKey: token.secretAccessKey,
+                prefix: input.prefix,
+                endpoint: '',
+                snapshotOnWrite: input.snapshotOnWrite,
+            },
+            { expectedRevision: options.expectedRevision }
+        ));
         settingsSaved = true;
 
         return {

@@ -10,19 +10,18 @@ import {
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
     getEditorDataResourceManifest,
-    isEditorDataRootConfigured,
     readSiteSettingsFromDisk,
     writeSiteSettingsToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { getAppVersionInfo } from '@/lib/app-version';
 import { parseSiteSettings } from '@/lib/site-settings';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 
 type SettingsRequestBody = {
     settings?: unknown;
@@ -41,7 +40,7 @@ export async function GET(request: NextRequest) {
         const resourceManifest = getEditorDataResourceManifest('settings', settings);
 
         return NextResponse.json({
-            persistent: isEditorDataRootConfigured(),
+            persistent: true,
             revision: resourceManifest?.revision ?? null,
             settings,
             version: getAppVersionInfo(),
@@ -62,10 +61,6 @@ export async function PUT(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     let body: SettingsRequestBody | null;
@@ -130,6 +125,7 @@ export async function PUT(request: NextRequest) {
     const remoteBackup = queueCurrentBackupToRemote({
         reason: 'settings-write',
     });
+    invalidatePublicContentCache('settings-write');
 
     return NextResponse.json({
         success: true,

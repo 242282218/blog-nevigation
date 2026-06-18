@@ -4,8 +4,8 @@ import path from 'node:path';
 const DATA_LOCK_DIRECTORY_NAME = '.data-write.lock';
 const DATA_LOCK_HEARTBEAT_FILE_NAME = 'heartbeat.json';
 const DATA_LOCK_WAIT_TIMEOUT_MS = 5000;
-const DATA_LOCK_STALE_MS = 5 * 60 * 1000;
-const DATA_LOCK_HEARTBEAT_MS = 30 * 1000;
+const DATA_LOCK_STALE_MS = 30 * 1000;
+const DATA_LOCK_HEARTBEAT_MS = 10 * 1000;
 const DATA_LOCK_RETRY_MS = 50;
 
 export class EditorDataLockTimeoutError extends Error {
@@ -24,6 +24,7 @@ export type EditorDataRootLock = {
 type EditorDataLockSnapshot = {
     mtimeMs: number;
     owner: string | null;
+    pid: number | null;
 };
 
 const heldEditorDataLocks = new Map<string, number>();
@@ -68,8 +69,24 @@ function getLockOwnerToken(lockDirectory: string): string | null {
     }
 }
 
+function getLockOwnerPid(owner: string | null): number | null {
+    if (!owner) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(owner) as { pid?: unknown };
+        return Number.isInteger(parsed.pid) && (parsed.pid as number) > 0
+            ? parsed.pid as number
+            : null;
+    } catch {
+        return null;
+    }
+}
+
 function readLockSnapshot(lockDirectory: string): EditorDataLockSnapshot | null {
     try {
+        const owner = readLockOwner(lockDirectory);
         const stats = fs.statSync(
             fs.existsSync(getLockHeartbeatPath(lockDirectory))
                 ? getLockHeartbeatPath(lockDirectory)
@@ -78,7 +95,8 @@ function readLockSnapshot(lockDirectory: string): EditorDataLockSnapshot | null 
 
         return {
             mtimeMs: stats.mtimeMs,
-            owner: readLockOwner(lockDirectory),
+            owner,
+            pid: getLockOwnerPid(owner),
         };
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -89,8 +107,31 @@ function readLockSnapshot(lockDirectory: string): EditorDataLockSnapshot | null 
     }
 }
 
+function isProcessAlive(pid: number | null): boolean {
+    if (!pid) {
+        return false;
+    }
+
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+
+        if (code === 'ESRCH') {
+            return false;
+        }
+
+        if (code === 'EPERM') {
+            return true;
+        }
+
+        return true;
+    }
+}
+
 function isLockStale(snapshot: EditorDataLockSnapshot): boolean {
-    return Date.now() - snapshot.mtimeMs > DATA_LOCK_STALE_MS;
+    return Date.now() - snapshot.mtimeMs > DATA_LOCK_STALE_MS && !isProcessAlive(snapshot.pid);
 }
 
 function isSameLockSnapshot(

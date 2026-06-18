@@ -28,7 +28,6 @@ services:
       NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
       EDITOR_ACCESS_TOKEN: ${EDITOR_ACCESS_TOKEN:-}
       EDITOR_RUNTIME_AUTH_SETUP_TOKEN: ${EDITOR_RUNTIME_AUTH_SETUP_TOKEN:-}
-      EDITOR_ALLOW_RUNTIME_AUTH_SETUP: ${EDITOR_ALLOW_RUNTIME_AUTH_SETUP:-false}
       # 公网生产默认要求 HTTPS Secure Cookie；仅内网/临时 HTTP 调试显式设为 false
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # 可信反向代理 IP 列表；配置后登录/搜索限流会按真实客户端 IP 分桶

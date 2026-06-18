@@ -53,8 +53,22 @@ import {
   normalizeSourceLinks,
 } from '@/lib/source-links';
 import { isSafeExternalUrl } from '@/lib/url-safety';
+import { createEditorCsrfHeaders } from '@/app/editor/editor-csrf';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+interface UploadedMediaAsset {
+  publicPath: string;
+}
+
+interface MediaUploadResponse {
+  asset?: UploadedMediaAsset;
+  remoteMedia?: {
+    enabled: boolean;
+    success: boolean;
+    message?: string;
+  };
+}
 
 interface StoredDraft {
   version: number;
@@ -175,6 +189,21 @@ function clearStoredDraft(key: string): void {
   }
 }
 
+function isUploadedMediaAsset(value: unknown): value is UploadedMediaAsset {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    typeof (value as UploadedMediaAsset).publicPath === 'string'
+  );
+}
+
+function createImageAltText(file: File): string {
+  return file.name
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]+/g, ' ')
+    .trim() || '图片';
+}
+
 export function NewArticleContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -208,7 +237,7 @@ export function NewArticleContent() {
   const [editorMode, setEditorMode] = useState<EditorMode>('split');
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [statusMessage, setStatusMessage] = useState<{
-    tone: 'info' | 'success' | 'danger';
+    tone: 'info' | 'success' | 'warning' | 'danger';
     text: string;
     blockingCheck?: ArticleQualityCheck;
   } | null>(null);
@@ -502,6 +531,48 @@ export function NewArticleContent() {
     URL.revokeObjectURL(url);
   }, [content, editId, exportArticle, frontmatter]);
 
+  const handleUploadPastedImage = useCallback(async (file: File): Promise<string> => {
+    const form = new FormData();
+
+    form.set('file', file);
+    setStatusMessage({ tone: 'info', text: '正在上传剪切板图片...' });
+
+    const response = await fetch('/api/data/media', {
+      method: 'POST',
+      credentials: 'include',
+      headers: createEditorCsrfHeaders(),
+      body: form,
+    });
+    const payload = (await response.json().catch(() => null)) as MediaUploadResponse & { message?: unknown };
+
+    if (!response.ok) {
+      const message = typeof payload?.message === 'string'
+        ? payload.message
+        : `图片上传失败（HTTP ${response.status}）。`;
+
+      setStatusMessage({ tone: 'danger', text: message });
+      throw new Error(message);
+    }
+
+    if (!isUploadedMediaAsset(payload?.asset)) {
+      const message = '服务器返回的图片上传结果格式无效。';
+
+      setStatusMessage({ tone: 'danger', text: message });
+      throw new Error(message);
+    }
+
+    if (payload.remoteMedia?.enabled && !payload.remoteMedia.success) {
+      setStatusMessage({
+        tone: 'warning',
+        text: `图片已保存到本地，但同步到 R2 失败：${payload.remoteMedia.message || '请稍后重试。'}`,
+      });
+    } else {
+      setStatusMessage({ tone: 'success', text: '图片已上传。' });
+    }
+
+    return `![${createImageAltText(file)}](${payload.asset.publicPath})`;
+  }, []);
+
   const handleJumpToHeading = useCallback((heading: MarkdownHeading) => {
     if (editorMode === 'preview') {
       setEditorMode('split');
@@ -680,6 +751,7 @@ export function NewArticleContent() {
                     value={content}
                     onChange={setContent}
                     onSave={handleSave}
+                    onUploadPastedImage={handleUploadPastedImage}
                     placeholder="开始编写 Markdown..."
                   />
                 </div>

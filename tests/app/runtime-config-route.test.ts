@@ -121,6 +121,7 @@ describe('runtime setup and config APIs', () => {
       expect.objectContaining({
         setupCompleted: false,
         authConfigured: false,
+        setupEnabled: true,
         setupTokenRequired: false,
       })
     );
@@ -174,12 +175,7 @@ describe('runtime setup and config APIs', () => {
 
     const afterSetup = await getSetup();
 
-    expect(await afterSetup.json()).toEqual(
-      expect.objectContaining({
-        setupCompleted: true,
-        authConfigured: true,
-      })
-    );
+    expect(await afterSetup.json()).toEqual({ setupCompleted: true });
   });
 
   it('initializes with Cloudflare R2 automatic setup without persisting the global key', async () => {
@@ -419,5 +415,60 @@ describe('runtime setup and config APIs', () => {
 
     expect(oldLogin.status).toBe(401);
     expect(newLogin.status).toBe(200);
+  });
+
+  it('rejects stale runtime config revisions without overwriting the current config', async () => {
+    clearRuntimeEnv();
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    process.env.EDITOR_ACCESS_TOKEN = 'runtime-config-token';
+
+    const createResponse = await putRuntimeConfig(
+      await createAuthedEditorRequest('http://localhost/api/runtime-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          config: {
+            publicSiteUrl: 'https://first.example',
+            cookieSecure: false,
+            trustedProxyIps: '',
+            dataRootPath: process.env.BLOG_DATA_ROOT,
+          },
+          revision: null,
+        }),
+      })
+    );
+    const createPayload = await createResponse.json();
+
+    expect(createResponse.status).toBe(200);
+    expect(createPayload.revision).toEqual(expect.any(String));
+
+    const staleResponse = await putRuntimeConfig(
+      await createAuthedEditorRequest('http://localhost/api/runtime-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          config: {
+            publicSiteUrl: 'https://stale.example',
+            cookieSecure: true,
+            trustedProxyIps: '198.51.100.2',
+            dataRootPath: process.env.BLOG_DATA_ROOT,
+          },
+          revision: null,
+        }),
+      })
+    );
+    const stalePayload = await staleResponse.json();
+    const storedConfig = JSON.parse(
+      fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'settings', 'app-runtime.json'), 'utf8')
+    );
+
+    expect(staleResponse.status).toBe(409);
+    expect(stalePayload).toEqual(expect.objectContaining({
+      message: '运行时配置已被其他会话更新，请刷新后重试。',
+      revision: createPayload.revision,
+    }));
+    expect(storedConfig).toEqual(expect.objectContaining({
+      publicSiteUrl: 'https://first.example',
+      cookieSecure: false,
+      trustedProxyIps: [],
+    }));
   });
 });

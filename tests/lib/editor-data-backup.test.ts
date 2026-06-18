@@ -172,6 +172,7 @@ describe('editor backup payload', () => {
       articles: 1,
       categories: 1,
       settings: true,
+      media: 0,
     });
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([normalizedArticle]);
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
@@ -211,6 +212,7 @@ describe('editor backup payload', () => {
       articles: 1,
       categories: 1,
       settings: true,
+      media: 0,
     });
 
     const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');

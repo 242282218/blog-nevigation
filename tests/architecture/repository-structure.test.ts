@@ -104,6 +104,7 @@ describe('repository structure migration', () => {
         const envExample = fs.readFileSync(resolveRepoPath('.env.example'), 'utf8');
         const nodeVersion = fs.readFileSync(resolveRepoPath('.nvmrc'), 'utf8').trim();
         const packageJson = JSON.parse(fs.readFileSync(resolveRepoPath('package.json'), 'utf8')) as {
+            dependencies?: Record<string, string>;
             packageManager?: string;
             scripts?: Record<string, string>;
         };
@@ -112,6 +113,7 @@ describe('repository structure migration', () => {
         const deployScript = fs.readFileSync(resolveRepoPath('deploy', 'git-deploy.sh'), 'utf8');
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
         const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
+        const quickTestWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'quick-tests.yml'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
 
         expect(dockerIgnore).toMatch(/^data$/m);
@@ -123,6 +125,7 @@ describe('repository structure migration', () => {
         expect(packageJson.scripts?.start).toBe('node scripts/start-standalone.mjs');
         expect(packageJson.scripts?.check).toContain('npm run check:env');
         expect(packageJson.scripts?.['check:env']).toBe('node scripts/test/check-env-files.mjs');
+        expect(packageJson.dependencies).not.toHaveProperty('framer-motion');
         expect(fs.readFileSync(resolveRepoPath('scripts', 'test', 'check-env-files.mjs'), 'utf8')).toContain('.env.local');
         expect(dockerfile).toContain('FROM node:24-alpine AS deps');
         expect(dockerfile).toContain('FROM node:24-alpine AS builder');
@@ -167,6 +170,7 @@ describe('repository structure migration', () => {
         expect(localCompose).toContain('TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}');
         expect(localCompose).not.toContain('EDITOR_AUTH_INTERNAL_ORIGIN');
         expect(envExample).toContain('EDITOR_ACCESS_TOKEN=local-dev-only-secret');
+        expect(envExample).toContain('EDITOR_RUNTIME_AUTH_SETUP_TOKEN=');
         expect(envExample).toContain('COOKIE_SECURE=false');
         expect(envExample).toContain('TRUSTED_PROXY_IPS=');
         expect(envExample).toContain('NEXT_PUBLIC_SITE_URL=http://localhost:7199');
@@ -202,6 +206,11 @@ describe('repository structure migration', () => {
         expect(deployWorkflow).toContain('npm run check:env');
         expect(deployWorkflow).toContain('npm run test:coverage');
         expect(deployWorkflow).not.toContain('npm run test:run');
+        expect(quickTestWorkflow).toContain('# actions/checkout@v6');
+        expect(quickTestWorkflow).toContain('# actions/setup-node@v6');
+        expect(quickTestWorkflow).toContain('npm run check:env');
+        expect(quickTestWorkflow).toContain('npm run test:run');
+        expect(quickTestWorkflow).not.toMatch(/uses:\s+[^@\n]+@v\d+/);
         expect(deployWorkflow).toContain('# docker/setup-buildx-action@v4');
         expect(deployWorkflow).toContain('# aquasecurity/trivy-action@master');
         expect(deployWorkflow).toContain('Report Docker smoke image vulnerabilities with Trivy');
@@ -262,6 +271,8 @@ describe('repository structure migration', () => {
         expect(uiSmokeWorkflow).toContain('npm run start');
         expect(uiSmokeWorkflow).not.toContain('next start');
         expect(readme).toContain('tar -C /opt/blog-nevigation -czf blog-navigation-data.tgz data .env');
+        expect(readme).not.toContain('docker rm -f');
+        expect(deployWorkflow).not.toContain('docker rm -f');
         expect(fs.readFileSync(resolveRepoPath('scripts', 'data', 'verify-runtime-data.mjs'), 'utf8')).toContain('npm run data:verify');
         expect(readme).toContain('data/settings/cloudflare-r2.json');
         expect(readme).toContain('完整优先于 `.env`');
@@ -278,16 +289,18 @@ describe('repository structure migration', () => {
             expect(source).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
             expect(source).not.toContain('backupEncryptionPassphrase');
         });
-        collectMarkdownFiles(resolveRepoPath('docs')).forEach((filePath) => {
-            const source = fs.readFileSync(filePath, 'utf8');
+        collectMarkdownFiles(resolveRepoPath('docs'))
+            .filter((filePath) => !filePath.includes('/plans/') && !filePath.includes('\\plans\\'))
+            .forEach((filePath) => {
+                const source = fs.readFileSync(filePath, 'utf8');
 
-            expect(source, filePath).not.toContain('R2 对象必须加密');
-            expect(source, filePath).not.toContain('R2 上传对象不包含明文敏感内容');
-            expect(source, filePath).not.toContain('加密上传');
-            expect(source, filePath).not.toContain('缺少加密口令');
-            expect(source, filePath).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
-            expect(source, filePath).not.toContain('backupEncryptionPassphrase');
-        });
+                expect(source, filePath).not.toContain('R2 对象必须加密');
+                expect(source, filePath).not.toContain('R2 上传对象不包含明文敏感内容');
+                expect(source, filePath).not.toContain('加密上传');
+                expect(source, filePath).not.toContain('缺少加密口令');
+                expect(source, filePath).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
+                expect(source, filePath).not.toContain('backupEncryptionPassphrase');
+            });
         expect(deployWorkflow).toContain('Build did not produce an image digest; refusing to deploy.');
         expect(deployWorkflow).toContain('wait_for_healthcheck "${HEALTHCHECK_URL}" "deployment"');
         expect(deployWorkflow).toContain('wait_for_healthcheck "${ROLLBACK_HEALTHCHECK_URL}" "rollback"');

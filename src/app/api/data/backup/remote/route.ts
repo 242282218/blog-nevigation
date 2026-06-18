@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
-import { isEditorDataRootConfigured } from '@/lib/editor-data-storage';
 import {
     createRemoteBackupRestoreResponse,
     createRemoteBackupStatusResponse,
@@ -28,10 +26,6 @@ export async function POST(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     const { body, response } = await readRemoteBackupRequestBody(request);

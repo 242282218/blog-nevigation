@@ -162,4 +162,67 @@ describe('useLocalArticles', () => {
     expect(container.textContent).toContain('服务器返回的文章冲突数据格式无效');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('flushes pending article edits with keepalive before unload', async () => {
+    fetchMock.mockResolvedValue(
+      createJsonResponse({
+        articles: [remoteArticle],
+        revision: 'revision-1',
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        <TestLocalArticles
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      currentApi?.updateArticle('remote-article', { title: 'Unload Edit' });
+    });
+
+    window.dispatchEvent(new Event('beforeunload'));
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/data/articles', expect.objectContaining({
+      keepalive: true,
+      method: 'PUT',
+      body: expect.stringContaining('Unload Edit'),
+    }));
+  });
+
+  it('loads valid article updates from storage events in another tab', async () => {
+    fetchMock.mockResolvedValue(
+      createJsonResponse({
+        articles: [remoteArticle],
+        revision: 'revision-1',
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        <TestLocalArticles
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'blog-local-articles',
+        newValue: JSON.stringify([localArticle]),
+        storageArea: window.localStorage,
+      }));
+    });
+
+    expect(currentApi?.articles).toHaveLength(1);
+    expect(currentApi?.articles[0]?.title).toBe('Local Article');
+  });
 });

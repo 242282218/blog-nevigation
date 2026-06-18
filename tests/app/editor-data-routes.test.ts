@@ -10,6 +10,7 @@ import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import { EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
 import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
   cleanupTempDirectories,
   createAuthedEditorRequest,
@@ -21,7 +22,12 @@ vi.mock('@/lib/editor-remote-backup', () => ({
   queueCurrentBackupToRemote: vi.fn(),
 }));
 
+vi.mock('@/lib/public-cache-invalidation', () => ({
+  invalidatePublicContentCache: vi.fn(),
+}));
+
 const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
+const mockedInvalidatePublicContentCache = vi.mocked(invalidatePublicContentCache);
 const ORIGINAL_ENV = {
   BLOG_DATA_ROOT: process.env.BLOG_DATA_ROOT,
   EDITOR_ACCESS_TOKEN: process.env.EDITOR_ACCESS_TOKEN,
@@ -377,6 +383,7 @@ describe('editor data write APIs', () => {
     expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'articles-write',
     });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('articles-write');
   });
 
   it('rejects stale article revisions after another committed write', async () => {
@@ -518,6 +525,7 @@ describe('editor data write APIs', () => {
     expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'navigation-write',
     });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('navigation-write');
   });
 
   it('rejects invalid settings payloads without writing or remote sync', async () => {
@@ -597,5 +605,6 @@ describe('editor data write APIs', () => {
     expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'settings-write',
     });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('settings-write');
   });
 });

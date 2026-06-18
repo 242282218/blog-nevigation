@@ -10,18 +10,15 @@ import {
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
-    createEditorDataRootRequiredResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
-import {
-    isEditorDataRootConfigured,
-} from '@/lib/editor-data-storage';
 import {
     createCurrentEditorBackupPayload,
     restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
 import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
     createRestoreConflictResponse,
     createRestorePreconditionRequiredResponse,
@@ -71,10 +68,6 @@ export async function POST(request: NextRequest) {
 
     if (authError) {
         return authError;
-    }
-
-    if (!isEditorDataRootConfigured()) {
-        return createEditorDataRootRequiredResponse();
     }
 
     let body: BackupRequestBody | null;
@@ -138,6 +131,7 @@ export async function POST(request: NextRequest) {
         reason: 'local-restore',
         writeSnapshot: true,
     });
+    invalidatePublicContentCache('local-restore');
 
     return NextResponse.json({
         success: true,
@@ -145,6 +139,7 @@ export async function POST(request: NextRequest) {
             articles: result.articles,
             categories: result.categories,
             settings: result.settings,
+            media: result.media,
         },
         remoteBackup,
     });

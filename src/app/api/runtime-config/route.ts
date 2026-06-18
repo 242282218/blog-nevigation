@@ -9,7 +9,9 @@ import {
 } from '@/lib/api-json-body';
 import {
     AppRuntimeConfigInvalidError,
+    AppRuntimeConfigRevisionMismatchError,
     getEditableAppRuntimeConfig,
+    getAppRuntimeConfigRevision,
     getSafeAppRuntimeConfig,
     saveAppRuntimeConfig,
     type EditableAppRuntimeConfig,
@@ -21,11 +23,13 @@ import {
     updateRuntimeEditorAuthSecret,
 } from '@/lib/editor-auth-runtime';
 import { setEditorSessionCookies } from '@/lib/editor-session-response';
+import { withRuntimeDataRootLock } from '@/lib/runtime-data-lock';
 
 type RuntimeConfigRequestBody = {
     config?: Partial<Record<keyof EditableAppRuntimeConfig, unknown>>;
     editorSecret?: unknown;
     confirmEditorSecret?: unknown;
+    revision?: unknown;
 };
 
 function asString(value: unknown): string {
@@ -86,6 +90,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             config: getSafeAppRuntimeConfig(),
             editable: getEditableAppRuntimeConfig(),
+            revision: getAppRuntimeConfigRevision(),
             version: getAppVersionInfo(),
         });
     } catch (error) {
@@ -135,6 +140,7 @@ export async function PUT(request: NextRequest) {
 
     const editorSecret = asString(body?.editorSecret).trim();
     const confirmEditorSecret = asString(body?.confirmEditorSecret).trim();
+    const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
 
     if (editorSecret && editorSecret !== confirmEditorSecret) {
         return NextResponse.json(
@@ -146,22 +152,31 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
-        saveAppRuntimeConfig(config);
+        let sessionValue: string | null = null;
 
-        if (!editorSecret) {
+        await withRuntimeDataRootLock(async () => {
+            saveAppRuntimeConfig(config, { expectedRevision });
+
+            if (editorSecret) {
+                sessionValue = await updateRuntimeEditorAuthSecret(editorSecret);
+            }
+        });
+
+        if (!sessionValue) {
             return NextResponse.json({
                 success: true,
                 config: getSafeAppRuntimeConfig(),
                 editable: getEditableAppRuntimeConfig(),
+                revision: getAppRuntimeConfigRevision(),
                 version: getAppVersionInfo(),
             });
         }
 
-        const sessionValue = await updateRuntimeEditorAuthSecret(editorSecret);
         return setEditorSessionCookies(NextResponse.json({
             success: true,
             config: getSafeAppRuntimeConfig(),
             editable: getEditableAppRuntimeConfig(),
+            revision: getAppRuntimeConfigRevision(),
             version: getAppVersionInfo(),
         }), sessionValue);
     } catch (error) {
@@ -177,6 +192,19 @@ export async function PUT(request: NextRequest) {
                     message: '编辑口令至少需要 12 个字符。',
                 },
                 { status: 400 }
+            );
+        }
+
+        if (error instanceof AppRuntimeConfigRevisionMismatchError) {
+            return NextResponse.json(
+                {
+                    message: '运行时配置已被其他会话更新，请刷新后重试。',
+                    config: getSafeAppRuntimeConfig(),
+                    editable: getEditableAppRuntimeConfig(),
+                    revision: error.currentRevision,
+                    version: getAppVersionInfo(),
+                },
+                { status: 409 }
             );
         }
 

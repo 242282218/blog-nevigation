@@ -4,20 +4,28 @@ import {
     S3Client,
     S3ServiceException,
 } from '@aws-sdk/client-s3';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import path from 'node:path';
+import { writeJsonAtomically as writeJsonAtomicallyShared } from '@/lib/atomic-json-writer';
 import { isRecord } from '@/lib/article-data';
 import {
     createEditorDataManifestHash,
     type EditorBackupPayload,
 } from '@/lib/editor-data-backup';
+import {
+    EDITOR_MEDIA_MAX_IMAGE_BYTES,
+    type EditorMediaAsset,
+} from '@/lib/editor-media-storage';
+import { createJsonRevision } from '@/lib/json-revision';
 import { getRuntimeSettingsFilePath } from '@/lib/runtime-config';
 
 const DEFAULT_R2_PREFIX = 'blog-navigation';
 const LATEST_BACKUP_FILE_NAME = 'backup.json';
 const R2_SETTINGS_FILE_NAME = 'cloudflare-r2.json';
-const R2_BACKUP_BODY_LIMIT_BYTES = 5 * 1024 * 1024;
+const R2_BACKUP_DOWNLOAD_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
+const R2_CONNECTION_TIMEOUT_MS = 5_000;
+const R2_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface R2BackupConfig {
     bucket: string;
@@ -78,9 +86,16 @@ export class R2BackupSettingsInvalidError extends Error {
 }
 
 export class R2BackupPayloadTooLargeError extends Error {
-    constructor(public readonly limitBytes = R2_BACKUP_BODY_LIMIT_BYTES) {
+    constructor(public readonly limitBytes = R2_BACKUP_DOWNLOAD_BODY_LIMIT_BYTES) {
         super(`R2 backup payload exceeds ${limitBytes} bytes.`);
         this.name = 'R2BackupPayloadTooLargeError';
+    }
+}
+
+export class R2BackupSettingsRevisionMismatchError extends Error {
+    constructor(public readonly currentRevision: string | null) {
+        super('Cloudflare R2 settings revision does not match.');
+        this.name = 'R2BackupSettingsRevisionMismatchError';
     }
 }
 
@@ -144,18 +159,8 @@ function readStoredR2BackupSettings(): EditableR2BackupSettings | null {
 }
 
 function writeJsonAtomically(filePath: string, value: unknown): void {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-
-    try {
-        fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-        protectSecretFile(tempPath);
-        fs.renameSync(tempPath, filePath);
-        protectSecretFile(filePath);
-    } catch (error) {
-        fs.rmSync(tempPath, { force: true });
-        throw error;
-    }
+    writeJsonAtomicallyShared(filePath, value, { mode: 0o600 });
+    protectSecretFile(filePath);
 }
 
 function protectSecretFile(filePath: string): void {
@@ -257,7 +262,18 @@ export function getEditableR2BackupSettings(): SafeR2BackupSettings {
     };
 }
 
-export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): SafeR2BackupSettings {
+function createR2BackupSettingsRevision(settings: EditableR2BackupSettings | null): string | null {
+    return settings ? createJsonRevision(settings) : null;
+}
+
+export function getR2BackupSettingsRevision(): string | null {
+    return createR2BackupSettingsRevision(readStoredR2BackupSettings());
+}
+
+export function saveEditableR2BackupSettings(
+    input: EditableR2BackupSettings,
+    options: { expectedRevision?: string | null } = {}
+): SafeR2BackupSettings {
     const filePath = getR2SettingsFilePath();
 
     if (!filePath) {
@@ -265,9 +281,11 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
     }
 
     let existing: EditableR2BackupSettings | null = null;
+    let currentRevision: string | null = null;
 
     try {
         existing = readStoredR2BackupSettings();
+        currentRevision = createR2BackupSettingsRevision(existing);
     } catch (error) {
         const canReplaceInvalidSettings = (
             error instanceof R2BackupSettingsInvalidError &&
@@ -277,6 +295,10 @@ export function saveEditableR2BackupSettings(input: EditableR2BackupSettings): S
         if (!canReplaceInvalidSettings) {
             throw error;
         }
+    }
+
+    if (options.expectedRevision !== undefined && options.expectedRevision !== currentRevision) {
+        throw new R2BackupSettingsRevisionMismatchError(currentRevision);
     }
 
     const trimmedSecretAccessKey = input.secretAccessKey.trim();
@@ -385,6 +407,10 @@ function createR2Client(config: R2BackupConfig): S3Client {
         region: 'auto',
         endpoint: config.endpoint,
         forcePathStyle: true,
+        requestHandler: new NodeHttpHandler({
+            connectionTimeout: R2_CONNECTION_TIMEOUT_MS,
+            requestTimeout: R2_REQUEST_TIMEOUT_MS,
+        }),
         credentials: {
             accessKeyId: config.accessKeyId,
             secretAccessKey: config.secretAccessKey,
@@ -439,14 +465,14 @@ function createSnapshotBackupKey(
     );
 }
 
-function assertR2BackupBodySize(byteLength: number): void {
-    if (byteLength > R2_BACKUP_BODY_LIMIT_BYTES) {
-        throw new R2BackupPayloadTooLargeError();
+function assertR2BackupDownloadBodySize(byteLength: number): void {
+    if (byteLength > R2_BACKUP_DOWNLOAD_BODY_LIMIT_BYTES) {
+        throw new R2BackupPayloadTooLargeError(R2_BACKUP_DOWNLOAD_BODY_LIMIT_BYTES);
     }
 }
 
-function assertR2BackupBodyTextSize(value: string): void {
-    assertR2BackupBodySize(Buffer.byteLength(value, 'utf8'));
+function assertR2BackupDownloadBodyTextSize(value: string): void {
+    assertR2BackupDownloadBodySize(Buffer.byteLength(value, 'utf8'));
 }
 
 async function bodyToString(body: unknown): Promise<string> {
@@ -455,18 +481,18 @@ async function bodyToString(body: unknown): Promise<string> {
     }
 
     if (typeof body === 'string') {
-        assertR2BackupBodyTextSize(body);
+        assertR2BackupDownloadBodyTextSize(body);
         return body;
     }
 
     if (body instanceof Uint8Array) {
-        assertR2BackupBodySize(body.byteLength);
+        assertR2BackupDownloadBodySize(body.byteLength);
         return Buffer.from(body).toString('utf8');
     }
 
     if (typeof body === 'object' && 'transformToString' in body) {
         const value = await (body as { transformToString: () => Promise<string> }).transformToString();
-        assertR2BackupBodyTextSize(value);
+        assertR2BackupDownloadBodyTextSize(value);
         return value;
     }
 
@@ -477,7 +503,7 @@ async function bodyToString(body: unknown): Promise<string> {
         for await (const chunk of body as AsyncIterable<Buffer | Uint8Array | string>) {
             const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
             receivedBytes += buffer.byteLength;
-            assertR2BackupBodySize(receivedBytes);
+            assertR2BackupDownloadBodySize(receivedBytes);
             chunks.push(buffer);
         }
 
@@ -485,15 +511,72 @@ async function bodyToString(body: unknown): Promise<string> {
     }
 
     const value = String(body);
-    assertR2BackupBodyTextSize(value);
+    assertR2BackupDownloadBodyTextSize(value);
     return value;
 }
 
-function createR2BackupBody(payload: EditorBackupPayload): string {
-    const body = JSON.stringify(payload, null, 2);
+async function bodyToBytes(body: unknown, limitBytes: number): Promise<Uint8Array> {
+    if (!body) {
+        return new Uint8Array();
+    }
 
-    assertR2BackupBodyTextSize(body);
-    return body;
+    if (body instanceof Uint8Array) {
+        if (body.byteLength > limitBytes) {
+            throw new R2BackupPayloadTooLargeError(limitBytes);
+        }
+
+        return body;
+    }
+
+    if (typeof body === 'string') {
+        const buffer = Buffer.from(body, 'binary');
+
+        if (buffer.byteLength > limitBytes) {
+            throw new R2BackupPayloadTooLargeError(limitBytes);
+        }
+
+        return buffer;
+    }
+
+    if (typeof body === 'object' && 'transformToByteArray' in body) {
+        const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+
+        if (bytes.byteLength > limitBytes) {
+            throw new R2BackupPayloadTooLargeError(limitBytes);
+        }
+
+        return bytes;
+    }
+
+    if (Symbol.asyncIterator in Object(body)) {
+        const chunks: Buffer[] = [];
+        let receivedBytes = 0;
+
+        for await (const chunk of body as AsyncIterable<Buffer | Uint8Array | string>) {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            receivedBytes += buffer.byteLength;
+
+            if (receivedBytes > limitBytes) {
+                throw new R2BackupPayloadTooLargeError(limitBytes);
+            }
+
+            chunks.push(buffer);
+        }
+
+        return Buffer.concat(chunks);
+    }
+
+    const buffer = Buffer.from(String(body), 'binary');
+
+    if (buffer.byteLength > limitBytes) {
+        throw new R2BackupPayloadTooLargeError(limitBytes);
+    }
+
+    return buffer;
+}
+
+function createR2BackupBody(payload: EditorBackupPayload): string {
+    return JSON.stringify(payload, null, 2);
 }
 
 function parseR2BackupBody(content: string): unknown {
@@ -574,7 +657,7 @@ export async function downloadLatestBackupPayloadFromR2(): Promise<unknown> {
         );
 
         if (typeof response.ContentLength === 'number') {
-            assertR2BackupBodySize(response.ContentLength);
+            assertR2BackupDownloadBodySize(response.ContentLength);
         }
 
         const content = await bodyToString(response.Body);
@@ -591,4 +674,75 @@ export async function downloadLatestBackupPayloadFromR2(): Promise<unknown> {
 
         throw error;
     }
+}
+
+function createMediaObjectKey(config: R2BackupConfig, asset: EditorMediaAsset): string {
+    return joinR2Key(config.prefix, 'media', asset.path);
+}
+
+export async function uploadMediaAssetToR2(
+    asset: EditorMediaAsset,
+    bytes: Uint8Array
+): Promise<{ enabled: true; success: true; key: string } | { enabled: false; success: false; message: string }> {
+    const config = getR2BackupConfig();
+
+    if (!config) {
+        return {
+            enabled: false,
+            success: false,
+            message: 'R2 backup is disabled or not configured.',
+        };
+    }
+
+    const client = createR2Client(config);
+    const key = createMediaObjectKey(config, asset);
+
+    await client.send(
+        new PutObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+            Body: Buffer.from(bytes),
+            ContentType: asset.mimeType,
+        })
+    );
+
+    return {
+        enabled: true,
+        success: true,
+        key,
+    };
+}
+
+export async function downloadMediaAssetFromR2(asset: EditorMediaAsset): Promise<Uint8Array> {
+    const config = getR2BackupConfig();
+
+    if (!config) {
+        throw new R2BackupNotConfiguredError();
+    }
+
+    const client = createR2Client(config);
+    const key = createMediaObjectKey(config, asset);
+
+    const response = await client.send(
+        new GetObjectCommand({
+            Bucket: config.bucket,
+            Key: key,
+        })
+    );
+
+    if (typeof response.ContentLength === 'number' && response.ContentLength > EDITOR_MEDIA_MAX_IMAGE_BYTES) {
+        throw new R2BackupPayloadTooLargeError(EDITOR_MEDIA_MAX_IMAGE_BYTES);
+    }
+
+    return bodyToBytes(response.Body, EDITOR_MEDIA_MAX_IMAGE_BYTES);
+}
+
+export function createR2MediaObjectKeyForTests(asset: EditorMediaAsset): string {
+    const config = getR2BackupConfig();
+
+    if (!config) {
+        throw new R2BackupNotConfiguredError();
+    }
+
+    return createMediaObjectKey(config, asset);
 }
