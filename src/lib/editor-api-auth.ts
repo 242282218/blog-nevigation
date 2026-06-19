@@ -11,12 +11,25 @@ import {
     isValidRuntimeEditorSession,
 } from '@/lib/editor-auth-runtime';
 import {
+    EditorBackupFormatError,
+    EditorBackupVersionError,
+    EditorBackupSchemaVersionError,
+} from '@/lib/editor-data-backup';
+import {
     EditorDataFileInvalidError,
     EditorDataLockTimeoutError,
+    EditorDataRootUnavailableError,
 } from '@/lib/editor-data-storage';
 import { getRuntimePublicRequestOrigin } from '@/lib/request-origin-runtime';
 
 export const EDITOR_AUTH_CONFIG_INVALID_MESSAGE = '编辑口令配置文件损坏，请修复或删除后重试。';
+const EDITOR_DATA_ROOT_UNAVAILABLE_ERROR_CODES = new Set([
+    'EACCES',
+    'ENOENT',
+    'ENOTDIR',
+    'EPERM',
+    'EROFS',
+]);
 
 function createEditorCsrfInvalidResponse(): NextResponse {
     return NextResponse.json(
@@ -123,6 +136,41 @@ export function createEditorDataLockTimeoutResponse(error: unknown): NextRespons
             message: '服务器运行时数据正在写入，请稍后重试。',
         },
         { status: 423 }
+    );
+}
+
+export function createEditorDataRootUnavailableResponse(error: unknown): NextResponse | null {
+    if (!(error instanceof EditorDataRootUnavailableError)) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+
+        if (!code || !EDITOR_DATA_ROOT_UNAVAILABLE_ERROR_CODES.has(code)) {
+            return null;
+        }
+    }
+
+    return NextResponse.json(
+        {
+            code: 'runtime_data_root_unavailable',
+            message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+        },
+        { status: 503 }
+    );
+}
+
+export function createEditorBackupInvalidResponse(error: unknown): NextResponse | null {
+    if (
+        !(error instanceof EditorBackupFormatError) &&
+        !(error instanceof EditorBackupVersionError) &&
+        !(error instanceof EditorBackupSchemaVersionError)
+    ) {
+        return null;
+    }
+
+    return NextResponse.json(
+        {
+            message: error.message,
+        },
+        { status: 400 }
     );
 }
 

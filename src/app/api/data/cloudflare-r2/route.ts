@@ -8,10 +8,11 @@ import {
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
 import {
+    createEditorDataRootUnavailableResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
-import { getRemoteBackupQueueStatus } from '@/lib/editor-remote-backup';
+import { getRemoteBackupQueueSnapshot } from '@/lib/editor-remote-backup';
 import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import {
     getEditableR2BackupSettings,
@@ -22,6 +23,7 @@ import {
     saveEditableR2BackupSettings,
     type EditableR2BackupSettings,
 } from '@/lib/r2-backup-storage';
+import { hasWritableRuntimeDataRoot } from '@/lib/runtime-data-root';
 import { withRuntimeDataRootLock } from '@/lib/runtime-data-lock';
 
 type CloudflareR2RequestBody = {
@@ -71,14 +73,23 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const persistent = await hasWritableRuntimeDataRoot();
+        const queueSnapshot = getRemoteBackupQueueSnapshot();
+
         return NextResponse.json({
-            persistent: true,
+            persistent,
             settings: getEditableR2BackupSettings(),
             revision: getR2BackupSettingsRevision(),
             status: getR2BackupStatus(),
-            backupQueue: getRemoteBackupQueueStatus(),
+            ...queueSnapshot,
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidR2SettingsResponse(error);
 
         if (invalidResponse) {
@@ -139,15 +150,22 @@ export async function PUT(request: NextRequest) {
                 prefix: savedSettings.prefix,
             },
         });
+        const queueSnapshot = getRemoteBackupQueueSnapshot();
 
         return NextResponse.json({
             success: true,
             settings: savedSettings,
             revision: getR2BackupSettingsRevision(),
             status: getR2BackupStatus(),
-            backupQueue: getRemoteBackupQueueStatus(),
+            ...queueSnapshot,
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidR2SettingsResponse(error);
 
         if (invalidResponse) {
@@ -155,13 +173,15 @@ export async function PUT(request: NextRequest) {
         }
 
         if (error instanceof R2BackupSettingsRevisionMismatchError) {
+            const queueSnapshot = getRemoteBackupQueueSnapshot();
+
             return NextResponse.json(
                 {
                     message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
                     settings: getEditableR2BackupSettings(),
                     revision: error.currentRevision,
                     status: getR2BackupStatus(),
-                    backupQueue: getRemoteBackupQueueStatus(),
+                    ...queueSnapshot,
                 },
                 { status: 409 }
             );

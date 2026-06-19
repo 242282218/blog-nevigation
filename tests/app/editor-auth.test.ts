@@ -516,6 +516,29 @@ describe('editor auth API', () => {
     expect(await sessionResponse.json()).toEqual(expect.objectContaining({ authenticated: true }));
   });
 
+  it('falls back to process-memory sessions when BLOG_DATA_ROOT is blocked by a file path', async () => {
+    const dataRoot = createTempDirectoryWithCleanup('editor-auth-env-session-blocked-');
+    const blockingFile = path.join(dataRoot, 'blocked.txt');
+    const blockedRoot = path.join(blockingFile, 'runtime-data');
+
+    fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+    process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
+    process.env.BLOG_DATA_ROOT = blockedRoot;
+
+    const loginResponse = await POST(createJsonRequest({ secret: 'correct-secret' }));
+    const sessionCookie = extractSessionCookie(loginResponse);
+    const sessionResponse = await GET(new NextRequest('http://localhost/api/editor-auth', {
+      headers: { Cookie: sessionCookie },
+    }));
+    const logoutResponse = await DELETE(createLogoutRequest(loginResponse));
+
+    expect(loginResponse.status).toBe(200);
+    expect(await loginResponse.json()).toEqual({ success: true });
+    expect(fs.existsSync(path.join(blockedRoot, 'settings', 'editor-env-session.json'))).toBe(false);
+    expect(await sessionResponse.json()).toEqual(expect.objectContaining({ authenticated: true }));
+    expect(logoutResponse.status).toBe(200);
+  });
+
   it('keeps environment-token sessions valid after module reloads without BLOG_DATA_ROOT', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'correct-secret';
     delete process.env.BLOG_DATA_ROOT;

@@ -10,6 +10,7 @@ import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
 import { EDITOR_CSRF_HEADER } from '@/lib/editor-auth';
 import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
+import { createDefaultSiteSettings } from '@/lib/site-settings';
 import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
   cleanupTempDirectories,
@@ -50,6 +51,14 @@ function createTempDataRoot(): string {
   return directory;
 }
 
+function createBlockedDataRoot(): string {
+  const root = createTempDataRoot();
+  const blockingFile = path.join(root, 'blocked.txt');
+
+  fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+  return path.join(blockingFile, 'runtime-data');
+}
+
 function writeJson(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
@@ -88,6 +97,24 @@ function seedRuntimeData(dataRoot: string): void {
   writeJson(path.join(dataRoot, 'articles', 'articles.json'), [createArticle('article-1', 'First Article')]);
   writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
   writeJson(path.join(dataRoot, 'settings', 'site.json'), createSettings('Original Site'));
+}
+
+async function createAuthenticatedHeaders(url: string): Promise<Headers> {
+  const currentRoot = process.env.BLOG_DATA_ROOT;
+
+  process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+  try {
+    const request = await createAuthedEditorRequest(url);
+
+    return new Headers(request.headers);
+  } finally {
+    if (currentRoot === undefined) {
+      delete process.env.BLOG_DATA_ROOT;
+    } else {
+      process.env.BLOG_DATA_ROOT = currentRoot;
+    }
+  }
 }
 
 beforeEach(() => {
@@ -386,6 +413,129 @@ describe('editor data write APIs', () => {
     expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('articles-write');
   });
 
+  it('returns a specific article validation error without writing or remote sync', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    seedRuntimeData(process.env.BLOG_DATA_ROOT);
+
+    const existingArticles = fs.readFileSync(
+      path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'),
+      'utf8'
+    );
+
+    const response = await putArticles(
+      await createAuthedEditorRequest('http://localhost/api/data/articles', {
+        method: 'PUT',
+        body: JSON.stringify({
+          revision: 'stale-revision',
+          articles: [
+            {
+              ...createArticle('article-2', 'Duplicate One'),
+              slug: 'same',
+            },
+            {
+              ...createArticle('article-3', 'Duplicate Two'),
+              slug: 'same',
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        message: '文章 slug 重复：same',
+      })
+    );
+    expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'articles', 'articles.json'), 'utf8')).toBe(
+      existingArticles
+    );
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('returns a structured 503 when the runtime data root path is unavailable for writes', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    const headers = await createAuthenticatedHeaders('http://localhost/api/data/articles');
+
+    process.env.BLOG_DATA_ROOT = createBlockedDataRoot();
+
+    const articleResponse = await putArticles(new NextRequest('http://localhost/api/data/articles', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: 'blocked-root',
+        articles: [createArticle('article-blocked', 'Blocked Article')],
+      }),
+    }));
+    const navigationResponse = await putNavigation(new NextRequest('http://localhost/api/data/navigation', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: 'blocked-root',
+        categories: [
+          {
+            name: 'Docs',
+            icon: 'book',
+            slug: 'docs',
+            tools: [],
+          },
+        ],
+      }),
+    }));
+    const settingsResponse = await putSettings(new NextRequest('http://localhost/api/data/settings', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        revision: 'blocked-root',
+        settings: createSettings('Blocked Root Site'),
+      }),
+    }));
+
+    for (const response of [articleResponse, navigationResponse, settingsResponse]) {
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        code: 'runtime_data_root_unavailable',
+        message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+      });
+    }
+
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('marks routes non-persistent when the runtime data root path is unavailable for reads', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createBlockedDataRoot();
+
+    const articleResponse = await getArticles(await createAuthedEditorRequest('http://localhost/api/data/articles'));
+    const navigationResponse = await getNavigation(await createAuthedEditorRequest('http://localhost/api/data/navigation'));
+    const settingsResponse = await getSettings(await createAuthedEditorRequest('http://localhost/api/data/settings'));
+
+    expect(articleResponse.status).toBe(200);
+    expect(await articleResponse.json()).toEqual({
+      persistent: false,
+      revision: null,
+      articles: [],
+    });
+
+    expect(navigationResponse.status).toBe(200);
+    expect(await navigationResponse.json()).toEqual({
+      persistent: false,
+      revision: null,
+      categories: [],
+    });
+
+    expect(settingsResponse.status).toBe(200);
+    expect(await settingsResponse.json()).toEqual(
+      expect.objectContaining({
+        persistent: false,
+        revision: null,
+        settings: createDefaultSiteSettings(),
+        version: expect.any(Object),
+      })
+    );
+  });
+
   it('rejects stale article revisions after another committed write', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
     process.env.BLOG_DATA_ROOT = createTempDataRoot();
@@ -463,7 +613,7 @@ describe('editor data write APIs', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(
       expect.objectContaining({
-        message: '导航数据格式无效。',
+        message: '导航工具必须包含 icon、title、description 和 HTTPS URL。',
       })
     );
     expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'navigation', 'tools.json'), 'utf8')).toBe(
@@ -553,7 +703,7 @@ describe('editor data write APIs', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual(
       expect.objectContaining({
-        message: '站点设置格式无效。',
+        message: '站点设置必须包含非空的 siteName。',
       })
     );
     expect(fs.readFileSync(path.join(process.env.BLOG_DATA_ROOT, 'settings', 'site.json'), 'utf8')).toBe(

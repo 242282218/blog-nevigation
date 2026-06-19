@@ -163,6 +163,46 @@ describe('useLocalArticles', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the backend article save validation error instead of a generic HTTP message', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          articles: [remoteArticle],
+          revision: 'revision-1',
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: '文章 slug 重复：remote-article',
+          },
+          { status: 400 }
+        )
+      );
+
+    await act(async () => {
+      root.render(
+        <TestLocalArticles
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      currentApi?.updateArticle('remote-article', { slug: 'remote-article' });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('文章 slug 重复：remote-article');
+    expect(container.textContent).not.toContain('文章同步到服务器失败（HTTP 400）。');
+  });
+
   it('flushes pending article edits with keepalive before unload', async () => {
     fetchMock.mockResolvedValue(
       createJsonResponse({

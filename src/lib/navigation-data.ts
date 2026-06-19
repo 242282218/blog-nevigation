@@ -3,6 +3,13 @@ import { isSafeExternalUrl } from '@/lib/url-safety';
 
 type UnknownRecord = Record<string, unknown>;
 
+export class NavigationDataParseError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'NavigationDataParseError';
+    }
+}
+
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
 }
@@ -32,9 +39,9 @@ function normalizeTags(value: unknown): string[] {
         .filter(Boolean);
 }
 
-function normalizeTool(value: unknown): Tool | null {
+function normalizeToolOrThrow(value: unknown): Tool {
     if (!value || typeof value !== 'object') {
-        return null;
+        throw new NavigationDataParseError('导航工具必须是对象。');
     }
 
     const tool = value as UnknownRecord;
@@ -46,13 +53,13 @@ function normalizeTool(value: unknown): Tool | null {
         !isNonEmptyString(tool.url) ||
         !isValidNavigationUrl(tool.url)
     ) {
-        return null;
+        throw new NavigationDataParseError('导航工具必须包含 icon、title、description 和 HTTPS URL。');
     }
 
     const tags = normalizeTags(tool.tags);
 
     if (tags.length === 0) {
-        return null;
+        throw new NavigationDataParseError('导航工具必须至少包含一个 tag。');
     }
 
     return {
@@ -64,9 +71,9 @@ function normalizeTool(value: unknown): Tool | null {
     };
 }
 
-function normalizeCategory(value: unknown): Category | null {
+function normalizeCategoryOrThrow(value: unknown): Category {
     if (!value || typeof value !== 'object') {
-        return null;
+        throw new NavigationDataParseError('导航分类必须是对象。');
     }
 
     const category = value as UnknownRecord;
@@ -76,50 +83,49 @@ function normalizeCategory(value: unknown): Category | null {
         !isNonEmptyString(category.icon) ||
         !Array.isArray(category.tools)
     ) {
-        return null;
+        throw new NavigationDataParseError('导航分类必须包含 name、icon 和 tools 数组。');
     }
 
-    const tools = category.tools.map(normalizeTool);
-
-    if (tools.some((tool) => tool === null)) {
-        return null;
-    }
+    const tools = category.tools.map((tool) => normalizeToolOrThrow(tool));
 
     const slugSource = isNonEmptyString(category.slug) ? category.slug : category.name;
     const slug = createSlug(slugSource);
 
     if (!slug) {
-        return null;
+        throw new NavigationDataParseError('导航分类必须有合法的 slug。');
     }
 
     return {
         name: category.name.trim(),
         icon: category.icon.trim(),
         slug,
-        tools: tools as Tool[],
+        tools,
     };
 }
 
-export function parseNavigationData(input: unknown): Category[] | null {
+export function parseNavigationDataOrThrow(input: unknown): Category[] {
     if (!Array.isArray(input)) {
-        return null;
-    }
-
-    const categories = input.map(normalizeCategory);
-
-    if (categories.some((category) => category === null)) {
-        return null;
+        throw new NavigationDataParseError('导航数据必须是数组。');
     }
 
     const slugs = new Set<string>();
+    const categories = input.map((item) => normalizeCategoryOrThrow(item));
 
-    for (const category of categories as Category[]) {
+    for (const category of categories) {
         if (slugs.has(category.slug)) {
-            return null;
+            throw new NavigationDataParseError(`导航分类 slug 重复：${category.slug}`);
         }
 
         slugs.add(category.slug);
     }
 
-    return categories as Category[];
+    return categories;
+}
+
+export function parseNavigationData(input: unknown): Category[] | null {
+    try {
+        return parseNavigationDataOrThrow(input);
+    } catch {
+        return null;
+    }
 }

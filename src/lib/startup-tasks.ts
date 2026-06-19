@@ -16,11 +16,15 @@ async function drainRemoteBackupQueue(): Promise<void> {
 async function queueScheduledRemoteBackup(): Promise<void> {
     const { queueCurrentBackupToRemote } = await import('@/lib/editor-remote-backup');
 
-    queueCurrentBackupToRemote({
+    const result = queueCurrentBackupToRemote({
         reason: 'scheduled-3h',
         writeLatest: true,
         writeSnapshot: true,
     });
+
+    if (!result.queued && result.enabled) {
+        console.warn('[startup-tasks] Scheduled remote backup was not queued:', result.message);
+    }
 }
 
 async function verifyMediaStorageConsistency(): Promise<void> {

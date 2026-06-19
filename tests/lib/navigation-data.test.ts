@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isValidNavigationUrl, parseNavigationData } from '@/lib/navigation-data';
+import { isValidNavigationUrl, parseNavigationData, parseNavigationDataOrThrow } from '@/lib/navigation-data';
 
 const validCategory = {
   name: '开发文档',
@@ -66,6 +66,17 @@ describe('navigation data parser', () => {
         },
       ])
     ).toBeNull();
+    expect(() => parseNavigationDataOrThrow([
+      {
+        ...validCategory,
+        tools: [
+          {
+            ...validCategory.tools[0],
+            url: 'http://developer.mozilla.org',
+          },
+        ],
+      },
+    ])).toThrow('导航工具必须包含 icon、title、description 和 HTTPS URL。');
 
     expect(
       parseNavigationData([
@@ -84,6 +95,9 @@ describe('navigation data parser', () => {
 
   it('rejects duplicate category slugs', () => {
     expect(parseNavigationData([validCategory, validCategory])).toBeNull();
+    expect(() => parseNavigationDataOrThrow([validCategory, validCategory])).toThrow(
+      '导航分类 slug 重复：developer-docs'
+    );
   });
 });
 

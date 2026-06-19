@@ -8,18 +8,25 @@ import {
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
 import {
+    createEditorBackupInvalidResponse,
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
+    createEditorDataRootUnavailableResponse,
 } from '@/lib/editor-api-auth';
 import {
     assertEditorBackupRestoreCurrentManifest,
-    parseEditorBackupData,
-    restoreEditorBackupPayload,
+    parseEditorBackupDataOrThrow,
+    restoreEditorBackupData,
 } from '@/lib/editor-data-backup';
-import { restoreEditorMediaAssetsFromR2 } from '@/lib/editor-media-remote';
 import {
-    getRemoteBackupQueueStatus,
+    EditorMediaRestoreDownloadError,
+    materializeEditorMediaRestoreDataFromR2,
+} from '@/lib/editor-media-remote';
+import {
+    getRemoteBackupQueueSnapshot,
+    queueCurrentBackupToRemote,
     retryFailedRemoteBackups,
+    shouldQueueRemoteBackupRetry,
     syncCurrentBackupToRemote,
 } from '@/lib/editor-remote-backup';
 import {
@@ -47,7 +54,7 @@ export function parseRemoteBackupAction(value: unknown): RemoteBackupAction | nu
     return value === 'sync' || value === 'restore' ? value : null;
 }
 
-function getErrorMessage(error: unknown): string {
+function getRemoteRestoreErrorMessage(error: unknown): string {
     if (error instanceof R2BackupSettingsInvalidError) {
         return '远端备份配置无效。';
     }
@@ -60,7 +67,20 @@ function getErrorMessage(error: unknown): string {
         return '远端备份未配置。';
     }
 
-    return '远端备份操作失败，请检查配置后重试。';
+    if (error instanceof Error && error.message === 'Latest R2 backup is not valid JSON.') {
+        return 'R2 最新备份不是合法 JSON，恢复失败。';
+    }
+
+    if (
+        error instanceof Error &&
+        error.message.startsWith('Latest R2 backup was not found at ')
+    ) {
+        return 'R2 最新备份不存在，恢复失败。';
+    }
+
+    return error instanceof Error && error.message
+        ? error.message
+        : '远端备份操作失败，请检查配置后重试。';
 }
 
 function createRemoteBackupFailureResponse(
@@ -70,13 +90,20 @@ function createRemoteBackupFailureResponse(
         throw new Error('Expected failed remote backup result.');
     }
 
+    const queueSnapshot = getRemoteBackupQueueSnapshot();
+
     return NextResponse.json(
         {
             message: remoteBackup.message,
             remoteBackup,
+            ...queueSnapshot,
         },
         {
-            status: 'invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration ? 500 : 502,
+            status: 'runtimeDataUnavailable' in remoteBackup && remoteBackup.runtimeDataUnavailable
+                ? 503
+                : 'invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration
+                    ? 500
+                    : 502,
         }
     );
 }
@@ -133,9 +160,11 @@ export async function readRemoteBackupRequestBody(
 
 export function createRemoteBackupStatusResponse(): NextResponse {
     try {
+        const queueSnapshot = getRemoteBackupQueueSnapshot();
+
         return NextResponse.json({
             ...getR2BackupStatus(),
-            backupQueue: getRemoteBackupQueueStatus(),
+            ...queueSnapshot,
         });
     } catch (error) {
         const invalidResponse = createInvalidR2SettingsResponse(error);
@@ -149,12 +178,32 @@ export function createRemoteBackupStatusResponse(): NextResponse {
 }
 
 export function createRemoteBackupRetryFailedResponse(): NextResponse {
-    const result = retryFailedRemoteBackups();
+    try {
+        const result = retryFailedRemoteBackups();
 
-    return NextResponse.json({
-        success: true,
-        ...result,
-    });
+        return NextResponse.json({
+            success: true,
+            ...result,
+            backupQueueMessage: null,
+        });
+    } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
+        const queueSnapshot = getRemoteBackupQueueSnapshot();
+        const message = queueSnapshot.backupQueueMessage ?? '失败备份任务重试失败。';
+
+        return NextResponse.json(
+            {
+                message,
+                ...queueSnapshot,
+            },
+            { status: 500 }
+        );
+    }
 }
 
 export async function createRemoteBackupSyncResponse(): Promise<NextResponse> {
@@ -162,17 +211,22 @@ export async function createRemoteBackupSyncResponse(): Promise<NextResponse> {
         reason: 'manual-sync',
         writeSnapshot: true,
     });
+    const queueSnapshot = getRemoteBackupQueueSnapshot();
     const status = remoteBackup.success
         ? 200
         : remoteBackup.enabled
-            ? ('invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration ? 500 : 502)
+            ? ('runtimeDataUnavailable' in remoteBackup && remoteBackup.runtimeDataUnavailable
+                ? 503
+                : 'invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration
+                    ? 500
+                    : 502)
             : 409;
 
     return NextResponse.json(
         {
             success: remoteBackup.success,
             remoteBackup,
-            backupQueue: getRemoteBackupQueueStatus(),
+            ...queueSnapshot,
         },
         { status }
     );
@@ -187,19 +241,11 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
         }
 
         const payload = await downloadLatestBackupPayloadFromR2();
-        const data = parseEditorBackupData(payload);
-
-        if (!data) {
-            return NextResponse.json(
-                {
-                    message: 'R2 最新备份格式无效，恢复失败。',
-                },
-                { status: 400 }
-            );
-        }
-
-        assertEditorBackupRestoreCurrentManifest(currentManifest);
-
+        const data = parseEditorBackupDataOrThrow(payload);
+        assertEditorBackupRestoreCurrentManifest(currentManifest, {
+            includeMedia: Boolean(data.media),
+        });
+        const mediaRestore = await materializeEditorMediaRestoreDataFromR2(data.media?.manifest);
         const preRestoreBackup = await syncCurrentBackupToRemote({
             reason: 'pre-remote-restore',
             writeSnapshot: true,
@@ -210,23 +256,26 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
             return createRemoteBackupFailureResponse(preRestoreBackup);
         }
 
-        const result = await restoreEditorBackupPayload({ data }, { currentManifest });
+        const result = await restoreEditorBackupData(
+            {
+                ...data,
+                ...(mediaRestore.media ? { media: mediaRestore.media } : {}),
+            },
+            { currentManifest }
+        );
 
-        if (!result) {
-            return NextResponse.json(
-                {
-                    message: 'R2 最新备份格式无效，恢复失败。',
-                },
-                { status: 400 }
-            );
-        }
-
-        const mediaRestore = await restoreEditorMediaAssetsFromR2(data.media);
         const remoteBackup = await syncCurrentBackupToRemote({
             reason: 'remote-restore',
             writeSnapshot: true,
         });
+        if (shouldQueueRemoteBackupRetry(remoteBackup)) {
+            queueCurrentBackupToRemote({
+                reason: 'remote-restore',
+                writeSnapshot: true,
+            });
+        }
         invalidatePublicContentCache('remote-restore');
+        const queueSnapshot = getRemoteBackupQueueSnapshot();
 
         return NextResponse.json({
             success: true,
@@ -236,13 +285,18 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
                 settings: result.settings,
                 media: result.media,
             },
-            mediaRestore,
-            warnings: mediaRestore.failed > 0
-                ? [`${mediaRestore.failed} 个媒体文件恢复失败，请检查 R2 媒体对象。`]
-                : [],
+            mediaRestore: mediaRestore.result,
+            warnings: [],
             remoteBackup,
+            ...queueSnapshot,
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
         if (lockTimeoutResponse) {
@@ -253,6 +307,12 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
 
         if (invalidResponse) {
             return invalidResponse;
+        }
+
+        const backupInvalidResponse = createEditorBackupInvalidResponse(error);
+
+        if (backupInvalidResponse) {
+            return backupInvalidResponse;
         }
 
         const conflictResponse = createRestoreConflictResponse(error);
@@ -267,6 +327,19 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
             return invalidR2SettingsResponse;
         }
 
+        if (error instanceof EditorMediaRestoreDownloadError) {
+            const queueSnapshot = getRemoteBackupQueueSnapshot();
+
+            return NextResponse.json(
+                {
+                    message: 'R2 媒体文件不完整或校验失败，已取消恢复。',
+                    mediaRestore: error.result,
+                    ...queueSnapshot,
+                },
+                { status: 502 }
+            );
+        }
+
         if (error instanceof R2BackupPayloadTooLargeError) {
             return createRemoteBackupPayloadTooLargeResponse(error);
         }
@@ -279,7 +352,7 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
 
         return NextResponse.json(
             {
-                message: getErrorMessage(error),
+                message: getRemoteRestoreErrorMessage(error),
             },
             { status }
         );

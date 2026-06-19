@@ -2,42 +2,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  createManifest,
+  createBackupPayload,
   DATA_SCHEMA_VERSION,
-  createDefaultSiteSettings,
-  isRecord,
-  migrateRuntimeData,
-  normalizeArticles,
-  normalizeNavigation,
-  normalizeSiteSettings,
+  parseBackupPayloadData,
   readJsonFile,
-  readRuntimeData,
   readSchemaVersion,
+  readRuntimeBackupData,
   restoreRuntimeDataAtomically,
   resolveDataRoot,
   writeJsonAtomically,
 } from './runtime-data.mjs';
-
-function parseBackupData(value) {
-  if (!isRecord(value)) {
-    throw new Error('Backup file must contain a JSON object.');
-  }
-
-  const source = isRecord(value.data) ? value.data : value;
-
-  if (!Array.isArray(source.articles) || !Array.isArray(source.navigation)) {
-    throw new Error('Backup file must include articles and navigation arrays.');
-  }
-
-  return {
-    articles: normalizeArticles(source.articles),
-    navigation: normalizeNavigation(source.navigation),
-    settings:
-      source.settings === undefined
-        ? createDefaultSiteSettings()
-        : normalizeSiteSettings(source.settings),
-  };
-}
 
 const [backupFileArg, dataRootArg] = process.argv.slice(2);
 
@@ -50,23 +24,14 @@ const backupFile = path.resolve(backupFileArg);
 const dataRoot = resolveDataRoot(dataRootArg);
 const payload = readJsonFile(backupFile);
 const schemaVersion = readSchemaVersion(payload);
-const data = migrateRuntimeData(parseBackupData(payload), schemaVersion);
+const data = parseBackupPayloadData(payload);
 
 if (schemaVersion < DATA_SCHEMA_VERSION && fs.existsSync(dataRoot)) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const snapshotPath = path.join(dataRoot, 'backups', `pre-migration-${timestamp}.json`);
-  const currentData = readRuntimeData(dataRoot);
+  const currentData = readRuntimeBackupData(dataRoot);
 
-  writeJsonAtomically(snapshotPath, {
-    version: 1,
-    schemaVersion: DATA_SCHEMA_VERSION,
-    exportedAt: new Date().toISOString(),
-    source: 'local',
-    persistent: true,
-    dataRoot,
-    manifest: createManifest(currentData),
-    data: currentData,
-  });
+  writeJsonAtomically(snapshotPath, createBackupPayload(dataRoot, currentData));
 }
 
 restoreRuntimeDataAtomically(dataRoot, data);

@@ -50,6 +50,14 @@ function createTempDataRoot(): string {
   return directory;
 }
 
+function createBlockedDataRoot(): string {
+  const root = createTempDataRoot();
+  const blockingFile = path.join(root, 'blocked.txt');
+
+  fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+  return path.join(blockingFile, 'runtime-data');
+}
+
 function clearRuntimeEnv(): void {
   for (const name of Object.keys(ORIGINAL_ENV)) {
     delete process.env[name];
@@ -470,5 +478,32 @@ describe('runtime setup and config APIs', () => {
       cookieSecure: false,
       trustedProxyIps: [],
     }));
+  });
+
+  it('reports a blocked runtime data root with a structured 503 response', async () => {
+    clearRuntimeEnv();
+    process.env.EDITOR_ACCESS_TOKEN = 'runtime-config-token';
+    process.env.BLOG_DATA_ROOT = createBlockedDataRoot();
+
+    const response = await putRuntimeConfig(
+      await createAuthedEditorRequest('http://localhost/api/runtime-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          config: {
+            publicSiteUrl: 'https://blocked.example',
+            cookieSecure: false,
+            trustedProxyIps: '',
+            dataRootPath: process.env.BLOG_DATA_ROOT,
+          },
+          revision: null,
+        }),
+      })
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      code: 'runtime_data_root_unavailable',
+      message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+    });
   });
 });

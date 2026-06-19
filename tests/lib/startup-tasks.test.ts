@@ -74,6 +74,52 @@ describe('server startup tasks', () => {
     });
   });
 
+  it('warns when scheduled remote backup cannot be queued while R2 is enabled', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockedQueueCurrentBackupToRemote.mockReturnValueOnce({
+      queued: false,
+      enabled: true,
+      success: false,
+      message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+      invalidConfiguration: true,
+    });
+
+    startServerStartupTasks();
+    await vi.advanceTimersByTimeAsync(SCHEDULED_REMOTE_BACKUP_INTERVAL_MS);
+
+    await vi.waitFor(() => {
+      expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledOnce();
+      expect(consoleWarn).toHaveBeenCalledWith(
+        '[startup-tasks] Scheduled remote backup was not queued:',
+        'Cloudflare R2 配置文件损坏，请修复或删除后重试。'
+      );
+    });
+  });
+
+  it('does not warn when scheduled remote backup is disabled explicitly', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockedQueueCurrentBackupToRemote.mockReturnValueOnce({
+      queued: false,
+      enabled: false,
+      success: false,
+      message: 'R2 backup is disabled.',
+    });
+
+    startServerStartupTasks();
+    await vi.advanceTimersByTimeAsync(SCHEDULED_REMOTE_BACKUP_INTERVAL_MS);
+
+    await vi.waitFor(() => {
+      expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledOnce();
+    });
+
+    expect(consoleWarn).not.toHaveBeenCalledWith(
+      '[startup-tasks] Scheduled remote backup was not queued:',
+      expect.anything()
+    );
+  });
+
   it('verifies media storage consistency on startup and only warns on drift', async () => {
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockedVerifyEditorMediaStorageConsistency.mockResolvedValueOnce({

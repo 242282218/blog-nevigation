@@ -305,6 +305,16 @@ function parseEnvironmentEditorSessionState(value: unknown): EnvironmentEditorSe
     };
 }
 
+function isEnvironmentSessionPersistenceError(error: unknown): boolean {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+
+    return code === 'EACCES' ||
+        code === 'ENOENT' ||
+        code === 'ENOTDIR' ||
+        code === 'EPERM' ||
+        code === 'EROFS';
+}
+
 function readEnvironmentEditorSessionState(): EnvironmentEditorSessionState | null {
     if (environmentEditorSessionState) {
         return environmentEditorSessionState;
@@ -343,12 +353,21 @@ function writeEnvironmentEditorSessionState(state: EnvironmentEditorSessionState
         return;
     }
 
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(state, null, 2), {
-        encoding: 'utf8',
-        mode: 0o600,
-    });
-    fs.chmodSync(filePath, 0o600);
+    try {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, JSON.stringify(state, null, 2), {
+            encoding: 'utf8',
+            mode: 0o600,
+        });
+        fs.chmodSync(filePath, 0o600);
+    } catch (error) {
+        if (!isEnvironmentSessionPersistenceError(error)) {
+            throw error;
+        }
+
+        console.warn('[editor-auth-runtime] Failed to persist environment session state; using process memory only.', error);
+    }
+
     environmentEditorSessionState = state;
 }
 
@@ -359,7 +378,13 @@ function deleteEnvironmentEditorSessionState(): void {
     getEnvironmentEditorSessionGlobalState().state = null;
 
     if (filePath) {
-        fs.rmSync(filePath, { force: true });
+        try {
+            fs.rmSync(filePath, { force: true });
+        } catch (error) {
+            if (!isEnvironmentSessionPersistenceError(error)) {
+                throw error;
+            }
+        }
     }
 }
 

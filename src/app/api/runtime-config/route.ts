@@ -17,7 +17,11 @@ import {
     type EditableAppRuntimeConfig,
 } from '@/lib/app-runtime-config';
 import { getAppVersionInfo } from '@/lib/app-version';
-import { ensureEditorSession, ensureEditorWriteRequest } from '@/lib/editor-api-auth';
+import {
+    createEditorDataRootUnavailableResponse,
+    ensureEditorSession,
+    ensureEditorWriteRequest,
+} from '@/lib/editor-api-auth';
 import {
     RuntimeEditorAuthInvalidSecretError,
     updateRuntimeEditorAuthSecret,
@@ -94,6 +98,12 @@ export async function GET(request: NextRequest) {
             version: getAppVersionInfo(),
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidRuntimeConfigResponse(error);
 
         if (invalidResponse) {
@@ -180,6 +190,12 @@ export async function PUT(request: NextRequest) {
             version: getAppVersionInfo(),
         }), sessionValue);
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidRuntimeConfigResponse(error);
 
         if (invalidResponse) {

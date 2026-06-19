@@ -33,10 +33,13 @@ type BackupPayload = {
   exportedAt?: string;
   articles?: unknown;
   navigation?: unknown;
+  message?: string;
 };
 
 type BackupActionResponse = {
+  message?: string;
   backupQueue?: RemoteBackupQueueStatus;
+  backupQueueMessage?: string | null;
   remoteBackup?: {
     success?: boolean;
     message?: string;
@@ -59,6 +62,7 @@ type RemoteBackupStatus = {
   enabled: boolean;
   configured: boolean;
   backupQueue?: RemoteBackupQueueStatus;
+  backupQueueMessage?: string | null;
 };
 
 function createBackupFileName(exportedAt?: string): string {
@@ -75,8 +79,18 @@ export default function EditorHomePage() {
   const [isRemoteStatusLoading, setIsRemoteStatusLoading] = useState(true);
   const [isRemoteConfigured, setIsRemoteConfigured] = useState(false);
   const [backupQueue, setBackupQueue] = useState<RemoteBackupQueueStatus | null>(null);
+  const [backupQueueMessage, setBackupQueueMessage] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'success' | 'warning' | 'danger' | 'loading'; text: string } | null>(null);
   const canRunRemoteAction = isRemoteConfigured && !isRemoteStatusLoading && !isBusy;
+
+  const updateBackupQueueState = useCallback((payload: BackupActionResponse | RemoteBackupStatus | null) => {
+    if (!payload || (!('backupQueue' in payload) && !('backupQueueMessage' in payload))) {
+      return;
+    }
+
+    setBackupQueue(payload.backupQueue ?? null);
+    setBackupQueueMessage(payload.backupQueueMessage ?? null);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -91,7 +105,14 @@ export default function EditorHomePage() {
 
         if (isMounted) {
           setIsRemoteConfigured(Boolean(response.ok && payload?.configured));
-          setBackupQueue(payload?.backupQueue ?? null);
+          updateBackupQueueState(payload);
+
+          if (!response.ok && payload && 'message' in payload && typeof payload.message === 'string') {
+            setMessage({
+              tone: 'danger',
+              text: payload.message,
+            });
+          }
         }
       } catch (error) {
         console.error('Failed to load remote backup status:', error);
@@ -110,7 +131,7 @@ export default function EditorHomePage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [updateBackupQueueState]);
 
   const handleBackup = useCallback(async () => {
     setIsBusy(true);
@@ -122,12 +143,16 @@ export default function EditorHomePage() {
         credentials: 'include',
         cache: 'no-store',
       });
+      const payload = (await response.json().catch(() => null)) as BackupPayload | null;
 
       if (!response.ok) {
-        throw new Error(`backup_failed_${response.status}`);
+        throw new Error(payload?.message || '备份失败，请稍后重试。');
       }
 
-      const payload = (await response.json()) as BackupPayload;
+      if (!payload) {
+        throw new Error('备份文件读取失败，请稍后重试。');
+      }
+
       const fileContent = JSON.stringify(payload, null, 2);
       const blob = new Blob([fileContent], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -143,7 +168,10 @@ export default function EditorHomePage() {
       setMessage({ tone: 'success', text: '备份已下载。' });
     } catch (error) {
       console.error('Failed to create backup:', error);
-      setMessage({ tone: 'danger', text: '备份失败，请稍后重试。' });
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : '备份失败，请稍后重试。',
+      });
     } finally {
       setIsBusy(false);
     }
@@ -165,21 +193,25 @@ export default function EditorHomePage() {
           'Content-Type': 'application/json',
         }),
       });
+      const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+
+      updateBackupQueueState(payload);
 
       if (!response.ok) {
-        throw new Error(`remote_sync_failed_${response.status}`);
+        throw new Error(payload?.message || '云端备份失败，请检查 R2 配置。');
       }
 
       setMessage({ tone: 'success', text: '云端备份已同步。' });
-      const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
-      setBackupQueue(payload?.backupQueue ?? null);
     } catch (error) {
       console.error('Failed to sync remote backup:', error);
-      setMessage({ tone: 'danger', text: '云端备份失败，请检查 R2 配置。' });
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : '云端备份失败，请检查 R2 配置。',
+      });
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [updateBackupQueueState]);
 
   const handleRetryFailedBackups = useCallback(async () => {
     setIsBusy(true);
@@ -195,19 +227,23 @@ export default function EditorHomePage() {
       });
       const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
 
+      updateBackupQueueState(payload);
+
       if (!response.ok) {
-        throw new Error(`remote_retry_failed_${response.status}`);
+        throw new Error(payload?.message || '重试失败，请检查 R2 配置。');
       }
 
-      setBackupQueue(payload?.backupQueue ?? null);
       setMessage({ tone: 'success', text: '失败的云端备份已重新加入队列。' });
     } catch (error) {
       console.error('Failed to retry remote backups:', error);
-      setMessage({ tone: 'danger', text: '重试失败，请检查 R2 配置。' });
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : '重试失败，请检查 R2 配置。',
+      });
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [updateBackupQueueState]);
 
   const handleRemoteRestore = useCallback(async () => {
     if (!window.confirm('将从 R2 最新备份覆盖当前服务器数据，确定继续吗？')) {
@@ -227,22 +263,25 @@ export default function EditorHomePage() {
         }),
         body: JSON.stringify({ currentManifest }),
       });
-
-      if (!response.ok) {
-        throw new Error(`remote_restore_failed_${response.status}`);
-      }
-
       const payload = (await response.json().catch(() => null)) as BackupActionResponse | null;
 
-      setBackupQueue(payload?.backupQueue ?? null);
+      updateBackupQueueState(payload);
+
+      if (!response.ok) {
+        throw new Error(payload?.message || '云端恢复失败，请检查 R2 配置和备份文件。');
+      }
+
       setMessage(createRestoreActionMessage(payload, '云端恢复成功，刷新页面后可见最新数据。'));
     } catch (error) {
       console.error('Failed to restore remote backup:', error);
-      setMessage({ tone: 'danger', text: '云端恢复失败，请检查 R2 配置和备份文件。' });
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : '云端恢复失败，请检查 R2 配置和备份文件。',
+      });
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [updateBackupQueueState]);
 
   const handleRestore = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -261,7 +300,14 @@ export default function EditorHomePage() {
 
     try {
       const content = await file.text();
-      const backupPayload = JSON.parse(content) as BackupPayload;
+      let backupPayload: BackupPayload;
+
+      try {
+        backupPayload = JSON.parse(content) as BackupPayload;
+      } catch {
+        throw new Error('备份文件格式无效，恢复失败。');
+      }
+
       const currentManifest = await loadCurrentBackupManifest();
 
       const response = await fetch('/api/data/backup', {
@@ -273,20 +319,24 @@ export default function EditorHomePage() {
         body: JSON.stringify({ ...backupPayload, currentManifest }),
       });
 
-      if (!response.ok) {
-        throw new Error(`restore_failed_${response.status}`);
-      }
-
       const actionPayload = (await response.json().catch(() => null)) as BackupActionResponse | null;
+      updateBackupQueueState(actionPayload);
+
+      if (!response.ok) {
+        throw new Error(actionPayload?.message || '恢复失败，请确认备份文件格式正确。');
+      }
 
       setMessage(createRestoreActionMessage(actionPayload, '恢复成功，刷新页面后可见最新数据。'));
     } catch (error) {
       console.error('Failed to restore backup:', error);
-      setMessage({ tone: 'danger', text: '恢复失败，请确认备份文件格式正确。' });
+      setMessage({
+        tone: 'danger',
+        text: error instanceof Error ? error.message : '恢复失败，请确认备份文件格式正确。',
+      });
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [updateBackupQueueState]);
 
   return (
     <EditorPage>
@@ -358,6 +408,7 @@ export default function EditorHomePage() {
               isLoading={isRemoteStatusLoading}
               isConfigured={isRemoteConfigured}
               backupQueue={backupQueue}
+              backupQueueMessage={backupQueueMessage}
             />
           </div>
 
@@ -428,13 +479,24 @@ function BackupHealthSummary({
   isLoading,
   isConfigured,
   backupQueue,
+  backupQueueMessage,
 }: {
   isLoading: boolean;
   isConfigured: boolean;
   backupQueue: RemoteBackupQueueStatus | null;
+  backupQueueMessage: string | null;
 }) {
   if (isLoading) {
     return null;
+  }
+
+  if (backupQueueMessage) {
+    return (
+      <div className="mt-3 inline-flex items-center gap-2 rounded-token-card border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-600">
+        <AlertTriangle className="h-4 w-4" />
+        {backupQueueMessage}
+      </div>
+    );
   }
 
   const failedTask = backupQueue?.failedTasks[0] ?? null;

@@ -64,6 +64,20 @@ function createEmptyRuntimeForm(): RuntimeForm {
     };
 }
 
+function toRuntimeForm(
+    editable?: RuntimeFormPayload,
+    secrets?: Pick<RuntimeForm, 'editorSecret' | 'confirmEditorSecret'>
+): RuntimeForm {
+    return {
+        publicSiteUrl: editable?.publicSiteUrl ?? '',
+        cookieSecure: editable?.cookieSecure ?? true,
+        trustedProxyIps: editable?.trustedProxyIps.join('\n') ?? '',
+        dataRootPath: editable?.dataRootPath ?? '',
+        editorSecret: secrets?.editorSecret ?? '',
+        confirmEditorSecret: secrets?.confirmEditorSecret ?? '',
+    };
+}
+
 function RuntimeField({
     id,
     label,
@@ -202,14 +216,7 @@ export default function RuntimeSettingsPage() {
                     return;
                 }
 
-                setForm({
-                    publicSiteUrl: payload?.editable?.publicSiteUrl ?? '',
-                    cookieSecure: payload?.editable?.cookieSecure ?? true,
-                    trustedProxyIps: payload?.editable?.trustedProxyIps.join('\n') ?? '',
-                    dataRootPath: payload?.editable?.dataRootPath ?? '',
-                    editorSecret: '',
-                    confirmEditorSecret: '',
-                });
+                setForm(toRuntimeForm(payload?.editable));
                 setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
                 setRevision(payload?.revision ?? null);
                 setVersionInfo(payload?.version ?? null);
@@ -284,18 +291,30 @@ export default function RuntimeSettingsPage() {
             });
             const payload = (await response.json().catch(() => null)) as RuntimeConfigResponse | null;
 
+            if (payload?.editable) {
+                setForm((current) => toRuntimeForm(payload.editable, {
+                    editorSecret: current.editorSecret,
+                    confirmEditorSecret: current.confirmEditorSecret,
+                }));
+            }
+
+            if (payload?.config) {
+                setRequiresRestart(Boolean(payload.config.dataRoot?.requiresRestart));
+            }
+
+            if (payload?.revision) {
+                setRevision(payload.revision);
+            }
+
+            if (payload?.version) {
+                setVersionInfo(payload.version);
+            }
+
             if (!response.ok) {
                 throw new Error(payload?.message || '运行时配置保存失败。');
             }
 
-            setForm((current) => ({
-                ...current,
-                editorSecret: '',
-                confirmEditorSecret: '',
-            }));
-            setRequiresRestart(Boolean(payload?.config?.dataRoot?.requiresRestart));
-            setRevision(payload?.revision ?? revision);
-            setVersionInfo(payload?.version ?? versionInfo);
+            setForm(toRuntimeForm(payload?.editable));
             setMessage({
                 tone: 'success',
                 text: payload?.config?.dataRoot?.requiresRestart
@@ -310,7 +329,7 @@ export default function RuntimeSettingsPage() {
         } finally {
             setIsSaving(false);
         }
-    }, [form, revision, versionInfo]);
+    }, [form, revision]);
 
     return (
         <EditorPage className="pb-12">

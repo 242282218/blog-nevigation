@@ -24,6 +24,19 @@ function createDataRoot(): string {
   return root;
 }
 
+function createBlockedDataRoot(): string {
+  const root = createDataRoot();
+  const blockingFile = path.join(root, 'blocked.txt');
+
+  fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+  return path.join(blockingFile, 'runtime-data');
+}
+
+function writeJson(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8');
+}
+
 afterEach(() => {
   restoreEnv(ORIGINAL_ENV);
   cleanupTempDirectories(tempDirectories);
@@ -67,7 +80,7 @@ describe('health API', () => {
     );
   });
 
-  it('returns degraded when the configured data root is not writable', async () => {
+  it('reports writable when the configured data root does not exist yet but can be created', async () => {
     const parent = createDataRoot();
     process.env.BLOG_DATA_ROOT = path.join(parent, 'missing');
 
@@ -75,6 +88,23 @@ describe('health API', () => {
     const payload = await response.json();
 
     expect(fs.existsSync(process.env.BLOG_DATA_ROOT)).toBe(false);
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'ok',
+        dataRoot: expect.objectContaining({
+          writable: true,
+        }),
+      })
+    );
+  });
+
+  it('returns degraded when the configured data root is blocked by a file path', async () => {
+    process.env.BLOG_DATA_ROOT = createBlockedDataRoot();
+
+    const response = await GET();
+    const payload = await response.json();
+
     expect(response.status).toBe(503);
     expect(payload).toEqual(
       expect.objectContaining({
@@ -82,6 +112,70 @@ describe('health API', () => {
         dataRoot: expect.objectContaining({
           writable: false,
         }),
+      })
+    );
+  });
+
+  it('returns degraded when remote backup queue has failed tasks', async () => {
+    process.env.BLOG_DATA_ROOT = createDataRoot();
+    writeJson(path.join(process.env.BLOG_DATA_ROOT, '.backup-pending.json'), {
+      version: 2,
+      tasks: [
+        {
+          id: 'failed-task-1',
+          reason: 'remote-restore',
+          timestamp: '2026-06-19T00:00:00.000Z',
+          retries: 3,
+          attempts: 3,
+          status: 'failed',
+          writeSnapshot: true,
+          lastError: 'R2 upload failed.',
+          lastAttemptAt: '2026-06-19T00:10:00.000Z',
+        },
+      ],
+    });
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        backupQueue: {
+          pending: 0,
+          failed: 1,
+          failedTasks: [
+            {
+              id: 'failed-task-1',
+              reason: 'remote-restore',
+              attempts: 3,
+              lastAttemptAt: '2026-06-19T00:10:00.000Z',
+              lastError: 'R2 upload failed.',
+            },
+          ],
+        },
+      })
+    );
+  });
+
+  it('returns degraded when remote backup queue state is unreadable', async () => {
+    process.env.BLOG_DATA_ROOT = createDataRoot();
+    fs.writeFileSync(path.join(process.env.BLOG_DATA_ROOT, '.backup-pending.json'), '{', 'utf8');
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        backupQueue: {
+          pending: null,
+          failed: null,
+          failedTasks: [],
+          message: 'Pending backup queue state is invalid.',
+        },
       })
     );
   });

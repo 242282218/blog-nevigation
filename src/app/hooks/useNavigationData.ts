@@ -100,6 +100,7 @@ async function saveNavDataToServer(
     const payload = (await response.json().catch(() => null)) as {
       categories?: unknown;
       revision?: unknown;
+      message?: unknown;
     } | null;
 
     if (response.status === 409) {
@@ -127,10 +128,14 @@ async function saveNavDataToServer(
         };
       }
 
-      console.error('Failed to persist navigation data to server:', response.status);
+      const message = typeof payload?.message === 'string'
+        ? payload.message
+        : `导航同步到服务器失败（HTTP ${response.status}）。`;
+
+      console.error('Failed to persist navigation data to server:', response.status, message);
       return {
         error: true as const,
-        message: `导航同步到服务器失败（HTTP ${response.status}）。`,
+        message,
       };
     }
 

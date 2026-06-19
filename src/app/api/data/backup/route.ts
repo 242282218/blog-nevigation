@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+    EDITOR_BACKUP_JSON_BODY_LIMIT_BYTES,
     createJsonBodyParseErrorResponse,
     createJsonBodyTooLargeResponse,
-    EDITOR_JSON_BODY_LIMIT_BYTES,
     JsonBodyParseError,
     JsonBodyTooLargeError,
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
 import {
+    createEditorBackupInvalidResponse,
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
+    createEditorDataRootUnavailableResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
@@ -17,7 +19,12 @@ import {
     createCurrentEditorBackupPayload,
     restoreEditorBackupPayload,
 } from '@/lib/editor-data-backup';
-import { syncCurrentBackupToRemote } from '@/lib/editor-remote-backup';
+import {
+    getRemoteBackupQueueSnapshot,
+    queueCurrentBackupToRemote,
+    shouldQueueRemoteBackupRetry,
+    syncCurrentBackupToRemote,
+} from '@/lib/editor-remote-backup';
 import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
     createRestoreConflictResponse,
@@ -29,11 +36,13 @@ type BackupRequestBody = {
     articles?: unknown;
     navigation?: unknown;
     settings?: unknown;
+    media?: unknown;
     currentManifest?: unknown;
     data?: {
         articles?: unknown;
         navigation?: unknown;
         settings?: unknown;
+        media?: unknown;
     };
 };
 
@@ -45,8 +54,16 @@ export async function GET(request: NextRequest) {
     }
 
     try {
-        return NextResponse.json(await createCurrentEditorBackupPayload());
+        return NextResponse.json(await createCurrentEditorBackupPayload({
+            includeInlineMediaFiles: true,
+        }));
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
         if (lockTimeoutResponse) {
@@ -73,7 +90,7 @@ export async function POST(request: NextRequest) {
     let body: BackupRequestBody | null;
 
     try {
-        body = await readJsonBodyWithLimit<BackupRequestBody>(request, EDITOR_JSON_BODY_LIMIT_BYTES);
+        body = await readJsonBodyWithLimit<BackupRequestBody>(request, EDITOR_BACKUP_JSON_BODY_LIMIT_BYTES);
     } catch (error) {
         if (error instanceof JsonBodyTooLargeError) {
             return createJsonBodyTooLargeResponse();
@@ -95,8 +112,17 @@ export async function POST(request: NextRequest) {
     let result;
 
     try {
-        result = await restoreEditorBackupPayload(body, { currentManifest });
+        result = await restoreEditorBackupPayload(body, {
+            currentManifest,
+            requireInlineMediaFiles: true,
+        });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
         if (lockTimeoutResponse) {
@@ -109,6 +135,12 @@ export async function POST(request: NextRequest) {
             return invalidResponse;
         }
 
+        const backupInvalidResponse = createEditorBackupInvalidResponse(error);
+
+        if (backupInvalidResponse) {
+            return backupInvalidResponse;
+        }
+
         const conflictResponse = createRestoreConflictResponse(error);
 
         if (conflictResponse) {
@@ -118,20 +150,18 @@ export async function POST(request: NextRequest) {
         throw error;
     }
 
-    if (!result) {
-        return NextResponse.json(
-            {
-                message: '备份文件格式无效，恢复失败。',
-            },
-            { status: 400 }
-        );
-    }
-
     const remoteBackup = await syncCurrentBackupToRemote({
         reason: 'local-restore',
         writeSnapshot: true,
     });
+    if (shouldQueueRemoteBackupRetry(remoteBackup)) {
+        queueCurrentBackupToRemote({
+            reason: 'local-restore',
+            writeSnapshot: true,
+        });
+    }
     invalidatePublicContentCache('local-restore');
+    const queueSnapshot = getRemoteBackupQueueSnapshot();
 
     return NextResponse.json({
         success: true,
@@ -142,5 +172,6 @@ export async function POST(request: NextRequest) {
             media: result.media,
         },
         remoteBackup,
+        ...queueSnapshot,
     });
 }

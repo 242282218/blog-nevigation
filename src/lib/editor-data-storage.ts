@@ -17,6 +17,10 @@ import { recordEditorAuditEvent } from '@/lib/editor-audit-log';
 import { writeSearchIndexForData } from '@/lib/search-index';
 import { writeJsonAtomically as writeJsonAtomicallyShared } from '@/lib/atomic-json-writer';
 import {
+    isRuntimeDataRootAvailable,
+    isRuntimeDataRootAvailableSync,
+} from '@/lib/runtime-data-root';
+import {
     commitResourceManifestTransaction,
     hasIncompleteManifestTransaction,
     recoverIncompleteManifestTransaction,
@@ -24,18 +28,21 @@ import {
 } from '@/lib/manifest-transaction';
 import {
     EditorDataLockTimeoutError,
+    EditorDataRootUnavailableError,
     acquireEditorDataRootLock,
-    releaseEditorDataRootLock,
     getHeldEditorDataLockCount,
-    incrementHeldEditorDataLockCount,
-    decrementHeldEditorDataLockCount,
-    setHeldEditorDataLockCount,
+    releaseEditorDataRootLock,
+    runWithHeldEditorDataLockContext,
 } from '@/lib/editor-data-lock';
+import type { EditorMediaManifest } from '@/lib/editor-media-storage';
 
 const ARTICLES_FILE_NAME = 'articles.json';
 const NAVIGATION_FILE_NAME = 'tools.json';
 const SETTINGS_FILE_NAME = 'site.json';
 const MANIFEST_FILE_NAME = 'manifest.json';
+const MEDIA_DIRECTORY_NAME = 'media';
+const MEDIA_MANIFEST_FILE_NAME = 'manifest.json';
+const MEDIA_FILES_DIRECTORY_NAME = 'files';
 const MANIFEST_VERSION = 1;
 export const EDITOR_DATA_SCHEMA_VERSION = 1;
 const DATA_CACHE_TTL_MS = 2_000;
@@ -76,7 +83,7 @@ export class EditorDataRootNotConfiguredError extends Error {
     }
 }
 
-export { EditorDataLockTimeoutError };
+export { EditorDataLockTimeoutError, EditorDataRootUnavailableError };
 export { ManifestTransactionIncompleteError };
 
 export class EditorDataFileInvalidError extends Error {
@@ -110,7 +117,16 @@ type EditorDataRestoreState = {
     stagingDirectory: string;
     backupDirectory: string;
     files: string[];
+    directories?: string[];
     updatedAt: string;
+};
+
+type EditorRestoreMediaData = {
+    manifest: EditorMediaManifest;
+    files?: Array<{
+        path: string;
+        bytes: Uint8Array;
+    }>;
 };
 
 function getEditorDataRootOrThrow(): string {
@@ -129,26 +145,20 @@ export async function withEditorDataRootLock<T>(operation: () => T | Promise<T>)
     const heldCount = getHeldEditorDataLockCount(resolvedRoot);
 
     if (heldCount > 0) {
-        incrementHeldEditorDataLockCount(resolvedRoot);
-
-        try {
-            return await operation();
-        } finally {
-            decrementHeldEditorDataLockCount(resolvedRoot);
-        }
+        return await runWithHeldEditorDataLockContext(resolvedRoot, operation);
     }
 
     const lock = await acquireEditorDataRootLock(resolvedRoot);
-    setHeldEditorDataLockCount(resolvedRoot, 1);
 
-    try {
-        recoverIncompleteRestore(resolvedRoot);
-        recoverIncompleteManifestTransaction(resolvedRoot);
-        return await operation();
-    } finally {
-        setHeldEditorDataLockCount(resolvedRoot, 0);
-        releaseEditorDataRootLock(lock);
-    }
+    return await runWithHeldEditorDataLockContext(resolvedRoot, async () => {
+        try {
+            recoverIncompleteRestore(resolvedRoot);
+            recoverIncompleteManifestTransaction(resolvedRoot);
+            return await operation();
+        } finally {
+            releaseEditorDataRootLock(lock);
+        }
+    });
 }
 
 function getCachedJsonFile(filePath: string | null, stats: fs.Stats): unknown | undefined {
@@ -244,14 +254,14 @@ async function recoverIncompleteRestoreForRead(root: string): Promise<void> {
     }
 
     const lock = await acquireEditorDataRootLock(root);
-    setHeldEditorDataLockCount(root, 1);
 
-    try {
-        recoverIncompleteRestore(root);
-    } finally {
-        setHeldEditorDataLockCount(root, 0);
-        releaseEditorDataRootLock(lock);
-    }
+    await runWithHeldEditorDataLockContext(root, async () => {
+        try {
+            recoverIncompleteRestore(root);
+        } finally {
+            releaseEditorDataRootLock(lock);
+        }
+    });
 }
 
 function recoverIncompleteRestoreForReadSync(filePath: string | null): void {
@@ -338,14 +348,34 @@ async function recoverIncompleteManifestTransactionForReadAsync(filePath: string
     }
 
     const lock = await acquireEditorDataRootLock(root);
-    setHeldEditorDataLockCount(root, 1);
 
-    try {
-        recoverIncompleteManifestTransaction(root);
-    } finally {
-        setHeldEditorDataLockCount(root, 0);
-        releaseEditorDataRootLock(lock);
+    await runWithHeldEditorDataLockContext(root, async () => {
+        try {
+            recoverIncompleteManifestTransaction(root);
+        } finally {
+            releaseEditorDataRootLock(lock);
+        }
+    });
+}
+
+function ensureEditorDataRootAvailableForReadSync(filePath: string | null): void {
+    const root = getEditorDataRootForReadRecovery(filePath);
+
+    if (!root || isRuntimeDataRootAvailableSync(root)) {
+        return;
     }
+
+    throw new EditorDataRootUnavailableError(root, null);
+}
+
+async function ensureEditorDataRootAvailableForReadAsync(filePath: string | null): Promise<void> {
+    const root = getEditorDataRootForReadRecovery(filePath);
+
+    if (!root || await isRuntimeDataRootAvailable(root)) {
+        return;
+    }
+
+    throw new EditorDataRootUnavailableError(root, null);
 }
 
 function readJsonFile(filePath: string | null, resource: EditorDataFileResourceName): unknown | null {
@@ -353,6 +383,7 @@ function readJsonFile(filePath: string | null, resource: EditorDataFileResourceN
     recoverIncompleteManifestTransactionForReadSync(filePath);
 
     if (!filePath || !fs.existsSync(filePath)) {
+        ensureEditorDataRootAvailableForReadSync(filePath);
         return null;
     }
 
@@ -387,6 +418,7 @@ async function readJsonFileAsync(filePath: string | null, resource: EditorDataFi
         stats = await fsPromises.stat(filePath);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+            await ensureEditorDataRootAvailableForReadAsync(filePath);
             return null;
         }
 
@@ -500,6 +532,10 @@ function parseRestoreState(value: unknown): EditorDataRestoreState | null {
         typeof candidate.backupDirectory !== 'string' ||
         !Array.isArray(candidate.files) ||
         candidate.files.some((filePath) => typeof filePath !== 'string') ||
+        (
+            candidate.directories !== undefined &&
+            (!Array.isArray(candidate.directories) || candidate.directories.some((directoryPath) => typeof directoryPath !== 'string'))
+        ) ||
         typeof candidate.updatedAt !== 'string'
     ) {
         return null;
@@ -511,6 +547,7 @@ function parseRestoreState(value: unknown): EditorDataRestoreState | null {
         stagingDirectory: candidate.stagingDirectory,
         backupDirectory: candidate.backupDirectory,
         files: candidate.files as string[],
+        ...(candidate.directories ? { directories: candidate.directories as string[] } : {}),
         updatedAt: candidate.updatedAt,
     };
 }
@@ -562,6 +599,10 @@ function recoverIncompleteRestore(root: string): void {
 
     if (state.phase === 'replacing') {
         restoreFilesFromBackup(state.files, root, state.backupDirectory);
+
+        for (const directoryPath of state.directories ?? []) {
+            restoreDirectoryFromBackup(directoryPath, root, state.backupDirectory);
+        }
     }
 
     fs.rmSync(state.stagingDirectory, { recursive: true, force: true });
@@ -620,6 +661,98 @@ function replaceFilesFromStaging(files: string[], dataRoot: string, stagingRoot:
         ensureParentDirectory(filePath);
         fs.renameSync(stagedPath, filePath);
     }
+}
+
+function copyExistingDirectory(directoryPath: string, fromRoot: string, toRoot: string): void {
+    if (!fs.existsSync(directoryPath)) {
+        return;
+    }
+
+    const relativePath = path.relative(fromRoot, directoryPath);
+    const backupPath = path.join(toRoot, relativePath);
+    ensureParentDirectory(backupPath);
+    fs.cpSync(directoryPath, backupPath, { recursive: true });
+}
+
+function restoreDirectoryFromBackup(directoryPath: string, dataRoot: string, backupRoot: string): void {
+    const relativePath = path.relative(dataRoot, directoryPath);
+    const backupPath = path.join(backupRoot, relativePath);
+
+    fs.rmSync(directoryPath, { recursive: true, force: true });
+
+    if (!fs.existsSync(backupPath)) {
+        return;
+    }
+
+    ensureParentDirectory(directoryPath);
+    fs.cpSync(backupPath, directoryPath, { recursive: true });
+}
+
+function replaceDirectoryFromStaging(directoryPath: string, dataRoot: string, stagingRoot: string): void {
+    const relativePath = path.relative(dataRoot, directoryPath);
+    const stagedPath = path.join(stagingRoot, relativePath);
+
+    if (!fs.existsSync(stagedPath)) {
+        throw new Error(`Staged restore directory is missing: ${relativePath}`);
+    }
+
+    fs.rmSync(directoryPath, { recursive: true, force: true });
+    ensureParentDirectory(directoryPath);
+    fs.renameSync(stagedPath, directoryPath);
+}
+
+function isSafeMediaRelativePath(value: string): boolean {
+    const normalized = value.replace(/\\/g, '/');
+
+    return (
+        normalized === value &&
+        normalized.startsWith(`${MEDIA_FILES_DIRECTORY_NAME}/`) &&
+        !normalized.startsWith('/') &&
+        !normalized.includes('../') &&
+        !normalized.includes('/..') &&
+        normalized.split('/').every(Boolean)
+    );
+}
+
+function resolveMediaFilePath(mediaRoot: string, mediaPath: string): string {
+    if (!isSafeMediaRelativePath(mediaPath)) {
+        throw new Error(`Invalid media path: ${mediaPath}`);
+    }
+
+    const filesRoot = path.resolve(mediaRoot, MEDIA_FILES_DIRECTORY_NAME);
+    const filePath = path.resolve(mediaRoot, mediaPath);
+
+    if (filePath !== filesRoot && !filePath.startsWith(`${filesRoot}${path.sep}`)) {
+        throw new Error(`Invalid media path: ${mediaPath}`);
+    }
+
+    return filePath;
+}
+
+function writeRestoredMediaDirectory(mediaRoot: string, media: EditorRestoreMediaData): void {
+    const assetsByPath = new Map(media.manifest.assets.map((asset) => [asset.path, asset]));
+
+    for (const file of media.files ?? []) {
+        const asset = assetsByPath.get(file.path);
+
+        if (!asset) {
+            throw new Error(`Unexpected media restore file: ${file.path}`);
+        }
+
+        if (createHash('sha256').update(file.bytes).digest('hex') !== asset.hash) {
+            throw new Error(`Media file hash does not match manifest: ${file.path}`);
+        }
+
+        const filePath = resolveMediaFilePath(mediaRoot, asset.path);
+        ensureParentDirectory(filePath);
+        fs.writeFileSync(filePath, file.bytes);
+    }
+
+    writeJsonFile(path.join(mediaRoot, MEDIA_MANIFEST_FILE_NAME), {
+        version: media.manifest.version,
+        updatedAt: new Date().toISOString(),
+        assets: media.manifest.assets,
+    });
 }
 
 function stableStringify(value: unknown): string {
@@ -949,6 +1082,28 @@ export function createEditorDataManifestSnapshot(data: {
     };
 }
 
+export function createDerivedEditorDataManifestSnapshot(data: {
+    articles: Article[];
+    navigation: Category[];
+    settings: SiteSettings;
+}): EditorDataManifest {
+    const articles = createDerivedResourceManifest(data.articles);
+    const navigation = createDerivedResourceManifest(data.navigation);
+    const settings = createDerivedResourceManifest(data.settings);
+    const updatedAts = [articles.updatedAt, navigation.updatedAt, settings.updatedAt].sort();
+
+    return {
+        version: MANIFEST_VERSION,
+        schemaVersion: EDITOR_DATA_SCHEMA_VERSION,
+        updatedAt: updatedAts[updatedAts.length - 1] ?? new Date().toISOString(),
+        resources: {
+            articles,
+            navigation,
+            settings,
+        },
+    };
+}
+
 export function getDefaultNavigationSeedFilePath(): string {
     return path.join(
         process.cwd(),
@@ -1175,12 +1330,14 @@ export async function restoreEditorDataRootAtomically(data: {
     articles: Article[];
     navigation: Category[];
     settings: SiteSettings;
+    media?: EditorRestoreMediaData;
 }): Promise<EditorDataManifest> {
     return withEditorDataRootLock(() => {
         const root = getEditorDataRootOrThrow();
         const stagingRoot = createRestoreDirectory(root, '.restore-staging');
         const backupRoot = createRestoreDirectory(root, '.restore-backup');
         const files = getEditorDataFiles(root);
+        const directories = data.media?.files ? [path.join(root, MEDIA_DIRECTORY_NAME)] : [];
         const manifest = createManifestForData(data);
         let backupCaptured = false;
         let restoreStateCreated = false;
@@ -1192,6 +1349,10 @@ export async function restoreEditorDataRootAtomically(data: {
             writeJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), data.navigation);
             writeJsonFile(path.join(stagingRoot, 'settings', SETTINGS_FILE_NAME), data.settings);
             writeJsonFile(path.join(stagingRoot, MANIFEST_FILE_NAME), manifest);
+
+            if (data.media?.files) {
+                writeRestoredMediaDirectory(path.join(stagingRoot, MEDIA_DIRECTORY_NAME), data.media);
+            }
 
             const stagedArticles = parseArticlesData(readJsonFile(path.join(stagingRoot, 'articles', ARTICLES_FILE_NAME), 'articles'));
             const stagedNavigation = parseNavigationData(readJsonFile(path.join(stagingRoot, 'navigation', NAVIGATION_FILE_NAME), 'navigation'));
@@ -1216,6 +1377,9 @@ export async function restoreEditorDataRootAtomically(data: {
             }
 
             copyExistingFiles(files, root, backupRoot);
+            for (const directoryPath of directories) {
+                copyExistingDirectory(directoryPath, root, backupRoot);
+            }
             backupCaptured = true;
             writeRestoreState(root, {
                 version: RESTORE_STATE_VERSION,
@@ -1223,16 +1387,21 @@ export async function restoreEditorDataRootAtomically(data: {
                 stagingDirectory: stagingRoot,
                 backupDirectory: backupRoot,
                 files,
+                ...(directories.length > 0 ? { directories } : {}),
                 updatedAt: new Date().toISOString(),
             });
             restoreStateCreated = true;
             replaceFilesFromStaging(files, root, stagingRoot);
+            for (const directoryPath of directories) {
+                replaceDirectoryFromStaging(directoryPath, root, stagingRoot);
+            }
             writeRestoreState(root, {
                 version: RESTORE_STATE_VERSION,
                 phase: 'committed',
                 stagingDirectory: stagingRoot,
                 backupDirectory: backupRoot,
                 files,
+                ...(directories.length > 0 ? { directories } : {}),
                 updatedAt: new Date().toISOString(),
             });
             restoreCommitted = true;
@@ -1261,6 +1430,9 @@ export async function restoreEditorDataRootAtomically(data: {
         } catch (error) {
             if (backupCaptured && !restoreCommitted) {
                 restoreFilesFromBackup(files, root, backupRoot);
+                for (const directoryPath of directories) {
+                    restoreDirectoryFromBackup(directoryPath, root, backupRoot);
+                }
                 restoreStateResolved = true;
             }
 

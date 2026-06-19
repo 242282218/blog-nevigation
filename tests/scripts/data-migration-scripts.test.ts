@@ -31,6 +31,7 @@ const validSettings = {
   heroDescription: 'Runtime data scripts require complete settings when the file exists.',
   ...defaultIntroCardSettings,
 };
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 function createTempDirectory(): string {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'blog-navigation-data-script-'));
@@ -64,6 +65,38 @@ function hashJson(value: unknown): string {
   return createHash('sha256')
     .update(stableStringify(value))
     .digest('hex');
+}
+
+function writeMediaFixture(dataRoot: string) {
+  const updatedAt = '2026-06-19T00:00:00.000Z';
+  const hash = createHash('sha256')
+    .update(PNG_BYTES)
+    .digest('hex');
+  const mediaPath = `files/2026/06/${hash}.png`;
+  const asset = {
+    id: hash,
+    path: mediaPath,
+    publicPath: `/media/${mediaPath}`,
+    mimeType: 'image/png',
+    size: PNG_BYTES.byteLength,
+    hash,
+    createdAt: updatedAt,
+    updatedAt,
+  };
+  const manifest = {
+    version: 1,
+    updatedAt,
+    assets: [asset],
+  };
+
+  writeJson(path.join(dataRoot, 'media', 'manifest.json'), manifest);
+  fs.mkdirSync(path.dirname(path.join(dataRoot, 'media', mediaPath)), { recursive: true });
+  fs.writeFileSync(path.join(dataRoot, 'media', mediaPath), Buffer.from(PNG_BYTES));
+
+  return {
+    asset,
+    manifest,
+  };
 }
 
 afterEach(() => {
@@ -106,6 +139,7 @@ describe('runtime data migration scripts', () => {
       heroDescription: 'Settings travel with the backup envelope.',
       ...defaultIntroCardSettings,
     };
+    const media = writeMediaFixture(sourceRoot);
 
     writeJson(path.join(sourceRoot, 'articles', 'articles.json'), [article]);
     writeJson(path.join(sourceRoot, 'navigation', 'tools.json'), navigation);
@@ -145,6 +179,7 @@ describe('runtime data migration scripts', () => {
         version: 1,
         schemaVersion: 1,
         source: 'local',
+        persistent: true,
         manifest: expect.objectContaining({
           version: 1,
           schemaVersion: 1,
@@ -172,6 +207,15 @@ describe('runtime data migration scripts', () => {
           ],
           navigation,
           settings,
+          media: {
+            manifest: media.manifest,
+            files: [
+              {
+                path: media.asset.path,
+                data: Buffer.from(PNG_BYTES).toString('base64'),
+              },
+            ],
+          },
         },
       })
     );
@@ -190,6 +234,14 @@ describe('runtime data migration scripts', () => {
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8'))).toEqual(settings);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'media', 'manifest.json'), 'utf8'))).toEqual(
+      expect.objectContaining({
+        version: media.manifest.version,
+        assets: media.manifest.assets,
+        updatedAt: expect.any(String),
+      })
+    );
+    expect(fs.readFileSync(path.join(targetRoot, 'media', media.asset.path))).toEqual(Buffer.from(PNG_BYTES));
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'settings', 'cloudflare-r2.json'), 'utf8'))).toEqual(
       expect.objectContaining({
         accountId: '22222222222222222222222222222222',
@@ -233,6 +285,81 @@ describe('runtime data migration scripts', () => {
     );
   });
 
+  it('rejects media manifest-only imports without replacing existing runtime data', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'manifest-only-media-backup.json');
+    const existingArticle = {
+      id: 'existing-media-guard-article-1',
+      title: 'Existing Media Guard Article',
+      date: '2026-05-25',
+      description: 'Existing data must survive incomplete media imports',
+      tags: ['existing'],
+      content: '# Existing Media Guard Article',
+      slug: 'existing-media-guard-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const existingNavigation = [
+      {
+        name: 'Existing',
+        icon: 'book',
+        slug: 'existing',
+        tools: [],
+      },
+    ];
+    const existingSettings = {
+      ...validSettings,
+      siteName: 'Existing Media Guard Site',
+    };
+    const media = writeMediaFixture(targetRoot);
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), existingNavigation);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), existingSettings);
+
+    execFileSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'verify-runtime-data.mjs'), targetRoot, '--write-manifest'],
+      { encoding: 'utf8' }
+    );
+
+    const existingArticles = fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8');
+    const existingNavigationData = fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8');
+    const existingSettingsData = fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8');
+    const existingManifest = fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8');
+    const existingMediaManifest = fs.readFileSync(path.join(targetRoot, 'media', 'manifest.json'), 'utf8');
+    const existingMediaBytes = fs.readFileSync(path.join(targetRoot, 'media', media.asset.path));
+
+    writeJson(backupPath, {
+      version: 1,
+      schemaVersion: 1,
+      data: {
+        articles: [],
+        navigation: [],
+        settings: validSettings,
+        media: {
+          manifest: media.manifest,
+        },
+      },
+    });
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Backup media files are missing or incomplete.');
+    expect(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8')).toBe(existingNavigationData);
+    expect(fs.readFileSync(path.join(targetRoot, 'settings', 'site.json'), 'utf8')).toBe(existingSettingsData);
+    expect(fs.readFileSync(path.join(targetRoot, 'manifest.json'), 'utf8')).toBe(existingManifest);
+    expect(fs.readFileSync(path.join(targetRoot, 'media', 'manifest.json'), 'utf8')).toBe(existingMediaManifest);
+    expect(fs.readFileSync(path.join(targetRoot, 'media', media.asset.path))).toEqual(existingMediaBytes);
+    expect(fs.readdirSync(targetRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
+  });
+
   it('rejects backups from newer schema versions without replacing existing runtime data', () => {
     const targetRoot = createTempDirectory();
     const backupPath = path.join(createTempDirectory(), 'future-backup.json');
@@ -273,7 +400,205 @@ describe('runtime data migration scripts', () => {
     ]);
   });
 
-  it('creates and restores an encrypted GitHub backup package', () => {
+  it('rejects backups from newer versions without replacing existing runtime data', () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'future-version-backup.json');
+    const existingArticle = {
+      id: 'existing-version-article',
+      title: 'Existing Version Article',
+      date: '2026-05-22',
+      description: 'Existing runtime data',
+      tags: ['runtime'],
+      content: '# Existing Version',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), validSettings);
+    writeJson(backupPath, {
+      version: 999,
+      data: {
+        articles: [],
+        navigation: [],
+        settings: validSettings,
+      },
+    });
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('version 999 is newer than supported 1');
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+  });
+
+  it('rejects encrypted backup payloads in the plain import script with an explicit tool hint', async () => {
+    const targetRoot = createTempDirectory();
+    const backupPath = path.join(createTempDirectory(), 'encrypted-backup.json');
+    const existingArticle = {
+      id: 'existing-encrypted-import-article',
+      title: 'Existing Encrypted Import Article',
+      date: '2026-05-22',
+      description: 'Existing runtime data',
+      tags: ['runtime'],
+      content: '# Existing Encrypted Import',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const encryptedBackupModule = await import(
+      pathToFileURL(path.join(repoRoot, 'scripts', 'data', 'encrypted-backup.mjs')).href
+    );
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), validSettings);
+    writeJson(
+      backupPath,
+      encryptedBackupModule.createEncryptedBackupPayload(
+        {
+          version: 1,
+          data: {
+            articles: [],
+            navigation: [],
+            settings: validSettings,
+          },
+        },
+        'plain-import-must-reject-encrypted-payloads'
+      )
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'import-runtime-data.mjs'), backupPath, targetRoot],
+      { encoding: 'utf8' }
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Encrypted backup payload detected. Use restore-encrypted-backup.mjs instead.');
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+  });
+
+  it('rejects encrypted backups from newer schema versions without replacing existing runtime data', async () => {
+    const targetRoot = createTempDirectory();
+    const encryptedBackupPath = path.join(createTempDirectory(), 'future-backup.enc.json');
+    const secret = 'future-schema-encrypted-backup-secret';
+    const existingArticle = {
+      id: 'existing-encrypted-article',
+      title: 'Existing Encrypted Article',
+      date: '2026-05-22',
+      description: 'Existing encrypted runtime data',
+      tags: ['runtime'],
+      content: '# Existing Encrypted',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const encryptedBackupModule = await import(
+      pathToFileURL(path.join(repoRoot, 'scripts', 'data', 'encrypted-backup.mjs')).href
+    );
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), validSettings);
+    writeJson(
+      encryptedBackupPath,
+      encryptedBackupModule.createEncryptedBackupPayload(
+        {
+          version: 1,
+          schemaVersion: 999,
+          data: {
+            articles: [],
+            navigation: [],
+            settings: validSettings,
+          },
+        },
+        secret
+      )
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'restore-encrypted-backup.mjs'), encryptedBackupPath, targetRoot],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_BACKUP_ENCRYPTION_KEY: secret,
+        },
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('schemaVersion 999 is newer than supported 1');
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+  });
+
+  it('rejects encrypted backups from newer versions without replacing existing runtime data', async () => {
+    const targetRoot = createTempDirectory();
+    const encryptedBackupPath = path.join(createTempDirectory(), 'future-version-backup.enc.json');
+    const secret = 'future-version-encrypted-backup-secret';
+    const existingArticle = {
+      id: 'existing-version-encrypted-article',
+      title: 'Existing Version Encrypted Article',
+      date: '2026-05-22',
+      description: 'Existing encrypted runtime data',
+      tags: ['runtime'],
+      content: '# Existing Version Encrypted',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const encryptedBackupModule = await import(
+      pathToFileURL(path.join(repoRoot, 'scripts', 'data', 'encrypted-backup.mjs')).href
+    );
+
+    writeJson(path.join(targetRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(targetRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(targetRoot, 'settings', 'site.json'), validSettings);
+    writeJson(
+      encryptedBackupPath,
+      encryptedBackupModule.createEncryptedBackupPayload(
+        {
+          version: 999,
+          data: {
+            articles: [],
+            navigation: [],
+            settings: validSettings,
+          },
+        },
+        secret
+      )
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, 'scripts', 'data', 'restore-encrypted-backup.mjs'), encryptedBackupPath, targetRoot],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GITHUB_BACKUP_ENCRYPTION_KEY: secret,
+        },
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('version 999 is newer than supported 1');
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      existingArticle,
+    ]);
+  });
+
+  it('creates and restores an encrypted GitHub backup package', async () => {
     const sourceRoot = createTempDirectory();
     const targetRoot = createTempDirectory();
     const encryptedBackupPath = path.join(createTempDirectory(), 'backup.enc.json');
@@ -296,6 +621,7 @@ describe('runtime data migration scripts', () => {
         tools: [],
       },
     ];
+    const media = writeMediaFixture(sourceRoot);
 
     writeJson(path.join(sourceRoot, 'articles', 'articles.json'), [article]);
     writeJson(path.join(sourceRoot, 'navigation', 'tools.json'), navigation);
@@ -335,6 +661,35 @@ describe('runtime data migration scripts', () => {
     );
     expect(JSON.stringify(encryptedPayload)).not.toContain('Encrypted Article');
 
+    const encryptedBackupModule = await import(
+      pathToFileURL(path.join(repoRoot, 'scripts', 'data', 'encrypted-backup.mjs')).href
+    );
+    const decryptedRuntimePayload = encryptedBackupModule.decryptBackupPayload(encryptedPayload, secret);
+
+    expect(decryptedRuntimePayload).toEqual(
+      expect.objectContaining({
+        version: 1,
+        schemaVersion: 1,
+        source: 'local',
+        persistent: true,
+        manifest: expect.objectContaining({
+          version: 1,
+          schemaVersion: 1,
+        }),
+        data: expect.objectContaining({
+          media: {
+            manifest: media.manifest,
+            files: [
+              {
+                path: media.asset.path,
+                data: Buffer.from(PNG_BYTES).toString('base64'),
+              },
+            ],
+          },
+        }),
+      })
+    );
+
     execFileSync(
       process.execPath,
       [path.join(repoRoot, 'scripts', 'data', 'restore-encrypted-backup.mjs'), encryptedBackupPath, targetRoot],
@@ -354,6 +709,14 @@ describe('runtime data migration scripts', () => {
       }),
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'navigation', 'tools.json'), 'utf8'))).toEqual(navigation);
+    expect(JSON.parse(fs.readFileSync(path.join(targetRoot, 'media', 'manifest.json'), 'utf8'))).toEqual(
+      expect.objectContaining({
+        version: media.manifest.version,
+        assets: media.manifest.assets,
+        updatedAt: expect.any(String),
+      })
+    );
+    expect(fs.readFileSync(path.join(targetRoot, 'media', media.asset.path))).toEqual(Buffer.from(PNG_BYTES));
     expect(fs.readdirSync(targetRoot).some((entry) => entry.startsWith('.restore-'))).toBe(false);
   });
 

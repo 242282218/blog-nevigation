@@ -32,6 +32,18 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function getButtonByText(container: HTMLElement, text: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll('button')).find((candidate) =>
+    candidate.textContent?.includes(text)
+  );
+
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`Button not found: ${text}`);
+  }
+
+  return button;
+}
+
 describe('RuntimeSettingsPage', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -142,5 +154,140 @@ describe('RuntimeSettingsPage', () => {
     expect(container.textContent).toContain('v2.0.1-build.42');
     expect(container.textContent).toContain('Docker 镜像');
     expect(container.textContent).toContain('abcdef123456');
+  });
+
+  it('refreshes runtime form state after a stale revision conflict and retries with the latest revision', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          editable: {
+            publicSiteUrl: 'https://example.com',
+            cookieSecure: true,
+            trustedProxyIps: ['127.0.0.1'],
+            dataRootPath: '/var/lib/blog-navigation',
+          },
+          config: {
+            dataRoot: {
+              pendingPath: null,
+              requiresRestart: false,
+            },
+          },
+          revision: 'settings-revision',
+          version: {
+            projectVersion: '2.0.1',
+            displayVersion: 'v2.0.1-build.42',
+            runtime: 'docker',
+            docker: {
+              enabled: true,
+              imageTag: 'v2.0.1-build.42',
+              revision: 'abcdef1234567890',
+              buildTime: '2026-06-08T08:00:00Z',
+            },
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: '运行时配置已被其他会话更新，请刷新后重试。',
+            editable: {
+              publicSiteUrl: 'https://server.example.com',
+              cookieSecure: false,
+              trustedProxyIps: ['10.0.0.1'],
+              dataRootPath: '/srv/blog-navigation',
+            },
+            config: {
+              dataRoot: {
+                pendingPath: '/srv/blog-navigation',
+                requiresRestart: true,
+              },
+            },
+            revision: 'server-revision',
+            version: {
+              projectVersion: '2.0.2',
+              displayVersion: 'v2.0.2-build.43',
+              runtime: 'docker',
+              docker: {
+                enabled: true,
+                imageTag: 'v2.0.2-build.43',
+                revision: 'bbbbbb1234567890',
+                buildTime: '2026-06-09T08:00:00Z',
+              },
+            },
+          },
+          { status: 409 }
+        )
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          editable: {
+            publicSiteUrl: 'https://server.example.com',
+            cookieSecure: false,
+            trustedProxyIps: ['10.0.0.1'],
+            dataRootPath: '/srv/blog-navigation',
+          },
+          config: {
+            dataRoot: {
+              pendingPath: '/srv/blog-navigation',
+              requiresRestart: true,
+            },
+          },
+          revision: 'next-revision',
+          version: {
+            projectVersion: '2.0.2',
+            displayVersion: 'v2.0.2-build.43',
+            runtime: 'docker',
+            docker: {
+              enabled: true,
+              imageTag: 'v2.0.2-build.43',
+              revision: 'bbbbbb1234567890',
+              buildTime: '2026-06-09T08:00:00Z',
+            },
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<RuntimeSettingsPage />);
+    });
+    await flushPromises();
+
+    const publicSiteUrlInput = container.querySelector<HTMLInputElement>('#runtime-public-site-url');
+    const dataRootInput = container.querySelector<HTMLInputElement>('#runtime-data-root');
+    const form = container.querySelector<HTMLFormElement>('#runtime-config-form');
+
+    expect(publicSiteUrlInput?.value).toBe('https://example.com');
+    expect(dataRootInput?.value).toBe('/var/lib/blog-navigation');
+
+    await act(async () => {
+      if (publicSiteUrlInput) {
+        setInputValue(publicSiteUrlInput, 'https://stale.example.com');
+      }
+      if (dataRootInput) {
+        setInputValue(dataRootInput, '/tmp/stale-path');
+      }
+    });
+
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('运行时配置已被其他会话更新，请刷新后重试。');
+    expect(publicSiteUrlInput?.value).toBe('https://server.example.com');
+    expect(dataRootInput?.value).toBe('/srv/blog-navigation');
+    expect(container.textContent).toContain('数据目录存在待生效变更，请确认服务器重启和目录迁移安排。');
+    expect(container.textContent).toContain('v2.0.2-build.43');
+
+    await act(async () => {
+      getButtonByText(container, '保存配置').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    const body = JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string);
+
+    expect(body.revision).toBe('server-revision');
+    expect(container.textContent).toContain('运行时配置已保存；数据目录变更需要重启后生效。');
   });
 });

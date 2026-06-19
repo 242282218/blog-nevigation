@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const EDITOR_JSON_BODY_LIMIT_BYTES = 2 * 1024 * 1024;
+export const EDITOR_BACKUP_JSON_BODY_LIMIT_BYTES = 128 * 1024 * 1024;
 export const EDITOR_SETTINGS_JSON_BODY_LIMIT_BYTES = 256 * 1024;
 export const EDITOR_AUTH_JSON_BODY_LIMIT_BYTES = 16 * 1024;
 

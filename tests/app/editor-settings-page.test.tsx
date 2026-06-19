@@ -221,6 +221,117 @@ describe('EditorSettingsPage', () => {
     );
   });
 
+  it('refreshes R2 settings form state when save is rejected by a stale revision', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: false,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+            securityWarning: null,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+            settings: {
+              enabled: true,
+              accountId: '22222222222222222222222222222222',
+              bucket: 'server-bucket',
+              hasAccessKeyId: true,
+              hasSecretAccessKey: true,
+              prefix: 'server-prefix',
+              endpoint: '',
+              snapshotOnWrite: true,
+            },
+            revision: 'server-revision',
+            status: {
+              enabled: true,
+              configured: true,
+              bucket: 'server-bucket',
+              prefix: 'server-prefix',
+              endpoint: 'https://22222222222222222222222222222222.r2.cloudflarestorage.com',
+              snapshotOnWrite: true,
+              hasAccessKeyId: true,
+              hasSecretAccessKey: true,
+              source: 'file',
+              message: null,
+              securityWarning: null,
+            },
+            backupQueue: {
+              pending: 0,
+              failed: 0,
+              failedTasks: [],
+            },
+            backupQueueMessage: null,
+          },
+          { status: 409 }
+        )
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const accountInput = container.querySelector<HTMLInputElement>('#r2-account-id');
+    const accessKeyInput = container.querySelector<HTMLInputElement>('#r2-access-key-id');
+    const bucketInput = container.querySelector<HTMLInputElement>('#r2-bucket');
+    const form = container.querySelector<HTMLFormElement>('#cloudflare-r2-form');
+
+    expect(accountInput?.value).toBe('0123456789abcdef0123456789abcdef');
+    expect(bucketInput?.value).toBe('blog-data');
+
+    await act(async () => {
+      if (accountInput) {
+        setInputValue(accountInput, '11111111111111111111111111111111');
+      }
+      if (accessKeyInput) {
+        setInputValue(accessKeyInput, 'stale-access-key');
+      }
+      if (bucketInput) {
+        setInputValue(bucketInput, 'stale-bucket');
+      }
+    });
+    await act(async () => {
+      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('Cloudflare R2 配置已被其他会话更新，请刷新后重试。');
+    expect(accountInput?.value).toBe('22222222222222222222222222222222');
+    expect(bucketInput?.value).toBe('server-bucket');
+    expect(container.textContent).toContain('配置完整');
+  });
+
   it('disables remote R2 actions until saved settings are complete', async () => {
     fetchMock
       .mockResolvedValueOnce(
@@ -449,6 +560,183 @@ describe('EditorSettingsPage', () => {
     expect(container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key')?.value).toBe('');
     expect(container.querySelector<HTMLInputElement>('#r2-account-id')?.value).toBe('0123456789abcdef0123456789abcdef');
     expect(container.querySelector<HTMLInputElement>('#r2-bucket')?.value).toBe('blog-data');
+    expect(container.textContent).toContain('Cloudflare R2 已自动配置完成。');
+  });
+
+  it('retries bootstrap with the latest revision after a stale revision conflict', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: false,
+            accountId: '',
+            bucket: '',
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: false,
+            configured: false,
+            bucket: null,
+            prefix: 'blog-navigation',
+            endpoint: null,
+            snapshotOnWrite: false,
+            hasAccessKeyId: false,
+            hasSecretAccessKey: false,
+            source: 'default',
+            message: null,
+            securityWarning: null,
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+            revision: 'server-revision',
+            settings: {
+              enabled: true,
+              accountId: '22222222222222222222222222222222',
+              bucket: 'server-bucket',
+              hasAccessKeyId: true,
+              hasSecretAccessKey: true,
+              prefix: 'server-prefix',
+              endpoint: '',
+              snapshotOnWrite: true,
+            },
+            status: {
+              enabled: true,
+              configured: true,
+              bucket: 'server-bucket',
+              prefix: 'server-prefix',
+              endpoint: 'https://22222222222222222222222222222222.r2.cloudflarestorage.com',
+              snapshotOnWrite: true,
+              hasAccessKeyId: true,
+              hasSecretAccessKey: true,
+              source: 'file',
+              message: null,
+              securityWarning: null,
+            },
+            backupQueue: {
+              pending: 0,
+              failed: 0,
+              failedTasks: [],
+            },
+            backupQueueMessage: null,
+          },
+          { status: 409 }
+        )
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          success: true,
+          bucketCreated: false,
+          settings: {
+            enabled: true,
+            accountId: '22222222222222222222222222222222',
+            bucket: 'server-bucket',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'server-prefix',
+            endpoint: '',
+            snapshotOnWrite: true,
+          },
+          revision: 'next-revision',
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'server-bucket',
+            prefix: 'server-prefix',
+            endpoint: 'https://22222222222222222222222222222222.r2.cloudflarestorage.com',
+            snapshotOnWrite: true,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+            securityWarning: null,
+          },
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    const emailInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-auth-email');
+    const globalKeyInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key');
+    const bootstrapAccountInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-account-id');
+    const bootstrapBucketInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-bucket');
+    const bootstrapPrefixInput = container.querySelector<HTMLInputElement>('#r2-bootstrap-prefix');
+    const mainAccountInput = container.querySelector<HTMLInputElement>('#r2-account-id');
+    const mainBucketInput = container.querySelector<HTMLInputElement>('#r2-bucket');
+    const mainPrefixInput = container.querySelector<HTMLInputElement>('#r2-prefix');
+    const checkboxInputs = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    const bootstrapSnapshotInput = checkboxInputs[0];
+    const mainSnapshotInput = checkboxInputs[2];
+
+    await act(async () => {
+      if (emailInput) {
+        setInputValue(emailInput, 'owner@example.com');
+      }
+      if (globalKeyInput) {
+        setInputValue(globalKeyInput, 'global-key-should-clear');
+      }
+      if (bootstrapAccountInput) {
+        setInputValue(bootstrapAccountInput, '0123456789abcdef0123456789abcdef');
+      }
+      if (bootstrapBucketInput) {
+        setInputValue(bootstrapBucketInput, 'blog-data');
+      }
+    });
+
+    await act(async () => {
+      getButtonByText(container, '一键配置 R2').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('Cloudflare R2 配置已被其他会话更新，请刷新后重试。');
+    expect(mainAccountInput?.value).toBe('22222222222222222222222222222222');
+    expect(mainBucketInput?.value).toBe('server-bucket');
+    expect(mainPrefixInput?.value).toBe('server-prefix');
+    expect(bootstrapAccountInput?.value).toBe('22222222222222222222222222222222');
+    expect(bootstrapBucketInput?.value).toBe('server-bucket');
+    expect(bootstrapPrefixInput?.value).toBe('server-prefix');
+    expect(bootstrapSnapshotInput?.checked).toBe(true);
+    expect(mainSnapshotInput?.checked).toBe(true);
+    expect(globalKeyInput?.value).toBe('global-key-should-clear');
+    expect(container.textContent).toContain('配置完整');
+
+    await act(async () => {
+      getButtonByText(container, '一键配置 R2').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    const body = JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string);
+
+    expect(body).toEqual({
+      bootstrap: {
+        authEmail: 'owner@example.com',
+        globalApiKey: 'global-key-should-clear',
+        accountId: '22222222222222222222222222222222',
+        bucket: 'server-bucket',
+        prefix: 'server-prefix',
+        snapshotOnWrite: true,
+      },
+      revision: 'server-revision',
+    });
+    expect(container.querySelector<HTMLInputElement>('#r2-bootstrap-global-api-key')?.value).toBe('');
     expect(container.textContent).toContain('Cloudflare R2 已自动配置完成。');
   });
 
@@ -778,6 +1066,131 @@ describe('EditorSettingsPage', () => {
       })
     );
     expect(container.textContent).toContain('已重新排队 1 个失败备份任务。');
+    expect(container.textContent).toContain('有 1 个 R2 备份任务正在排队。');
+    expect(container.textContent).toContain('当前队列：pending 1 / failed 0；系统会按顺序继续同步。');
+  });
+
+  it('shows a queue warning when retrying failed backups returns a structured queue error', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: false,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+          },
+          backupQueue: {
+            pending: 0,
+            failed: 1,
+            failedTasks: [
+              {
+                id: 'failed-task',
+                reason: 'articles-write',
+                attempts: 3,
+                lastAttemptAt: '2026-06-07T00:00:00.000Z',
+                lastError: 'R2 temporarily unavailable.',
+              },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: '云端备份队列状态文件损坏，请检查并修复。',
+            backupQueue: null,
+            backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
+          },
+          { status: 500 }
+        )
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    await act(async () => {
+      getButtonByText(container, '重试失败备份').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('云端备份队列状态文件损坏，请检查并修复。');
+    expect(container.textContent).not.toContain('有 1 个 R2 备份任务失败');
+  });
+
+  it('shows a queue warning when R2 settings load without readable queue metadata', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          revision: 'settings-revision',
+          settings: DEFAULT_SITE_SETTINGS,
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          persistent: true,
+          settings: {
+            enabled: true,
+            accountId: '0123456789abcdef0123456789abcdef',
+            bucket: 'blog-data',
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            prefix: 'blog-navigation',
+            endpoint: '',
+            snapshotOnWrite: false,
+          },
+          status: {
+            enabled: true,
+            configured: true,
+            bucket: 'blog-data',
+            prefix: 'blog-navigation',
+            endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+            snapshotOnWrite: false,
+            hasAccessKeyId: true,
+            hasSecretAccessKey: true,
+            source: 'file',
+            message: null,
+            securityWarning: null,
+          },
+          backupQueue: null,
+          backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
+        })
+      );
+
+    await act(async () => {
+      root.render(<EditorSettingsPage />);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('云端备份队列状态文件损坏，请检查并修复。');
+    expect(container.textContent).not.toContain('有 1 个 R2 备份任务失败');
   });
 
   it('submits edited homepage intro card settings', async () => {

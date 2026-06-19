@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { restoreEditorMediaAssetsFromR2 } from '@/lib/editor-media-remote';
+import {
+  materializeEditorMediaRestoreDataFromR2,
+  restoreEditorMediaAssetsFromR2,
+} from '@/lib/editor-media-remote';
 import type { EditorMediaAsset, EditorMediaManifest } from '@/lib/editor-media-storage';
 import { cleanupTempDirectories, createTempDirectory, restoreEnv } from '../helpers/api-route';
 
@@ -57,6 +60,75 @@ afterEach(() => {
 });
 
 describe('restoreEditorMediaAssetsFromR2', () => {
+  it('materializes a complete inline media snapshot from local disk and R2', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const localAsset = createAsset(PNG_BYTES, '-local');
+    const remoteAsset = createAsset(PNG_BYTES_ALT, '-remote');
+    const { writeRestoredEditorMediaFile } = await import('@/lib/editor-media-storage');
+
+    await writeRestoredEditorMediaFile(localAsset, PNG_BYTES);
+    mockedDownloadMediaAssetFromR2.mockImplementation(async (asset: EditorMediaAsset) => {
+      if (asset.path === remoteAsset.path) {
+        return PNG_BYTES_ALT;
+      }
+
+      throw new Error(`Unexpected download: ${asset.path}`);
+    });
+
+    const result = await materializeEditorMediaRestoreDataFromR2(createManifest([localAsset, remoteAsset]));
+
+    expect(result.result).toEqual({
+      total: 2,
+      restored: 1,
+      skipped: 1,
+      failed: 0,
+      failures: [],
+    });
+    expect(result.media?.manifest).toEqual(createManifest([localAsset, remoteAsset]));
+    expect(result.media?.files).toHaveLength(2);
+    expect(result.media?.files[0]?.path).toBe(localAsset.path);
+    expect(new Uint8Array(result.media?.files[0]?.bytes ?? [])).toEqual(PNG_BYTES);
+    expect(result.media?.files[1]?.path).toBe(remoteAsset.path);
+    expect(new Uint8Array(result.media?.files[1]?.bytes ?? [])).toEqual(PNG_BYTES_ALT);
+  });
+
+  it('throws when a complete inline media snapshot cannot be materialized from R2', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const missingAsset = createAsset(PNG_BYTES, '-missing');
+    const corruptAsset = createAsset(PNG_BYTES_ALT, '-corrupt');
+
+    mockedDownloadMediaAssetFromR2.mockImplementation(async (asset: EditorMediaAsset) => {
+      if (asset.path === missingAsset.path) {
+        throw new Error('NoSuchKey: object not found.');
+      }
+
+      return new Uint8Array([0x00, 0x01, 0x02]);
+    });
+
+    await expect(
+      materializeEditorMediaRestoreDataFromR2(createManifest([missingAsset, corruptAsset]))
+    ).rejects.toEqual(
+      expect.objectContaining({
+        name: 'EditorMediaRestoreDownloadError',
+        result: {
+          total: 2,
+          restored: 0,
+          skipped: 0,
+          failed: 2,
+          failures: [
+            {
+              path: missingAsset.path,
+              message: 'NoSuchKey: object not found.',
+            },
+            expect.objectContaining({
+              path: corruptAsset.path,
+            }),
+          ],
+        },
+      })
+    );
+  });
+
   it('returns an empty result when manifest is undefined', async () => {
     const result = await restoreEditorMediaAssetsFromR2(undefined);
 

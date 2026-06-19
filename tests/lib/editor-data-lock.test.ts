@@ -3,8 +3,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   acquireEditorDataRootLock,
+  EditorDataRootUnavailableError,
   releaseEditorDataRootLock,
 } from '@/lib/editor-data-lock';
+import { withEditorDataRootLock } from '@/lib/editor-data-storage';
 import {
   cleanupTempDirectories,
   createTempDirectory,
@@ -82,5 +84,77 @@ describe('editor data lock', () => {
     );
 
     releaseEditorDataRootLock(lock);
+  });
+
+  it('throws a domain error when the configured root path is blocked by a file', async () => {
+    const dataRoot = createTempDataRoot();
+    const blockedRoot = path.join(dataRoot, 'blocked.txt', 'runtime-data');
+
+    fs.writeFileSync(path.join(dataRoot, 'blocked.txt'), 'blocked', 'utf8');
+
+    await expect(acquireEditorDataRootLock(blockedRoot)).rejects.toEqual(
+      expect.objectContaining<Partial<EditorDataRootUnavailableError>>({
+        name: 'EditorDataRootUnavailableError',
+        code: 'ENOTDIR',
+        rootPath: path.resolve(blockedRoot),
+      })
+    );
+  });
+
+  it('serializes concurrent top-level editor data operations instead of treating them as reentrant', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const order: string[] = [];
+    let releaseFirstOperation: (() => void) | undefined;
+    const firstOperationBlocked = new Promise<void>((resolve) => {
+      releaseFirstOperation = () => resolve();
+    });
+
+    const firstOperation = withEditorDataRootLock(async () => {
+      order.push('first-start');
+      await firstOperationBlocked;
+      order.push('first-end');
+    });
+
+    await sleep(0);
+
+    const secondOperation = withEditorDataRootLock(async () => {
+      order.push('second-start');
+      order.push('second-end');
+    });
+
+    await sleep(50);
+    expect(order).toEqual(['first-start']);
+
+    releaseFirstOperation?.();
+
+    await Promise.all([firstOperation, secondOperation]);
+
+    expect(order).toEqual([
+      'first-start',
+      'first-end',
+      'second-start',
+      'second-end',
+    ]);
+  });
+
+  it('allows nested editor data lock calls in the same async flow without deadlocking', async () => {
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    const order: string[] = [];
+
+    await withEditorDataRootLock(async () => {
+      order.push('outer-start');
+
+      await withEditorDataRootLock(async () => {
+        order.push('inner');
+      });
+
+      order.push('outer-end');
+    });
+
+    expect(order).toEqual([
+      'outer-start',
+      'inner',
+      'outer-end',
+    ]);
   });
 });

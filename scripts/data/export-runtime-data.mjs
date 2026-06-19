@@ -2,13 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  createManifest,
-  DATA_SCHEMA_VERSION,
-  readRuntimeData,
+  createBackupPayload,
+  readRuntimeBackupData,
   resolveDataRoot,
 } from './runtime-data.mjs';
-
-const BACKUP_VERSION = 1;
 function createDefaultOutputPath() {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return path.resolve('output', `blog-navigation-backup-${timestamp}.json`);
@@ -22,22 +19,8 @@ const [dataRootArg, outputArg] = process.argv.slice(2);
 const dataRoot = resolveDataRoot(dataRootArg);
 const outputPath = path.resolve(outputArg || createDefaultOutputPath());
 
-const data = readRuntimeData(dataRoot);
-const manifest = createManifest(data);
-const payload = {
-  version: BACKUP_VERSION,
-  schemaVersion: DATA_SCHEMA_VERSION,
-  exportedAt: new Date().toISOString(),
-  source: 'local',
-  persistent: true,
-  dataRoot,
-  manifest,
-  data: {
-    articles: data.articles,
-    navigation: data.navigation,
-    settings: data.settings,
-  },
-};
+const data = readRuntimeBackupData(dataRoot);
+const payload = createBackupPayload(dataRoot, data);
 
 ensureParentDirectory(outputPath);
 fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

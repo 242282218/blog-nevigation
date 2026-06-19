@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -7,11 +8,28 @@ const DATA_LOCK_WAIT_TIMEOUT_MS = 5000;
 const DATA_LOCK_STALE_MS = 30 * 1000;
 const DATA_LOCK_HEARTBEAT_MS = 10 * 1000;
 const DATA_LOCK_RETRY_MS = 50;
+const EDITOR_DATA_ROOT_UNAVAILABLE_ERROR_CODES = new Set([
+    'EACCES',
+    'ENOENT',
+    'ENOTDIR',
+    'EPERM',
+    'EROFS',
+]);
 
 export class EditorDataLockTimeoutError extends Error {
     constructor(public readonly lockPath: string) {
         super('Timed out while waiting for the editor data write lock.');
         this.name = 'EditorDataLockTimeoutError';
+    }
+}
+
+export class EditorDataRootUnavailableError extends Error {
+    constructor(
+        public readonly rootPath: string,
+        public readonly code: string | null
+    ) {
+        super('Runtime data root is unavailable.');
+        this.name = 'EditorDataRootUnavailableError';
     }
 }
 
@@ -27,7 +45,7 @@ type EditorDataLockSnapshot = {
     pid: number | null;
 };
 
-const heldEditorDataLocks = new Map<string, number>();
+const heldEditorDataLockContext = new AsyncLocalStorage<Map<string, number>>();
 
 async function sleep(milliseconds: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -243,20 +261,30 @@ export async function acquireEditorDataRootLock(root: string): Promise<EditorDat
     const deadline = Date.now() + DATA_LOCK_WAIT_TIMEOUT_MS;
     const token = `${process.pid}-${Date.now()}-${process.hrtime.bigint().toString(36)}`;
 
-    fs.mkdirSync(resolvedRoot, { recursive: true });
+    try {
+        fs.mkdirSync(resolvedRoot, { recursive: true });
 
-    while (true) {
-        const lock = tryAcquireLockCore(lockDirectory, token);
+        while (true) {
+            const lock = tryAcquireLockCore(lockDirectory, token);
 
-        if (lock) {
-            return lock;
+            if (lock) {
+                return lock;
+            }
+
+            if (Date.now() >= deadline) {
+                throw new EditorDataLockTimeoutError(lockDirectory);
+            }
+
+            await sleep(DATA_LOCK_RETRY_MS);
+        }
+    } catch (error) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code ?? null;
+
+        if (code && EDITOR_DATA_ROOT_UNAVAILABLE_ERROR_CODES.has(code)) {
+            throw new EditorDataRootUnavailableError(resolvedRoot, code);
         }
 
-        if (Date.now() >= deadline) {
-            throw new EditorDataLockTimeoutError(lockDirectory);
-        }
-
-        await sleep(DATA_LOCK_RETRY_MS);
+        throw error;
     }
 }
 
@@ -273,27 +301,17 @@ export function releaseEditorDataRootLock(lock: EditorDataRootLock): void {
 }
 
 export function getHeldEditorDataLockCount(root: string): number {
-    return heldEditorDataLocks.get(root) ?? 0;
+    return heldEditorDataLockContext.getStore()?.get(path.resolve(root)) ?? 0;
 }
 
-export function incrementHeldEditorDataLockCount(root: string): void {
-    heldEditorDataLocks.set(root, (heldEditorDataLocks.get(root) ?? 0) + 1);
-}
+export function runWithHeldEditorDataLockContext<T>(
+    root: string,
+    operation: () => T | Promise<T>
+): T | Promise<T> {
+    const resolvedRoot = path.resolve(root);
+    const nextContext = new Map(heldEditorDataLockContext.getStore());
 
-export function decrementHeldEditorDataLockCount(root: string): void {
-    const nextCount = (heldEditorDataLocks.get(root) ?? 1) - 1;
+    nextContext.set(resolvedRoot, (nextContext.get(resolvedRoot) ?? 0) + 1);
 
-    if (nextCount <= 0) {
-        heldEditorDataLocks.delete(root);
-    } else {
-        heldEditorDataLocks.set(root, nextCount);
-    }
-}
-
-export function setHeldEditorDataLockCount(root: string, count: number): void {
-    if (count <= 0) {
-        heldEditorDataLocks.delete(root);
-    } else {
-        heldEditorDataLocks.set(root, count);
-    }
+    return heldEditorDataLockContext.run(nextContext, operation);
 }

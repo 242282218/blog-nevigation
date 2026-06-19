@@ -4,6 +4,7 @@ import {
   filterArticlesData,
   isArticle,
   parseArticlesData,
+  parseArticlesDataOrThrow,
 } from '@/lib/article-data';
 
 const article = {
@@ -41,6 +42,9 @@ describe('article data contract', () => {
     expect(isArticle({ ...article, tags: 'architecture' })).toBe(false);
     expect(parseArticlesData([article, { ...article, id: 1 }])).toBeNull();
     expect(parseArticlesData({ articles: [article] })).toBeNull();
+    expect(() => parseArticlesDataOrThrow([article, { ...article, id: 1 }])).toThrow(
+      '文章必须包含 id、title、date、description、tags、content、createdAt、updatedAt，且类型正确。'
+    );
   });
 
   it('filters invalid records for local recovery paths', () => {
@@ -73,6 +77,10 @@ describe('article data contract', () => {
       { ...article, id: 'article-1', slug: 'same' },
       { ...article, id: 'article-2', slug: 'same' },
     ])).toBeNull();
+    expect(() => parseArticlesDataOrThrow([
+      { ...article, id: 'article-1', slug: 'same' },
+      { ...article, id: 'article-2', slug: 'same' },
+    ])).toThrow('文章 slug 重复：same');
   });
 
   it('normalizes optional metadata fields without breaking old records', () => {

@@ -62,10 +62,13 @@ describe('repository structure migration', () => {
 
         expect(fs.existsSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'remote', 'sync', 'route.ts'))).toBe(true);
         expect(fs.existsSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'remote', 'restore', 'route.ts'))).toBe(true);
+        expect(fs.existsSync(resolveRepoPath('src', 'app', 'api', 'data', 'backup', 'current-manifest', 'route.ts'))).toBe(true);
         expect(remoteRoute).toContain('parseRemoteBackupAction');
         expect(editorHome).toContain('/api/data/backup/remote/sync');
         expect(editorHome).toContain('/api/data/backup/remote/restore');
         expect(r2SettingsPanel).toContain('/api/data/backup/remote/${action}');
+        const backupCurrentManifest = fs.readFileSync(resolveRepoPath('src', 'app', 'editor', 'backup-current-manifest.ts'), 'utf8');
+        expect(backupCurrentManifest).toContain('/api/data/backup/current-manifest');
         expect(editorHome).not.toContain("JSON.stringify({ action: 'sync'");
         expect(editorHome).not.toContain("JSON.stringify({ action: 'restore'");
         expect(r2SettingsPanel).not.toContain('JSON.stringify({ action, currentManifest })');

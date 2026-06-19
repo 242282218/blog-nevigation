@@ -1,11 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { isEncryptedBackupPayload } from './encrypted-backup.mjs';
 
 export const MANIFEST_VERSION = 1;
 export const DATA_SCHEMA_VERSION = 1;
+export const BACKUP_VERSION = 1;
+export const MEDIA_MANIFEST_VERSION = 1;
 
 export const DATA_MIGRATIONS = [];
+
+const MEDIA_MANIFEST_FILE_NAME = 'manifest.json';
+const MEDIA_FILES_DIRECTORY_NAME = 'files';
 
 export const DEFAULT_SITE_SETTINGS = {
   siteName: '我的技术书桌',
@@ -74,8 +80,45 @@ export function resolveDataRoot(input) {
   return path.resolve(input || process.env.BLOG_DATA_ROOT || 'data');
 }
 
+function isMissingPathError(error) {
+  return error?.code === 'ENOENT';
+}
+
 export function isRecord(value) {
   return typeof value === 'object' && value !== null;
+}
+
+function canWriteDirectorySync(pathname) {
+  const stats = fs.statSync(pathname);
+
+  if (!stats.isDirectory()) {
+    return false;
+  }
+
+  fs.accessSync(pathname, fs.constants.W_OK);
+  return true;
+}
+
+export function isRuntimeDataRootWritableSync(pathname) {
+  let currentPath = path.resolve(pathname);
+
+  while (true) {
+    try {
+      return canWriteDirectorySync(currentPath);
+    } catch (error) {
+      if (!isMissingPathError(error)) {
+        return false;
+      }
+    }
+
+    const parentPath = path.dirname(currentPath);
+
+    if (parentPath === currentPath) {
+      return false;
+    }
+
+    currentPath = parentPath;
+  }
 }
 
 export function readJsonFile(filePath) {
@@ -379,6 +422,296 @@ export function hashJson(value) {
     .digest('hex');
 }
 
+function createBase64Bytes(value) {
+  return Buffer.from(value).toString('base64');
+}
+
+function parseBase64Bytes(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/.test(value)
+  ) {
+    return null;
+  }
+
+  return new Uint8Array(Buffer.from(value, 'base64'));
+}
+
+function hashBytes(value) {
+  return createHash('sha256')
+    .update(value)
+    .digest('hex');
+}
+
+function getMediaRoot(dataRoot) {
+  return path.join(dataRoot, 'media');
+}
+
+function getMediaManifestPath(dataRoot) {
+  return path.join(getMediaRoot(dataRoot), MEDIA_MANIFEST_FILE_NAME);
+}
+
+function getMediaFilesRoot(dataRoot) {
+  return path.join(getMediaRoot(dataRoot), MEDIA_FILES_DIRECTORY_NAME);
+}
+
+function createEmptyMediaManifest() {
+  return {
+    version: MEDIA_MANIFEST_VERSION,
+    updatedAt: new Date().toISOString(),
+    assets: [],
+  };
+}
+
+function isSafeMediaRelativePath(value) {
+  const normalized = value.replace(/\\/g, '/');
+
+  return (
+    normalized === value &&
+    normalized.startsWith(`${MEDIA_FILES_DIRECTORY_NAME}/`) &&
+    !normalized.startsWith('/') &&
+    !normalized.includes('../') &&
+    !normalized.includes('/..') &&
+    normalized.split('/').every(Boolean)
+  );
+}
+
+function isValidMediaMimeType(value) {
+  return value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif';
+}
+
+function isFiniteNonNegativeNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isMediaAsset(value) {
+  if (!isRecord(value) || Array.isArray(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.path === 'string' &&
+    isSafeMediaRelativePath(value.path) &&
+    typeof value.publicPath === 'string' &&
+    value.publicPath === `/media/${value.path}` &&
+    isValidMediaMimeType(value.mimeType) &&
+    isFiniteNonNegativeNumber(value.size) &&
+    typeof value.hash === 'string' &&
+    value.hash === value.id &&
+    /^[a-f0-9]{64}$/i.test(value.hash) &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string'
+  );
+}
+
+function parseMediaManifest(value) {
+  if (!isRecord(value) || value.version !== MEDIA_MANIFEST_VERSION || !Array.isArray(value.assets)) {
+    return null;
+  }
+
+  if (value.assets.some((asset) => !isMediaAsset(asset))) {
+    return null;
+  }
+
+  return {
+    version: MEDIA_MANIFEST_VERSION,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : new Date().toISOString(),
+    assets: value.assets,
+  };
+}
+
+function readMediaManifest(dataRoot) {
+  const manifestPath = getMediaManifestPath(dataRoot);
+
+  if (!fs.existsSync(manifestPath)) {
+    return createEmptyMediaManifest();
+  }
+
+  const manifest = parseMediaManifest(readJsonFile(manifestPath));
+
+  if (!manifest) {
+    throw new Error(`${manifestPath} is invalid.`);
+  }
+
+  return manifest;
+}
+
+function resolveMediaFilePath(dataRoot, mediaPath) {
+  if (!isSafeMediaRelativePath(mediaPath)) {
+    throw new Error(`Invalid media path: ${mediaPath}`);
+  }
+
+  const filesRoot = path.resolve(getMediaFilesRoot(dataRoot));
+  const filePath = path.resolve(getMediaRoot(dataRoot), mediaPath);
+
+  if (filePath !== filesRoot && !filePath.startsWith(`${filesRoot}${path.sep}`)) {
+    throw new Error(`Invalid media path: ${mediaPath}`);
+  }
+
+  return filePath;
+}
+
+function readMediaFile(dataRoot, asset) {
+  return new Uint8Array(fs.readFileSync(resolveMediaFilePath(dataRoot, asset.path)));
+}
+
+function writeMediaFile(dataRoot, asset, bytes) {
+  if (hashBytes(bytes) !== asset.hash) {
+    throw new Error(`Media file hash does not match manifest: ${asset.path}`);
+  }
+
+  const filePath = resolveMediaFilePath(dataRoot, asset.path);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, bytes);
+}
+
+function writeRestoredMediaManifest(dataRoot, manifest) {
+  writeJsonAtomically(getMediaManifestPath(dataRoot), {
+    version: MEDIA_MANIFEST_VERSION,
+    updatedAt: new Date().toISOString(),
+    assets: manifest.assets,
+  });
+}
+
+function readRuntimeBackupMedia(dataRoot, includeFiles = true) {
+  const manifest = readMediaManifest(dataRoot);
+
+  if (!includeFiles) {
+    return { manifest };
+  }
+
+  return {
+    manifest,
+    files: manifest.assets.map((asset) => ({
+      path: asset.path,
+      bytes: readMediaFile(dataRoot, asset),
+    })),
+  };
+}
+
+function serializeBackupMedia(media) {
+  if (!media) {
+    return undefined;
+  }
+
+  if (!media.files) {
+    return media.manifest;
+  }
+
+  return {
+    manifest: media.manifest,
+    files: media.files.map((file) => ({
+      path: file.path,
+      data: createBase64Bytes(file.bytes),
+    })),
+  };
+}
+
+function parseBackupMedia(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const legacyManifest = parseMediaManifest(value);
+
+  if (legacyManifest) {
+    return {
+      manifest: legacyManifest,
+    };
+  }
+
+  if (!isRecord(value) || Array.isArray(value)) {
+    throw new Error('Backup media data is invalid.');
+  }
+
+  const manifest = parseMediaManifest(value.manifest);
+
+  if (!manifest) {
+    throw new Error('Backup media manifest is invalid.');
+  }
+
+  if (value.files === undefined) {
+    return {
+      manifest,
+    };
+  }
+
+  if (!Array.isArray(value.files)) {
+    throw new Error('Backup media files must be an array.');
+  }
+
+  const assetsByPath = new Map(manifest.assets.map((asset) => [asset.path, asset]));
+  const seenPaths = new Set();
+  const files = value.files.map((file) => {
+    if (!isRecord(file) || typeof file.path !== 'string' || typeof file.data !== 'string') {
+      throw new Error('Backup media file is invalid.');
+    }
+
+    const asset = assetsByPath.get(file.path);
+
+    if (!asset || seenPaths.has(file.path)) {
+      throw new Error(`Backup media file is unexpected: ${file.path}`);
+    }
+
+    const bytes = parseBase64Bytes(file.data);
+
+    if (!bytes || bytes.byteLength !== asset.size || hashBytes(bytes) !== asset.hash) {
+      throw new Error(`Backup media file failed validation: ${file.path}`);
+    }
+
+    seenPaths.add(file.path);
+
+    return {
+      path: file.path,
+      bytes,
+    };
+  });
+
+  return {
+    manifest,
+    files,
+  };
+}
+
+function hasRequiredInlineMediaFiles(media) {
+  if (!media) {
+    return true;
+  }
+
+  const assetPaths = media.manifest.assets.map((asset) => asset.path);
+
+  if (assetPaths.length === 0) {
+    return true;
+  }
+
+  if (!media.files || media.files.length !== assetPaths.length) {
+    return false;
+  }
+
+  const filePaths = new Set(media.files.map((file) => file.path));
+
+  return filePaths.size === assetPaths.length && assetPaths.every((assetPath) => filePaths.has(assetPath));
+}
+
+function writeRestoredMediaData(dataRoot, media) {
+  const assetsByPath = new Map(media.manifest.assets.map((asset) => [asset.path, asset]));
+
+  for (const file of media.files || []) {
+    const asset = assetsByPath.get(file.path);
+
+    if (!asset) {
+      throw new Error(`Backup media file is unexpected: ${file.path}`);
+    }
+
+    writeMediaFile(dataRoot, asset, file.bytes);
+  }
+
+  writeRestoredMediaManifest(dataRoot, media.manifest);
+}
+
 export function createResourceManifest(value) {
   const hash = hashJson(value);
   const updatedAt = new Date().toISOString();
@@ -405,6 +738,40 @@ export function createManifest(data) {
       settings,
     },
   };
+}
+
+export function createBackupPayload(dataRoot, data, source = 'local') {
+  return {
+    version: BACKUP_VERSION,
+    schemaVersion: DATA_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    source,
+    persistent: isRuntimeDataRootWritableSync(dataRoot),
+    dataRoot,
+    manifest: createManifest(data),
+    data: {
+      articles: data.articles,
+      navigation: data.navigation,
+      settings: data.settings,
+      ...(data.media ? { media: serializeBackupMedia(data.media) } : {}),
+    },
+  };
+}
+
+export function readBackupVersion(value) {
+  if (!isRecord(value) || value.version === undefined) {
+    return BACKUP_VERSION;
+  }
+
+  if (!Number.isInteger(value.version) || value.version < 1) {
+    throw new Error('Backup version must be a positive integer.');
+  }
+
+  if (value.version > BACKUP_VERSION) {
+    throw new Error(`Backup version ${value.version} is newer than supported ${BACKUP_VERSION}.`);
+  }
+
+  return value.version;
 }
 
 export function readSchemaVersion(value) {
@@ -441,11 +808,48 @@ export function migrateRuntimeData(data, fromSchemaVersion) {
   return currentData;
 }
 
+export function parseBackupPayloadData(value) {
+  if (!isRecord(value)) {
+    throw new Error('Backup file must contain a JSON object.');
+  }
+
+  if (isEncryptedBackupPayload(value)) {
+    throw new Error('Encrypted backup payload detected. Use restore-encrypted-backup.mjs instead.');
+  }
+
+  readBackupVersion(value);
+  const source = isRecord(value.data) ? value.data : value;
+
+  if (!Array.isArray(source.articles) || !Array.isArray(source.navigation)) {
+    throw new Error('Backup file must include articles and navigation arrays.');
+  }
+
+  return migrateRuntimeData(
+    {
+      articles: normalizeArticles(source.articles),
+      navigation: normalizeNavigation(source.navigation),
+      settings:
+        source.settings === undefined
+          ? createDefaultSiteSettings()
+          : normalizeSiteSettings(source.settings),
+      ...(source.media === undefined ? {} : { media: parseBackupMedia(source.media) }),
+    },
+    readSchemaVersion(value)
+  );
+}
+
 export function readRuntimeData(dataRoot) {
   return {
     articles: normalizeArticles(readJsonArray(path.join(dataRoot, 'articles', 'articles.json'))),
     navigation: normalizeNavigation(readJsonArray(path.join(dataRoot, 'navigation', 'tools.json'))),
     settings: readSiteSettings(path.join(dataRoot, 'settings', 'site.json')),
+  };
+}
+
+export function readRuntimeBackupData(dataRoot, options = {}) {
+  return {
+    ...readRuntimeData(dataRoot),
+    media: readRuntimeBackupMedia(dataRoot, options.includeInlineMediaFiles !== false),
   };
 }
 
@@ -529,21 +933,70 @@ function replaceFilesFromStaging(files, dataRoot, stagingRoot) {
   }
 }
 
+function copyExistingDirectory(directoryPath, fromRoot, toRoot) {
+  if (!fs.existsSync(directoryPath)) {
+    return;
+  }
+
+  const relativePath = path.relative(fromRoot, directoryPath);
+  const backupPath = path.join(toRoot, relativePath);
+  fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+  fs.cpSync(directoryPath, backupPath, { recursive: true });
+}
+
+function restoreDirectoryFromBackup(directoryPath, fromRoot, backupRoot) {
+  const relativePath = path.relative(fromRoot, directoryPath);
+  const backupPath = path.join(backupRoot, relativePath);
+
+  fs.rmSync(directoryPath, { recursive: true, force: true });
+
+  if (!fs.existsSync(backupPath)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(directoryPath), { recursive: true });
+  fs.cpSync(backupPath, directoryPath, { recursive: true });
+}
+
+function replaceDirectoryFromStaging(directoryPath, fromRoot, stagingRoot) {
+  const relativePath = path.relative(fromRoot, directoryPath);
+  const stagedPath = path.join(stagingRoot, relativePath);
+
+  if (!fs.existsSync(stagedPath)) {
+    throw new Error(`Staged restore directory is missing: ${relativePath}`);
+  }
+
+  fs.rmSync(directoryPath, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(directoryPath), { recursive: true });
+  fs.renameSync(stagedPath, directoryPath);
+}
+
 export function restoreRuntimeDataAtomically(dataRoot, data) {
   const normalizedData = {
     articles: normalizeArticles(data.articles),
     navigation: normalizeNavigation(data.navigation),
     settings: normalizeSiteSettings(data.settings),
   };
+  const media = data.media;
+
+  if (!hasRequiredInlineMediaFiles(media)) {
+    throw new Error('Backup media files are missing or incomplete.');
+  }
+
   const manifest = createManifest(normalizedData);
   const stagingRoot = createRestoreDirectory(dataRoot, '.restore-staging');
   const backupRoot = createRestoreDirectory(dataRoot, '.restore-backup');
   const files = getRuntimeDataFiles(dataRoot);
+  const mediaRoot = getMediaRoot(dataRoot);
   let backupCaptured = false;
 
   try {
     writeRuntimeData(stagingRoot, normalizedData);
     writeManifest(stagingRoot, manifest);
+
+    if (media) {
+      writeRestoredMediaData(stagingRoot, media);
+    }
 
     const stagedData = readRuntimeData(stagingRoot);
     const stagedManifest = readManifest(stagingRoot);
@@ -554,13 +1007,22 @@ export function restoreRuntimeDataAtomically(dataRoot, data) {
     }
 
     copyExistingFiles(files, dataRoot, backupRoot);
+    if (media) {
+      copyExistingDirectory(mediaRoot, dataRoot, backupRoot);
+    }
     backupCaptured = true;
     replaceFilesFromStaging(files, dataRoot, stagingRoot);
+    if (media) {
+      replaceDirectoryFromStaging(mediaRoot, dataRoot, stagingRoot);
+    }
 
     return manifest;
   } catch (error) {
     if (backupCaptured) {
       restoreFilesFromBackup(files, dataRoot, backupRoot);
+      if (media) {
+        restoreDirectoryFromBackup(mediaRoot, dataRoot, backupRoot);
+      }
     }
 
     throw error;

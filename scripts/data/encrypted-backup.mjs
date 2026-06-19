@@ -14,6 +14,24 @@ const LEGACY_KEY_DERIVATION_SALT = 'blog-navigation-backup-v1';
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 16;
 
+function parseEncryptedBackupPayload(encryptedPayload) {
+  if (
+    !encryptedPayload ||
+    encryptedPayload.version !== ENCRYPTED_BACKUP_VERSION ||
+    encryptedPayload.algorithm !== ENCRYPTION_ALGORITHM ||
+    !SUPPORTED_KEY_DERIVATIONS.includes(encryptedPayload.keyDerivation) ||
+    typeof encryptedPayload.iv !== 'string' ||
+    typeof encryptedPayload.authTag !== 'string' ||
+    typeof encryptedPayload.ciphertext !== 'string' ||
+    (encryptedPayload.magic !== undefined && encryptedPayload.magic !== ENCRYPTED_BACKUP_MAGIC) ||
+    (encryptedPayload.salt !== undefined && typeof encryptedPayload.salt !== 'string')
+  ) {
+    return null;
+  }
+
+  return encryptedPayload;
+}
+
 function deriveKey(secret, method = CURRENT_KEY_DERIVATION, salt = Buffer.from(LEGACY_KEY_DERIVATION_SALT, 'utf8')) {
   if (method === 'scrypt') {
     return scryptSync(secret, salt, KEY_LENGTH);
@@ -55,17 +73,7 @@ export function decryptBackupPayload(encryptedPayload, secret) {
     throw new Error('GITHUB_BACKUP_ENCRYPTION_KEY or BACKUP_ENCRYPTION_KEY is required.');
   }
 
-  if (
-    !encryptedPayload ||
-    encryptedPayload.version !== ENCRYPTED_BACKUP_VERSION ||
-    encryptedPayload.algorithm !== ENCRYPTION_ALGORITHM ||
-    !SUPPORTED_KEY_DERIVATIONS.includes(encryptedPayload.keyDerivation) ||
-    typeof encryptedPayload.iv !== 'string' ||
-    typeof encryptedPayload.authTag !== 'string' ||
-    typeof encryptedPayload.ciphertext !== 'string' ||
-    (encryptedPayload.magic !== undefined && encryptedPayload.magic !== ENCRYPTED_BACKUP_MAGIC) ||
-    (encryptedPayload.salt !== undefined && typeof encryptedPayload.salt !== 'string')
-  ) {
+  if (!parseEncryptedBackupPayload(encryptedPayload)) {
     throw new Error('Encrypted backup payload is invalid.');
   }
 
@@ -85,4 +93,8 @@ export function decryptBackupPayload(encryptedPayload, secret) {
   ]);
 
   return JSON.parse(decrypted.toString('utf8'));
+}
+
+export function isEncryptedBackupPayload(value) {
+  return Boolean(parseEncryptedBackupPayload(value));
 }

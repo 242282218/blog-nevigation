@@ -10,18 +10,21 @@ import {
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
+    createEditorDataRootUnavailableResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
+    EditorDataRootUnavailableError,
     getEditorDataResourceManifest,
     readSiteSettingsFromDisk,
     writeSiteSettingsToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { getAppVersionInfo } from '@/lib/app-version';
-import { parseSiteSettings } from '@/lib/site-settings';
+import { createDefaultSiteSettings, parseSiteSettingsOrThrow, SiteSettingsParseError } from '@/lib/site-settings';
 import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
+import { hasWritableRuntimeDataRoot } from '@/lib/runtime-data-root';
 
 type SettingsRequestBody = {
     settings?: unknown;
@@ -35,17 +38,28 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
+    const persistent = await hasWritableRuntimeDataRoot();
+
     try {
         const settings = readSiteSettingsFromDisk();
         const resourceManifest = getEditorDataResourceManifest('settings', settings);
 
         return NextResponse.json({
-            persistent: true,
+            persistent,
             revision: resourceManifest?.revision ?? null,
             settings,
             version: getAppVersionInfo(),
         });
     } catch (error) {
+        if (error instanceof EditorDataRootUnavailableError) {
+            return NextResponse.json({
+                persistent: false,
+                revision: null,
+                settings: createDefaultSiteSettings(),
+                version: getAppVersionInfo(),
+            });
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
@@ -79,15 +93,21 @@ export async function PUT(request: NextRequest) {
         throw error;
     }
 
-    const settings = parseSiteSettings(body?.settings);
+    let settings;
 
-    if (!settings) {
-        return NextResponse.json(
-            {
-                message: '站点设置格式无效。',
-            },
-            { status: 400 }
-        );
+    try {
+        settings = parseSiteSettingsOrThrow(body?.settings);
+    } catch (error) {
+        if (error instanceof SiteSettingsParseError) {
+            return NextResponse.json(
+                {
+                    message: error.message,
+                },
+                { status: 400 }
+            );
+        }
+
+        throw error;
     }
 
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
@@ -96,6 +116,12 @@ export async function PUT(request: NextRequest) {
     try {
         writeResult = await writeSiteSettingsToDiskIfRevisionMatches(settings, expectedRevision);
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
         if (lockTimeoutResponse) {

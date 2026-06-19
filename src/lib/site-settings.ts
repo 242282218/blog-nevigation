@@ -20,6 +20,13 @@ export interface SiteSettings {
     introCardStartLabel: string;
 }
 
+export class SiteSettingsParseError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'SiteSettingsParseError';
+    }
+}
+
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     siteName: '我的技术书桌',
     siteDescription: '记录工程实践、项目复盘和长期资料的个人博客',
@@ -108,9 +115,9 @@ function normalizeBooleanWithDefault(value: unknown, defaultValue: boolean): boo
     return typeof value === 'boolean' ? value : null;
 }
 
-export function parseSiteSettings(value: unknown): SiteSettings | null {
+export function parseSiteSettingsOrThrow(value: unknown): SiteSettings {
     if (!isRecord(value)) {
-        return null;
+        throw new SiteSettingsParseError('站点设置必须是对象。');
     }
 
     const nextSettings = {} as SiteSettings;
@@ -119,7 +126,7 @@ export function parseSiteSettings(value: unknown): SiteSettings | null {
         const normalized = normalizeString(value[key]);
 
         if (!normalized) {
-            return null;
+            throw new SiteSettingsParseError(`站点设置必须包含非空的 ${key}。`);
         }
 
         nextSettings[key] = normalized;
@@ -129,7 +136,7 @@ export function parseSiteSettings(value: unknown): SiteSettings | null {
         const normalized = normalizeStringWithDefault(value[key], DEFAULT_SITE_SETTINGS[key]);
 
         if (!normalized) {
-            return null;
+            throw new SiteSettingsParseError(`站点设置必须包含非空的 ${key}。`);
         }
 
         nextSettings[key] = normalized;
@@ -138,12 +145,20 @@ export function parseSiteSettings(value: unknown): SiteSettings | null {
     const showIntroCard = normalizeBooleanWithDefault(value.showIntroCard, DEFAULT_SITE_SETTINGS.showIntroCard);
 
     if (showIntroCard === null) {
-        return null;
+        throw new SiteSettingsParseError('站点设置 showIntroCard 存在时必须是布尔值。');
     }
 
     nextSettings.showIntroCard = showIntroCard;
 
     return nextSettings;
+}
+
+export function parseSiteSettings(value: unknown): SiteSettings | null {
+    try {
+        return parseSiteSettingsOrThrow(value);
+    } catch {
+        return null;
+    }
 }
 
 export function createDefaultSiteSettings(): SiteSettings {

@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import {
-  createDefaultSiteSettings,
-  isRecord,
-  normalizeArticles,
-  normalizeNavigation,
-  normalizeSiteSettings,
+  parseBackupPayloadData,
   readJsonFile,
   restoreRuntimeDataAtomically,
   resolveDataRoot,
@@ -14,27 +10,6 @@ import {
   decryptBackupPayload,
   getBackupEncryptionSecret,
 } from './encrypted-backup.mjs';
-
-function parseBackupData(value) {
-  if (!isRecord(value)) {
-    throw new Error('Backup file must contain a JSON object.');
-  }
-
-  const source = isRecord(value.data) ? value.data : value;
-
-  if (!Array.isArray(source.articles) || !Array.isArray(source.navigation)) {
-    throw new Error('Backup file must include articles and navigation arrays.');
-  }
-
-  return {
-    articles: normalizeArticles(source.articles),
-    navigation: normalizeNavigation(source.navigation),
-    settings:
-      source.settings === undefined
-        ? createDefaultSiteSettings()
-        : normalizeSiteSettings(source.settings),
-  };
-}
 
 function main() {
   const [encryptedBackupFileArg, dataRootArg] = process.argv.slice(2);
@@ -47,7 +22,7 @@ function main() {
   const dataRoot = resolveDataRoot(dataRootArg);
   const encryptedPayload = readJsonFile(encryptedBackupFile);
   const backupPayload = decryptBackupPayload(encryptedPayload, getBackupEncryptionSecret());
-  const data = parseBackupData(backupPayload);
+  const data = parseBackupPayloadData(backupPayload);
 
   restoreRuntimeDataAtomically(dataRoot, data);
 

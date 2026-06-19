@@ -1,10 +1,11 @@
 type CurrentBackupResponse = {
   manifest?: unknown;
+  mediaHash?: unknown;
   message?: string;
 };
 
 export async function loadCurrentBackupManifest(): Promise<unknown> {
-  const response = await fetch('/api/data/backup', {
+  const response = await fetch('/api/data/backup/current-manifest', {
     method: 'GET',
     credentials: 'include',
     cache: 'no-store',
@@ -15,5 +16,12 @@ export async function loadCurrentBackupManifest(): Promise<unknown> {
     throw new Error(payload?.message || '当前数据状态读取失败。');
   }
 
-  return payload.manifest;
+  if (payload.mediaHash === undefined) {
+    return payload.manifest;
+  }
+
+  return {
+    manifest: payload.manifest,
+    mediaHash: payload.mediaHash,
+  };
 }

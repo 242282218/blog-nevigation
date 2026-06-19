@@ -171,6 +171,46 @@ describe('useNavigationData', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the backend navigation save validation error instead of a generic HTTP message', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createJsonResponse({
+          categories: [remoteCategory],
+          revision: 'revision-1',
+        })
+      )
+      .mockResolvedValueOnce(
+        createJsonResponse(
+          {
+            message: '导航工具必须至少包含一个 tag。',
+          },
+          { status: 400 }
+        )
+      );
+
+    await act(async () => {
+      root.render(
+        <TestNavigationData
+          onReady={(api) => {
+            currentApi = api;
+          }}
+        />
+      );
+    });
+    await flushPromises();
+
+    await act(async () => {
+      currentApi?.updateTool(0, 0, { tags: [] });
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain('导航工具必须至少包含一个 tag。');
+    expect(container.textContent).not.toContain('导航同步到服务器失败（HTTP 400）。');
+  });
+
   it('flushes pending navigation edits with keepalive before unload', async () => {
     fetchMock.mockResolvedValue(
       createJsonResponse({

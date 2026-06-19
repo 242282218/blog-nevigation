@@ -3,6 +3,7 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/data/backup/remote/route';
+import { GET as GET_CURRENT_MANIFEST } from '@/app/api/data/backup/current-manifest/route';
 import { POST as POST_RESTORE } from '@/app/api/data/backup/remote/restore/route';
 import { POST as POST_RETRY } from '@/app/api/data/backup/remote/retry/route';
 import { POST as POST_SYNC } from '@/app/api/data/backup/remote/sync/route';
@@ -12,10 +13,15 @@ import {
   R2BackupPayloadTooLargeError,
   R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
-import { restoreEditorMediaAssetsFromR2 } from '@/lib/editor-media-remote';
 import {
-  getRemoteBackupQueueStatus,
+  EditorMediaRestoreDownloadError,
+  materializeEditorMediaRestoreDataFromR2,
+} from '@/lib/editor-media-remote';
+import {
+  getRemoteBackupQueueSnapshot,
+  queueCurrentBackupToRemote,
   retryFailedRemoteBackups,
+  shouldQueueRemoteBackupRetry,
   syncCurrentBackupToRemote,
 } from '@/lib/editor-remote-backup';
 import { writeArticlesToDisk } from '@/lib/editor-data-storage';
@@ -58,13 +64,31 @@ vi.mock('@/lib/r2-backup-storage', () => {
   };
 });
 
-vi.mock('@/lib/editor-media-remote', () => ({
-  restoreEditorMediaAssetsFromR2: vi.fn(),
-}));
+vi.mock('@/lib/editor-media-remote', () => {
+  class EditorMediaRestoreDownloadError extends Error {
+    constructor(public readonly result: {
+      total: number;
+      restored: number;
+      skipped: number;
+      failed: number;
+      failures: Array<{ path: string; message: string }>;
+    }) {
+      super(`Failed to prepare ${result.failed} media file(s) from R2.`);
+      this.name = 'EditorMediaRestoreDownloadError';
+    }
+  }
+
+  return {
+    EditorMediaRestoreDownloadError,
+    materializeEditorMediaRestoreDataFromR2: vi.fn(),
+  };
+});
 
 vi.mock('@/lib/editor-remote-backup', () => ({
-  getRemoteBackupQueueStatus: vi.fn(),
+  getRemoteBackupQueueSnapshot: vi.fn(),
+  queueCurrentBackupToRemote: vi.fn(),
   retryFailedRemoteBackups: vi.fn(),
+  shouldQueueRemoteBackupRetry: vi.fn(),
   syncCurrentBackupToRemote: vi.fn(),
 }));
 
@@ -74,9 +98,11 @@ vi.mock('@/lib/public-cache-invalidation', () => ({
 
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedDownloadLatestBackupPayloadFromR2 = vi.mocked(downloadLatestBackupPayloadFromR2);
-const mockedRestoreEditorMediaAssetsFromR2 = vi.mocked(restoreEditorMediaAssetsFromR2);
-const mockedGetRemoteBackupQueueStatus = vi.mocked(getRemoteBackupQueueStatus);
+const mockedMaterializeEditorMediaRestoreDataFromR2 = vi.mocked(materializeEditorMediaRestoreDataFromR2);
+const mockedGetRemoteBackupQueueSnapshot = vi.mocked(getRemoteBackupQueueSnapshot);
+const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
 const mockedRetryFailedRemoteBackups = vi.mocked(retryFailedRemoteBackups);
+const mockedShouldQueueRemoteBackupRetry = vi.mocked(shouldQueueRemoteBackupRetry);
 const mockedSyncCurrentBackupToRemote = vi.mocked(syncCurrentBackupToRemote);
 const mockedInvalidatePublicContentCache = vi.mocked(invalidatePublicContentCache);
 
@@ -86,6 +112,7 @@ const ORIGINAL_ENV = {
 };
 const ORIGINAL_CWD = process.cwd();
 const tempDirectories: string[] = [];
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 function resetEnv(): void {
   restoreEnv(ORIGINAL_ENV);
@@ -111,20 +138,45 @@ async function readCurrentManifest(): Promise<unknown> {
   return payload.manifest;
 }
 
+async function readCurrentRestorePrecondition(): Promise<unknown> {
+  const response = await GET_CURRENT_MANIFEST(
+    await createAuthedEditorRequest('http://localhost/api/data/backup/current-manifest')
+  );
+  const payload = await response.json();
+
+  expect(response.status).toBe(200);
+  return {
+    manifest: payload.manifest,
+    mediaHash: payload.mediaHash,
+  };
+}
+
 beforeEach(() => {
   process.chdir(createTempDataRoot());
   vi.clearAllMocks();
-  mockedGetRemoteBackupQueueStatus.mockReturnValue({
-    pending: 0,
-    failed: 0,
-    failedTasks: [],
+  mockedGetRemoteBackupQueueSnapshot.mockReturnValue({
+    backupQueue: {
+      pending: 0,
+      failed: 0,
+      failedTasks: [],
+    },
+    backupQueueMessage: null,
   });
-  mockedRestoreEditorMediaAssetsFromR2.mockResolvedValue({
-    total: 0,
-    restored: 0,
-    skipped: 0,
-    failed: 0,
-    failures: [],
+  mockedQueueCurrentBackupToRemote.mockReturnValue({
+    queued: true,
+    enabled: true,
+    success: null,
+    message: 'R2 backup sync has been queued.',
+  });
+  mockedMaterializeEditorMediaRestoreDataFromR2.mockResolvedValue({
+    media: undefined,
+    result: {
+      total: 0,
+      restored: 0,
+      skipped: 0,
+      failed: 0,
+      failures: [],
+    },
   });
   mockedRetryFailedRemoteBackups.mockReturnValue({
     retried: 0,
@@ -134,6 +186,12 @@ beforeEach(() => {
       failedTasks: [],
     },
   });
+  mockedShouldQueueRemoteBackupRetry.mockImplementation((remoteBackup) => (
+    remoteBackup.enabled === true &&
+    remoteBackup.success === false &&
+    !('invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration) &&
+    !('runtimeDataUnavailable' in remoteBackup && remoteBackup.runtimeDataUnavailable)
+  ));
   mockedGetR2BackupStatus.mockReturnValue({
     enabled: false,
     configured: false,
@@ -193,18 +251,21 @@ describe('remote backup API', () => {
 
   it('returns failed queue status for authenticated reads', async () => {
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
-    mockedGetRemoteBackupQueueStatus.mockReturnValue({
-      pending: 0,
-      failed: 1,
-      failedTasks: [
-        {
-          id: 'failed-task',
-          reason: 'articles-write',
-          attempts: 3,
-          lastAttemptAt: '2026-06-07T00:00:00.000Z',
-          lastError: 'R2 temporarily unavailable.',
-        },
-      ],
+    mockedGetRemoteBackupQueueSnapshot.mockReturnValue({
+      backupQueue: {
+        pending: 0,
+        failed: 1,
+        failedTasks: [
+          {
+            id: 'failed-task',
+            reason: 'articles-write',
+            attempts: 3,
+            lastAttemptAt: '2026-06-07T00:00:00.000Z',
+            lastError: 'R2 temporarily unavailable.',
+          },
+        ],
+      },
+      backupQueueMessage: null,
     });
 
     const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup/remote'));
@@ -221,6 +282,26 @@ describe('remote backup API', () => {
             }),
           ],
         }),
+      })
+    );
+  });
+
+  it('still returns R2 status when the backup queue state cannot be read', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    mockedGetRemoteBackupQueueSnapshot.mockReturnValue({
+      backupQueue: null,
+      backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
+    });
+
+    const response = await GET(await createAuthedEditorRequest('http://localhost/api/data/backup/remote'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        configured: false,
+        backupQueue: null,
+        backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
       })
     );
   });
@@ -369,6 +450,33 @@ describe('remote backup API', () => {
         failed: 0,
         failedTasks: [],
       },
+      backupQueueMessage: null,
+    });
+    expect(mockedRetryFailedRemoteBackups).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a structured queue error when retrying failed tasks cannot read queue state', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    mockedRetryFailedRemoteBackups.mockImplementation(() => {
+      throw new Error('Pending backup queue state is invalid.');
+    });
+    mockedGetRemoteBackupQueueSnapshot.mockReturnValue({
+      backupQueue: null,
+      backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
+    });
+
+    const response = await POST_RETRY(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/retry', {
+        method: 'POST',
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      message: '云端备份队列状态文件损坏，请检查并修复。',
+      backupQueue: null,
+      backupQueueMessage: '云端备份队列状态文件损坏，请检查并修复。',
     });
     expect(mockedRetryFailedRemoteBackups).toHaveBeenCalledTimes(1);
   });
@@ -434,6 +542,36 @@ describe('remote backup API', () => {
     );
   });
 
+  it('reports runtime data root failures during manual sync as a structured 503 state', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = createTempDataRoot();
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: false,
+      runtimeDataUnavailable: true,
+      message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+    });
+
+    const response = await POST(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'sync' }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: false,
+        remoteBackup: expect.objectContaining({
+          runtimeDataUnavailable: true,
+          message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+        }),
+      })
+    );
+  });
+
   it('reports oversized remote backup downloads without treating the request body as too large', async () => {
     const dataRoot = createTempDataRoot();
 
@@ -470,6 +608,74 @@ describe('remote backup API', () => {
       })
     );
     expect(payload.code).not.toBe('body_too_large');
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('reports invalid latest R2 backup JSON with a clear restore error message', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockRejectedValue(
+      new Error('Latest R2 backup is not valid JSON.')
+    );
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      message: 'R2 最新备份不是合法 JSON，恢复失败。',
+    });
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('reports missing latest R2 backups with a clear restore error message', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockRejectedValue(
+      new Error('Latest R2 backup was not found at blog-navigation/latest/backup.json.')
+    );
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toEqual({
+      message: 'R2 最新备份不存在，恢复失败。',
+    });
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
@@ -517,6 +723,232 @@ describe('remote backup API', () => {
     );
 
     expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: '备份文件必须包含 articles 和 navigation 数组。',
+    });
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('returns a clear error when the latest R2 backup uses a newer schemaVersion', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-schema-article-1',
+      title: 'Existing Schema Article',
+      date: '2026-05-24',
+      description: 'Existing data must survive newer remote schemas',
+      tags: [],
+      content: '# Existing Schema',
+      slug: 'existing-schema-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Newer remote schema should not replace this.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      schemaVersion: 999,
+      data: {
+        articles: [],
+        navigation: [],
+      },
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: '备份 schemaVersion 999 高于当前支持的 1，请先升级服务后再恢复。',
+    });
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('returns a specific restore error when the latest R2 backup contains an unsafe navigation URL', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-navigation-article-1',
+      title: 'Existing Navigation Article',
+      date: '2026-05-24',
+      description: 'Existing data must survive invalid navigation payloads',
+      tags: [],
+      content: '# Existing Navigation',
+      slug: 'existing-navigation-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Invalid remote navigation should not replace this.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [
+          {
+            name: '开发文档',
+            icon: 'blog',
+            slug: 'developer-docs',
+            tools: [
+              {
+                icon: 'blog',
+                title: 'MDN Web Docs',
+                description: 'Web 平台权威文档',
+                url: 'http://developer.mozilla.org',
+                tags: ['文档'],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: '导航工具必须包含 icon、title、description 和 HTTPS URL。',
+    });
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('returns a clear error when the latest R2 backup uses a newer version', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-version-article-1',
+      title: 'Existing Version Article',
+      date: '2026-05-24',
+      description: 'Existing data must survive newer remote versions',
+      tags: [],
+      content: '# Existing Version',
+      slug: 'existing-version-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Newer remote version should not replace this.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 999,
+      data: {
+        articles: [],
+        navigation: [],
+      },
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: '备份 version 999 高于当前支持的 1，请先升级服务后再恢复。',
+    });
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('returns a clear error when the latest R2 backup is an encrypted backup payload', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-encrypted-article-1',
+      title: 'Existing Encrypted Article',
+      date: '2026-05-24',
+      description: 'Existing data must survive encrypted remote payloads',
+      tags: [],
+      content: '# Existing Encrypted',
+      slug: 'existing-encrypted-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Encrypted remote payload should not replace this.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      magic: 'blog-navigation-encrypted-backup',
+      version: 1,
+      algorithm: 'aes-256-gcm',
+      keyDerivation: 'scrypt',
+      iv: 'aaaaaaaaaaaaaaaa',
+      authTag: 'bbbbbbbbbbbbbbbb',
+      ciphertext: 'cccccccccccccccc',
+      salt: 'dddddddddddddddd',
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      message: '检测到加密备份文件，当前恢复入口不支持，请先使用解密导入工具。',
+    });
     expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
@@ -533,6 +965,21 @@ describe('remote backup API', () => {
       slug: 'remote-article',
       createdAt: 1,
       updatedAt: 2,
+    };
+    const mediaAsset = {
+      id: '843ac23b1736b4487ec81cf7c07ddd9bb46ae5b7818c2c3843d99d62fa75f3c9',
+      path: 'files/2026/06/843ac23b1736b4487ec81cf7c07ddd9bb46ae5b7818c2c3843d99d62fa75f3c9.png',
+      publicPath: '/media/files/2026/06/843ac23b1736b4487ec81cf7c07ddd9bb46ae5b7818c2c3843d99d62fa75f3c9.png',
+      mimeType: 'image/png' as const,
+      size: PNG_BYTES.byteLength,
+      hash: '843ac23b1736b4487ec81cf7c07ddd9bb46ae5b7818c2c3843d99d62fa75f3c9',
+      createdAt: '2026-06-19T00:00:00.000Z',
+      updatedAt: '2026-06-19T00:00:00.000Z',
+    };
+    const mediaManifest = {
+      version: 1 as const,
+      updatedAt: '2026-06-19T00:00:00.000Z',
+      assets: [mediaAsset],
     };
 
     process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
@@ -553,6 +1000,25 @@ describe('remote backup API', () => {
       data: {
         articles: [remoteArticle],
         navigation: [],
+        media: mediaManifest,
+      },
+    });
+    mockedMaterializeEditorMediaRestoreDataFromR2.mockResolvedValue({
+      media: {
+        manifest: mediaManifest,
+        files: [
+          {
+            path: mediaAsset.path,
+            bytes: PNG_BYTES,
+          },
+        ],
+      },
+      result: {
+        total: 1,
+        restored: 1,
+        skipped: 0,
+        failed: 0,
+        failures: [],
       },
     });
     mockedSyncCurrentBackupToRemote.mockResolvedValue({
@@ -577,6 +1043,11 @@ describe('remote backup API', () => {
         counts: expect.objectContaining({
           articles: 1,
         }),
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
       })
     );
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
@@ -584,12 +1055,95 @@ describe('remote backup API', () => {
         id: 'remote-article-1',
       }),
     ]);
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'media', 'manifest.json'), 'utf8'))).toEqual(
+      expect.objectContaining({
+        version: 1,
+        assets: [mediaAsset],
+        updatedAt: expect.any(String),
+      })
+    );
+    expect(fs.readFileSync(path.join(dataRoot, 'media', mediaAsset.path))).toEqual(Buffer.from(PNG_BYTES));
     expect(mockedSyncCurrentBackupToRemote).toHaveBeenNthCalledWith(1, {
       reason: 'pre-remote-restore',
       writeSnapshot: true,
       writeLatest: false,
     });
     expect(mockedSyncCurrentBackupToRemote).toHaveBeenNthCalledWith(2, {
+      reason: 'remote-restore',
+      writeSnapshot: true,
+    });
+    expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('remote-restore');
+    expect(mockedMaterializeEditorMediaRestoreDataFromR2).toHaveBeenCalledWith(mediaManifest);
+  });
+
+  it('queues a retryable remote snapshot sync when the follow-up remote restore backup fails', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+      },
+    });
+    mockedSyncCurrentBackupToRemote
+      .mockResolvedValueOnce({
+        enabled: true,
+        success: true,
+        latestKey: null,
+        snapshotKey: 'blog-navigation/snapshots/pre-restore.json',
+      })
+      .mockResolvedValueOnce({
+        enabled: true,
+        success: false,
+        message: 'R2 upload failed.',
+      });
+    mockedGetRemoteBackupQueueSnapshot.mockReturnValue({
+      backupQueue: {
+        pending: 1,
+        failed: 0,
+        failedTasks: [],
+      },
+      backupQueueMessage: null,
+    });
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        remoteBackup: expect.objectContaining({
+          success: false,
+          message: 'R2 upload failed.',
+        }),
+        backupQueue: {
+          pending: 1,
+          failed: 0,
+          failedTasks: [],
+        },
+      })
+    );
+    expect(mockedQueueCurrentBackupToRemote).toHaveBeenCalledWith({
       reason: 'remote-restore',
       writeSnapshot: true,
     });
@@ -660,6 +1214,11 @@ describe('remote backup API', () => {
         remoteBackup: expect.objectContaining({
           success: false,
         }),
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
       })
     );
     expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
@@ -667,6 +1226,166 @@ describe('remote backup API', () => {
         id: 'existing-article-1',
       }),
     ]);
+    expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels remote restore when R2 media objects cannot be materialized completely', async () => {
+    const dataRoot = createTempDataRoot();
+    const existingArticle = {
+      id: 'existing-article-1',
+      title: 'Existing Article',
+      date: '2026-05-24',
+      description: 'Existing data',
+      tags: [],
+      content: '# Existing',
+      slug: 'existing-article',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const mediaManifest = {
+      version: 1 as const,
+      updatedAt: '2026-06-19T00:00:00.000Z',
+      assets: [
+        {
+          id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          path: 'files/2026/06/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+          publicPath: '/media/files/2026/06/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+          mimeType: 'image/png' as const,
+          size: PNG_BYTES.byteLength,
+          hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          createdAt: '2026-06-19T00:00:00.000Z',
+          updatedAt: '2026-06-19T00:00:00.000Z',
+        },
+      ],
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), [existingArticle]);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+        media: mediaManifest,
+      },
+    });
+    mockedMaterializeEditorMediaRestoreDataFromR2.mockRejectedValue(
+      new EditorMediaRestoreDownloadError({
+        total: 1,
+        restored: 0,
+        skipped: 0,
+        failed: 1,
+        failures: [
+          {
+            path: 'files/2026/06/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+            message: 'NoSuchKey: object not found.',
+          },
+        ],
+      })
+    );
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        message: 'R2 媒体文件不完整或校验失败，已取消恢复。',
+        mediaRestore: {
+          total: 1,
+          restored: 0,
+          skipped: 0,
+          failed: 1,
+          failures: [
+            {
+              path: 'files/2026/06/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png',
+              message: 'NoSuchKey: object not found.',
+            },
+          ],
+        },
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
+      })
+    );
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
+    expect(fs.existsSync(path.join(dataRoot, 'media'))).toBe(false);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('reports runtime data root failures before remote restore replaces local data', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+      },
+    });
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: false,
+      runtimeDataUnavailable: true,
+      message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+    });
+
+    const existingArticles = fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8');
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+        remoteBackup: expect.objectContaining({
+          runtimeDataUnavailable: true,
+        }),
+        backupQueue: {
+          pending: 0,
+          failed: 0,
+          failedTasks: [],
+        },
+      })
+    );
+    expect(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8')).toBe(existingArticles);
     expect(mockedSyncCurrentBackupToRemote).toHaveBeenCalledTimes(1);
   });
 
@@ -821,6 +1540,72 @@ describe('remote backup API', () => {
         id: 'newer-manifest-article-1',
       }),
     ]);
+    expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
+  });
+
+  it('rejects stale R2 restores when local media changed after the restore precondition was captured', async () => {
+    const dataRoot = createTempDataRoot();
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentRestorePrecondition();
+    writeJson(path.join(dataRoot, 'media', 'manifest.json'), {
+      version: 1,
+      updatedAt: '2026-06-19T00:00:00.000Z',
+      assets: [
+        {
+          id: 'a'.repeat(64),
+          path: `files/2026/06/${'a'.repeat(64)}.png`,
+          publicPath: `/media/files/2026/06/${'a'.repeat(64)}.png`,
+          mimeType: 'image/png',
+          size: 9,
+          hash: 'a'.repeat(64),
+          createdAt: '2026-06-19T00:00:00.000Z',
+          updatedAt: '2026-06-19T00:00:00.000Z',
+        },
+      ],
+    });
+    mockedDownloadLatestBackupPayloadFromR2.mockResolvedValue({
+      version: 1,
+      data: {
+        articles: [],
+        navigation: [],
+        media: {
+          version: 1,
+          updatedAt: '2026-06-18T00:00:00.000Z',
+          assets: [],
+        },
+      },
+    });
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        message: '当前数据已被其他会话更新，请刷新后重新执行恢复。',
+        currentManifest: expect.objectContaining({
+          manifest: expect.any(Object),
+          mediaHash: expect.any(String),
+        }),
+      })
+    );
     expect(mockedSyncCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 });

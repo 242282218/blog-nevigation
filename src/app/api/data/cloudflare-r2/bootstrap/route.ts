@@ -12,8 +12,14 @@ import {
     bootstrapCloudflareR2Settings,
     type CloudflareR2BootstrapInput,
 } from '@/lib/cloudflare-r2-bootstrap';
-import { ensureEditorWriteRequest } from '@/lib/editor-api-auth';
 import {
+    createEditorDataRootUnavailableResponse,
+    ensureEditorWriteRequest,
+} from '@/lib/editor-api-auth';
+import { getRemoteBackupQueueSnapshot } from '@/lib/editor-remote-backup';
+import {
+    getEditableR2BackupSettings,
+    getR2BackupStatus,
     getR2BackupSettingsRevision,
     R2BackupSettingsInvalidError,
     R2BackupSettingsRevisionMismatchError,
@@ -106,6 +112,12 @@ export async function POST(request: NextRequest) {
             tokenName: result.tokenName,
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidR2SettingsResponse(error);
 
         if (invalidResponse) {
@@ -113,10 +125,15 @@ export async function POST(request: NextRequest) {
         }
 
         if (error instanceof R2BackupSettingsRevisionMismatchError) {
+            const queueSnapshot = getRemoteBackupQueueSnapshot();
+
             return NextResponse.json(
                 {
                     message: 'Cloudflare R2 配置已被其他会话更新，请刷新后重试。',
+                    settings: getEditableR2BackupSettings(),
                     revision: error.currentRevision,
+                    status: getR2BackupStatus(),
+                    ...queueSnapshot,
                 },
                 { status: 409 }
             );

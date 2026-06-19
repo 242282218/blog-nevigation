@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureEditorWriteRequest } from '@/lib/editor-api-auth';
+import {
+    createEditorDataRootUnavailableResponse,
+    ensureEditorWriteRequest,
+} from '@/lib/editor-api-auth';
 import {
     EditorMediaFileTooLargeError,
     EditorMediaInvalidFileError,
@@ -132,6 +135,12 @@ export async function POST(request: NextRequest) {
             remoteBackup,
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidMediaResponse = createInvalidMediaResponse(error);
 
         if (invalidMediaResponse) {

@@ -3,6 +3,13 @@ import { normalizeArticleKind, normalizeArticleStatus } from '@/lib/article-meta
 import { normalizeSourceLinks, normalizeRevisionNotes } from '@/lib/source-links';
 import { normalizeOptionalString } from '@/lib/utils';
 
+export class ArticleDataParseError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ArticleDataParseError';
+    }
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
@@ -82,9 +89,11 @@ export function isArticle(value: unknown): value is Article {
     );
 }
 
-function normalizeArticle(value: unknown): Article | null {
+function normalizeArticleOrThrow(value: unknown): Article {
     if (!isArticle(value)) {
-        return null;
+        throw new ArticleDataParseError(
+            '文章必须包含 id、title、date、description、tags、content、createdAt、updatedAt，且类型正确。'
+        );
     }
 
     return {
@@ -109,6 +118,14 @@ function normalizeArticle(value: unknown): Article | null {
     };
 }
 
+function normalizeArticle(value: unknown): Article | null {
+    try {
+        return normalizeArticleOrThrow(value);
+    } catch {
+        return null;
+    }
+}
+
 export function filterArticlesData(value: unknown): Article[] {
     if (!Array.isArray(value)) {
         return [];
@@ -131,26 +148,33 @@ export function filterArticlesData(value: unknown): Article[] {
     return articles;
 }
 
-export function parseArticlesData(value: unknown): Article[] | null {
+export function parseArticlesDataOrThrow(value: unknown): Article[] {
     if (!Array.isArray(value)) {
-        return null;
-    }
-
-    const articles = value.map(normalizeArticle);
-
-    if (articles.some((article) => article === null)) {
-        return null;
+        throw new ArticleDataParseError('文章数据必须是数组。');
     }
 
     const slugs = new Set<string>();
+    const articles = value.map((item) => normalizeArticleOrThrow(item));
 
-    for (const article of articles as Article[]) {
-        if (!article.slug || slugs.has(article.slug)) {
-            return null;
+    for (const article of articles) {
+        if (!article.slug) {
+            throw new ArticleDataParseError(`文章 slug 无效：${article.id}`);
+        }
+
+        if (slugs.has(article.slug)) {
+            throw new ArticleDataParseError(`文章 slug 重复：${article.slug}`);
         }
 
         slugs.add(article.slug);
     }
 
-    return articles as Article[];
+    return articles;
+}
+
+export function parseArticlesData(value: unknown): Article[] | null {
+    try {
+        return parseArticlesDataOrThrow(value);
+    } catch {
+        return null;
+    }
 }

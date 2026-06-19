@@ -49,6 +49,14 @@ function createTempDataRoot(): string {
   return directory;
 }
 
+function createBlockedDataRoot(): string {
+  const root = createTempDataRoot();
+  const blockingFile = path.join(root, 'blocked.txt');
+
+  fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+  return path.join(blockingFile, 'runtime-data');
+}
+
 function createImageUpload(bytes = PNG_BYTES): { body: BodyInit; headers: HeadersInit } {
   const body = bytes.buffer.slice(
     bytes.byteOffset,
@@ -98,6 +106,24 @@ async function createSharedSessionRequests(
       headers,
     });
   });
+}
+
+async function createAuthenticatedHeaders(): Promise<Headers> {
+  const currentRoot = process.env.BLOG_DATA_ROOT;
+
+  process.env.BLOG_DATA_ROOT = createTempDataRoot();
+
+  try {
+    const request = await createAuthedEditorRequest('http://localhost/api/data/media');
+
+    return new Headers(request.headers);
+  } finally {
+    if (currentRoot === undefined) {
+      delete process.env.BLOG_DATA_ROOT;
+    } else {
+      process.env.BLOG_DATA_ROOT = currentRoot;
+    }
+  }
 }
 
 beforeEach(() => {
@@ -213,6 +239,34 @@ describe('media API', () => {
     );
     expect(fs.existsSync(path.join(process.env.BLOG_DATA_ROOT, 'media'))).toBe(false);
     expect(mockedUploadMediaAssetToR2).not.toHaveBeenCalled();
+  });
+
+  it('reports a blocked runtime data root instead of returning a raw upload failure', async () => {
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    const headers = await createAuthenticatedHeaders();
+
+    process.env.BLOG_DATA_ROOT = createBlockedDataRoot();
+
+    const upload = createImageUpload();
+    const requestHeaders = new Headers(headers);
+
+    for (const [name, value] of Object.entries(upload.headers)) {
+      requestHeaders.set(name, value);
+    }
+
+    const response = await POST(new NextRequest('http://localhost/api/data/media', {
+      method: 'POST',
+      headers: requestHeaders,
+      body: upload.body,
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      code: 'runtime_data_root_unavailable',
+      message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+    });
+    expect(mockedUploadMediaAssetToR2).not.toHaveBeenCalled();
+    expect(mockedQueueCurrentBackupToRemote).not.toHaveBeenCalled();
   });
 
   it('preserves both assets when two different images are uploaded concurrently', async () => {

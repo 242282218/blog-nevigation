@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     recordEditorAuditEvent({
         action: 'r2.backup.retry',
         resource: 'cloudflare-r2',
-        outcome: 'success',
+        outcome: response.ok ? 'success' : 'failure',
     });
 
     return response;

@@ -5,6 +5,7 @@ import { NextRequest } from 'next/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PUT, GET } from '@/app/api/setup/route';
 import { resetAppRuntimeConfigCacheForTests } from '@/lib/app-runtime-config';
+import * as editorAuthRuntime from '@/lib/editor-auth-runtime';
 import { resetEnvironmentEditorSessionForTests } from '@/lib/editor-auth-runtime';
 import {
   cleanupTempDirectories,
@@ -31,6 +32,15 @@ function createTempDataRoot(): string {
   tempDirectories.push(directory);
   process.env.BLOG_DATA_ROOT = directory;
   return directory;
+}
+
+function createBlockedDataRoot(): string {
+  const root = createTempDataRoot();
+  const blockingFile = path.join(root, 'blocked.txt');
+
+  fs.writeFileSync(blockingFile, 'blocked', 'utf8');
+  process.env.BLOG_DATA_ROOT = path.join(blockingFile, 'runtime-data');
+  return process.env.BLOG_DATA_ROOT;
 }
 
 function clearRuntimeEnv(): void {
@@ -301,6 +311,82 @@ describe('setup API R2 flow', () => {
     expect(storedSettings).not.toHaveProperty('backupEncryptionPassphrase');
     expect(storedSettings).not.toHaveProperty('backupEncryptionKey');
     expect(storedSettings).not.toHaveProperty('allowPlaintextBackup');
+  });
+
+  it('reports a blocked runtime data root with a structured 503 response during first setup', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createBlockedDataRoot();
+
+    const response = await PUT(createSetupRequest({
+      ...createBaseSetupBody(dataRoot),
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    }));
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      code: 'runtime_data_root_unavailable',
+      message: '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。',
+    });
+  });
+
+  it('returns 409 for a concurrent second setup request after the first one completes', async () => {
+    clearRuntimeEnv();
+    const dataRoot = createTempDataRoot();
+    const originalInitializeRuntimeEditorAuth = editorAuthRuntime.initializeRuntimeEditorAuth;
+    let releaseInitialization: (() => void) | undefined;
+    const initializationBlocked = new Promise<void>((resolve) => {
+      releaseInitialization = () => resolve();
+    });
+
+    vi.spyOn(editorAuthRuntime, 'initializeRuntimeEditorAuth').mockImplementation(async (secret: string) => {
+      await initializationBlocked;
+      return originalInitializeRuntimeEditorAuth(secret);
+    });
+
+    const requestBody = {
+      ...createBaseSetupBody(dataRoot),
+      r2SetupMode: 'disabled',
+      r2Settings: {
+        enabled: false,
+        accountId: '',
+        bucket: '',
+        accessKeyId: '',
+        secretAccessKey: '',
+        prefix: 'blog-navigation',
+        endpoint: '',
+        snapshotOnWrite: false,
+      },
+    };
+
+    const firstResponsePromise = PUT(createSetupRequest(requestBody));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const secondResponsePromise = PUT(createSetupRequest(requestBody));
+
+    releaseInitialization?.();
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      firstResponsePromise,
+      secondResponsePromise,
+    ]);
+    const secondPayload = await secondResponse.json();
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(409);
+    expect(secondPayload).toEqual({
+      message: '首次启动引导已完成。',
+    });
   });
 });
 

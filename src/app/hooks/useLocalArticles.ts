@@ -118,6 +118,7 @@ async function saveArticlesToServer(
     const payload = (await response.json().catch(() => null)) as {
       articles?: unknown;
       revision?: unknown;
+      message?: unknown;
     } | null;
 
     if (response.status === 409) {
@@ -145,10 +146,14 @@ async function saveArticlesToServer(
         };
       }
 
-      console.error('Failed to persist articles to server:', response.status);
+      const message = typeof payload?.message === 'string'
+        ? payload.message
+        : `文章同步到服务器失败（HTTP ${response.status}）。`;
+
+      console.error('Failed to persist articles to server:', response.status, message);
       return {
         error: true as const,
-        message: `文章同步到服务器失败（HTTP ${response.status}）。`,
+        message,
       };
     }
 

@@ -3,17 +3,14 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  createManifest,
-  readRuntimeData,
+  createBackupPayload as createBackupPayloadShared,
+  readRuntimeBackupData,
   resolveDataRoot,
 } from './runtime-data.mjs';
 import {
   createEncryptedBackupPayload,
   getBackupEncryptionSecret,
 } from './encrypted-backup.mjs';
-
-const BACKUP_VERSION = 1;
-
 function createTimestamp() {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -27,21 +24,7 @@ function ensureParentDirectory(filePath) {
 }
 
 function createBackupPayload(dataRoot) {
-  const data = readRuntimeData(dataRoot);
-
-  return {
-    version: BACKUP_VERSION,
-    exportedAt: new Date().toISOString(),
-    source: 'local',
-    persistent: true,
-    dataRoot,
-    manifest: createManifest(data),
-    data: {
-      articles: data.articles,
-      navigation: data.navigation,
-      settings: data.settings,
-    },
-  };
+  return createBackupPayloadShared(dataRoot, readRuntimeBackupData(dataRoot));
 }
 
 function copyToBackupRepository(encryptedPath) {

@@ -7,20 +7,23 @@ import {
     JsonBodyTooLargeError,
     readJsonBodyWithLimit,
 } from '@/lib/api-json-body';
-import { parseArticlesData } from '@/lib/article-data';
+import { ArticleDataParseError, parseArticlesDataOrThrow } from '@/lib/article-data';
 import {
     createEditorDataFileInvalidResponse,
     createEditorDataLockTimeoutResponse,
+    createEditorDataRootUnavailableResponse,
     ensureEditorWriteRequest,
     ensureEditorSession,
 } from '@/lib/editor-api-auth';
 import {
+    EditorDataRootUnavailableError,
     getEditorDataResourceManifest,
     readArticlesFromDisk,
     writeArticlesToDiskIfRevisionMatches,
 } from '@/lib/editor-data-storage';
 import { queueCurrentBackupToRemote } from '@/lib/editor-remote-backup';
 import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
+import { hasWritableRuntimeDataRoot } from '@/lib/runtime-data-root';
 
 type ArticlesRequestBody = {
     articles?: unknown;
@@ -34,16 +37,26 @@ export async function GET(request: NextRequest) {
         return authError;
     }
 
+    const persistent = await hasWritableRuntimeDataRoot();
+
     try {
         const articles = readArticlesFromDisk();
         const resourceManifest = getEditorDataResourceManifest('articles', articles);
 
         return NextResponse.json({
-            persistent: true,
+            persistent,
             revision: resourceManifest?.revision ?? null,
             articles,
         });
     } catch (error) {
+        if (error instanceof EditorDataRootUnavailableError) {
+            return NextResponse.json({
+                persistent: false,
+                revision: null,
+                articles: [],
+            });
+        }
+
         const invalidResponse = createEditorDataFileInvalidResponse(error);
 
         if (invalidResponse) {
@@ -77,15 +90,21 @@ export async function PUT(request: NextRequest) {
         throw error;
     }
 
-    const articles = parseArticlesData(body?.articles);
+    let articles;
 
-    if (!articles) {
-        return NextResponse.json(
-            {
-                message: '文章数据格式无效。',
-            },
-            { status: 400 }
-        );
+    try {
+        articles = parseArticlesDataOrThrow(body?.articles);
+    } catch (error) {
+        if (error instanceof ArticleDataParseError) {
+            return NextResponse.json(
+                {
+                    message: error.message,
+                },
+                { status: 400 }
+            );
+        }
+
+        throw error;
     }
 
     const expectedRevision = typeof body?.revision === 'string' ? body.revision : null;
@@ -94,6 +113,12 @@ export async function PUT(request: NextRequest) {
     try {
         writeResult = await writeArticlesToDiskIfRevisionMatches(articles, expectedRevision);
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const lockTimeoutResponse = createEditorDataLockTimeoutResponse(error);
 
         if (lockTimeoutResponse) {

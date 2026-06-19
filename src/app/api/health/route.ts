@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import fsPromises from 'node:fs/promises';
 import { NextResponse } from 'next/server';
 import { getAppVersionInfo } from '@/lib/app-version';
 import { getRemoteBackupQueueStatus } from '@/lib/editor-remote-backup';
@@ -8,24 +6,16 @@ import {
     readEditorDataManifest,
 } from '@/lib/editor-data-storage';
 import { getRuntimeDataRoot } from '@/lib/runtime-config';
+import { hasWritableRuntimeDataRoot } from '@/lib/runtime-data-root';
 
 export const dynamic = 'force-dynamic';
 
 type HealthCheckStatus = 'ok' | 'degraded';
 
-async function canWriteRuntimeDataRoot(pathname: string): Promise<boolean> {
-    try {
-        await fsPromises.access(pathname, fs.constants.W_OK);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 export async function GET(): Promise<NextResponse> {
     const dataRoot = getRuntimeDataRoot();
     const manifestPath = getEditorDataManifestFilePath();
-    const writable = await canWriteRuntimeDataRoot(dataRoot.path);
+    const writable = await hasWritableRuntimeDataRoot();
     let manifest:
         | {
             valid: true;
@@ -75,7 +65,8 @@ export async function GET(): Promise<NextResponse> {
         };
     }
 
-    const status: HealthCheckStatus = writable && manifest.valid ? 'ok' : 'degraded';
+    const backupQueueHealthy = backupQueue.pending !== null && backupQueue.failed !== null && backupQueue.failed === 0;
+    const status: HealthCheckStatus = writable && manifest.valid && backupQueueHealthy ? 'ok' : 'degraded';
 
     return NextResponse.json(
         {

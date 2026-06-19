@@ -2,11 +2,42 @@ import { NextResponse } from 'next/server';
 import { EditorBackupRestoreConflictError } from '@/lib/editor-data-backup';
 import {
     parseEditorDataManifest,
-    type EditorDataManifest,
 } from '@/lib/editor-data-storage';
+import type { EditorBackupRestorePrecondition } from '@/lib/editor-data-backup';
 
-export function parseRestoreCurrentManifest(value: unknown): EditorDataManifest | null {
-    return parseEditorDataManifest(value);
+export function parseRestoreCurrentManifest(value: unknown): EditorBackupRestorePrecondition | null {
+    const manifest = parseEditorDataManifest(value);
+
+    if (manifest) {
+        return { manifest };
+    }
+
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const candidate = value as {
+        manifest?: unknown;
+        mediaHash?: unknown;
+    };
+    const nestedManifest = parseEditorDataManifest(candidate.manifest);
+
+    if (!nestedManifest) {
+        return null;
+    }
+
+    if (
+        candidate.mediaHash !== undefined &&
+        candidate.mediaHash !== null &&
+        typeof candidate.mediaHash !== 'string'
+    ) {
+        return null;
+    }
+
+    return {
+        manifest: nestedManifest,
+        ...(candidate.mediaHash !== undefined ? { mediaHash: candidate.mediaHash } : {}),
+    };
 }
 
 export function createRestorePreconditionRequiredResponse(): NextResponse {

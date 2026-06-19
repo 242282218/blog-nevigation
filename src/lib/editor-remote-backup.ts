@@ -1,10 +1,11 @@
 import {
-    createCurrentEditorBackupPayload,
     createCurrentEditorManifestSnapshotReference,
+    createCurrentEditorRemoteBackupPackage,
     createEditorDataManifestHash,
     isSameEditorManifestSnapshot,
 } from '@/lib/editor-data-backup';
 import {
+    BackupCoordinatorStateInvalidError,
     drainPendingBackupTasks,
     enqueuePendingBackupTask,
     getBackupQueueStatus,
@@ -19,7 +20,9 @@ import {
     getR2BackupStatus,
     R2BackupSettingsInvalidError,
     uploadBackupPayloadToR2,
+    uploadMediaAssetToR2,
 } from '@/lib/r2-backup-storage';
+import { EditorDataRootUnavailableError } from '@/lib/editor-data-storage';
 
 export type RemoteBackupResult =
     | {
@@ -38,6 +41,7 @@ export type RemoteBackupResult =
         success: false;
         message: string;
         invalidConfiguration?: boolean;
+        runtimeDataUnavailable?: boolean;
     };
 
 export type QueuedRemoteBackupResult =
@@ -72,6 +76,10 @@ type RemoteBackupOptions = {
 function getErrorMessage(error: unknown): string {
     if (error instanceof R2BackupSettingsInvalidError) {
         return 'Cloudflare R2 配置文件损坏，请修复或删除后重试。';
+    }
+
+    if (error instanceof EditorDataRootUnavailableError) {
+        return '运行时数据目录不可用，请检查服务器数据目录路径和写入权限。';
     }
 
     return error instanceof Error && error.message ? error.message : 'Remote backup failed.';
@@ -174,6 +182,33 @@ export function getRemoteBackupQueueStatus(): BackupQueueStatus {
     return getBackupQueueStatus();
 }
 
+export type RemoteBackupQueueSnapshot = {
+    backupQueue: BackupQueueStatus | null;
+    backupQueueMessage: string | null;
+};
+
+function getRemoteBackupQueueStatusErrorMessage(error: unknown): string {
+    if (error instanceof BackupCoordinatorStateInvalidError) {
+        return '云端备份队列状态文件损坏，请检查并修复。';
+    }
+
+    return '云端备份队列状态读取失败。';
+}
+
+export function getRemoteBackupQueueSnapshot(): RemoteBackupQueueSnapshot {
+    try {
+        return {
+            backupQueue: getRemoteBackupQueueStatus(),
+            backupQueueMessage: null,
+        };
+    } catch (error) {
+        return {
+            backupQueue: null,
+            backupQueueMessage: getRemoteBackupQueueStatusErrorMessage(error),
+        };
+    }
+}
+
 export function retryFailedRemoteBackups(): { retried: number; backupQueue: BackupQueueStatus } {
     const retried = retryFailedBackupTasks();
 
@@ -185,6 +220,15 @@ export function retryFailedRemoteBackups(): { retried: number; backupQueue: Back
         retried,
         backupQueue: getRemoteBackupQueueStatus(),
     };
+}
+
+export function shouldQueueRemoteBackupRetry(remoteBackup: RemoteBackupResult): boolean {
+    return (
+        remoteBackup.enabled === true &&
+        remoteBackup.success === false &&
+        !('invalidConfiguration' in remoteBackup && remoteBackup.invalidConfiguration) &&
+        !('runtimeDataUnavailable' in remoteBackup && remoteBackup.runtimeDataUnavailable)
+    );
 }
 
 export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): Promise<RemoteBackupResult> {
@@ -224,7 +268,8 @@ export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): P
     }
 
     try {
-        const payload = await createCurrentEditorBackupPayload();
+        const backupPackage = await createCurrentEditorRemoteBackupPackage();
+        const payload = backupPackage.payload;
         const currentManifest = payload.manifest;
 
         if (options.writeSnapshot && options.expectedSnapshotManifest) {
@@ -238,6 +283,14 @@ export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): P
 
             if (currentManifestHash !== options.expectedSnapshotManifestHash) {
                 throw new Error('R2 snapshot manifest hash changed before upload; snapshot was not written.');
+            }
+        }
+
+        for (const mediaAsset of backupPackage.mediaAssets) {
+            const mediaUpload = await uploadMediaAssetToR2(mediaAsset.asset, mediaAsset.bytes);
+
+            if (!mediaUpload.success) {
+                throw new Error(mediaUpload.message);
             }
         }
 
@@ -260,6 +313,9 @@ export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): P
         return {
             enabled: true,
             success: false,
+            ...(error instanceof EditorDataRootUnavailableError
+                ? { runtimeDataUnavailable: true }
+                : {}),
             message: getErrorMessage(error),
         };
     }

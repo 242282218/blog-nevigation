@@ -14,6 +14,7 @@ import {
     saveAppRuntimeConfig,
     type EditableAppRuntimeConfig,
 } from '@/lib/app-runtime-config';
+import { createEditorDataRootUnavailableResponse } from '@/lib/editor-api-auth';
 import {
     RuntimeEditorAuthInvalidSecretError,
     initializeRuntimeEditorAuth,
@@ -34,6 +35,7 @@ import {
     bootstrapCloudflareR2Settings,
     type CloudflareR2BootstrapInput,
 } from '@/lib/cloudflare-r2-bootstrap';
+import { withRuntimeDataRootLock } from '@/lib/runtime-data-lock';
 import { setEditorSessionCookies } from '@/lib/editor-session-response';
 import { isApplicationSetupComplete } from '@/lib/setup-state';
 
@@ -171,6 +173,15 @@ function createInvalidRuntimeConfigResponse(error: unknown): NextResponse | null
     );
 }
 
+function createSetupCompletedResponse(): NextResponse {
+    return NextResponse.json(
+        {
+            message: '首次启动引导已完成。',
+        },
+        { status: 409 }
+    );
+}
+
 export async function GET() {
     try {
         if (isApplicationSetupComplete()) {
@@ -190,6 +201,12 @@ export async function GET() {
             r2Status: getR2BackupStatus(),
         });
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidRuntimeConfigResponse(error);
 
         if (invalidResponse) {
@@ -202,12 +219,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
     if (isApplicationSetupComplete()) {
-        return NextResponse.json(
-            {
-                message: '首次启动引导已完成。',
-            },
-            { status: 409 }
-        );
+        return createSetupCompletedResponse();
     }
 
     let body: SetupRequestBody | null;
@@ -301,23 +313,43 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
-        if (r2SetupMode === 'cloudflare') {
-            await bootstrapCloudflareR2Settings(cloudflareR2Setup as CloudflareR2BootstrapInput);
-        } else {
-            saveEditableR2BackupSettings(r2Settings);
+        const setupResult = await withRuntimeDataRootLock(async () => {
+            if (isApplicationSetupComplete()) {
+                return {
+                    alreadyComplete: true as const,
+                    sessionValue: null,
+                };
+            }
+
+            const authConfiguredAfterLock = isRuntimeEditorAuthConfigured();
+
+            if (r2SetupMode === 'cloudflare') {
+                await bootstrapCloudflareR2Settings(cloudflareR2Setup as CloudflareR2BootstrapInput);
+            } else {
+                saveEditableR2BackupSettings(r2Settings);
+            }
+
+            let sessionValue: string | null = null;
+
+            if (editorSecret) {
+                sessionValue = authConfiguredAfterLock
+                    ? await updateRuntimeEditorAuthSecret(editorSecret)
+                    : await initializeRuntimeEditorAuth(editorSecret);
+            }
+
+            saveAppRuntimeConfig(config, { markSetupComplete: true });
+
+            return {
+                alreadyComplete: false as const,
+                sessionValue,
+            };
+        });
+
+        if (setupResult.alreadyComplete) {
+            return createSetupCompletedResponse();
         }
 
-        let sessionValue: string | null = null;
-
-        if (editorSecret) {
-            sessionValue = authConfigured
-                ? await updateRuntimeEditorAuthSecret(editorSecret)
-                : await initializeRuntimeEditorAuth(editorSecret);
-        }
-
-        saveAppRuntimeConfig(config, { markSetupComplete: true });
-
-        if (!sessionValue) {
+        if (!setupResult.sessionValue) {
             return NextResponse.json({
                 success: true,
                 config: getSafeAppRuntimeConfig(),
@@ -327,8 +359,14 @@ export async function PUT(request: NextRequest) {
         return setEditorSessionCookies(NextResponse.json({
             success: true,
             config: getSafeAppRuntimeConfig(),
-        }), sessionValue);
+        }), setupResult.sessionValue);
     } catch (error) {
+        const unavailableResponse = createEditorDataRootUnavailableResponse(error);
+
+        if (unavailableResponse) {
+            return unavailableResponse;
+        }
+
         const invalidResponse = createInvalidRuntimeConfigResponse(error);
 
         if (invalidResponse) {
