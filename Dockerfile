@@ -55,6 +55,7 @@ RUN apk add --no-cache curl su-exec && \
     adduser --system --uid 1001 nextjs && \
     mkdir -p /var/lib/blog-navigation/articles /var/lib/blog-navigation/navigation /var/lib/blog-navigation/settings && \
     chown -R nextjs:nodejs /var/lib/blog-navigation && \
+    rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack && \
     rm -rf /var/cache/apk/* /tmp/*
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
