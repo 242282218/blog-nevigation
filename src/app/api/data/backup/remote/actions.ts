@@ -36,6 +36,13 @@ import {
     R2BackupPayloadTooLargeError,
     R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
+import {
+    materializeLatestChunkedBackupFromR2,
+    R2ChunkedBackupFormatError,
+    R2ChunkedBackupIntegrityError,
+    R2ChunkedBackupNotFoundError,
+    R2ChunkedBackupObjectMissingError,
+} from '@/lib/r2-chunked-backup-storage';
 import { invalidatePublicContentCache } from '@/lib/public-cache-invalidation';
 import {
     createRestoreConflictResponse,
@@ -55,6 +62,14 @@ export function parseRemoteBackupAction(value: unknown): RemoteBackupAction | nu
 }
 
 function getRemoteRestoreErrorMessage(error: unknown): string {
+    if (
+        error instanceof R2ChunkedBackupFormatError ||
+        error instanceof R2ChunkedBackupIntegrityError ||
+        error instanceof R2ChunkedBackupObjectMissingError
+    ) {
+        return error.message;
+    }
+
     if (error instanceof R2BackupSettingsInvalidError) {
         return '远端备份配置无效。';
     }
@@ -81,6 +96,35 @@ function getRemoteRestoreErrorMessage(error: unknown): string {
     return error instanceof Error && error.message
         ? error.message
         : '远端备份操作失败，请检查配置后重试。';
+}
+
+async function materializeLatestRemoteBackupData() {
+    try {
+        const chunked = await materializeLatestChunkedBackupFromR2();
+
+        return {
+            format: chunked.format,
+            data: chunked.data,
+            mediaRestore: chunked.mediaRestore,
+        };
+    } catch (error) {
+        if (!(error instanceof R2ChunkedBackupNotFoundError)) {
+            throw error;
+        }
+    }
+
+    const payload = await downloadLatestBackupPayloadFromR2();
+    const data = parseEditorBackupDataOrThrow(payload);
+    const mediaRestore = await materializeEditorMediaRestoreDataFromR2(data.media?.manifest);
+
+    return {
+        format: 'v1-full-json' as const,
+        data: {
+            ...data,
+            ...(mediaRestore.media ? { media: mediaRestore.media } : {}),
+        },
+        mediaRestore: mediaRestore.result,
+    };
 }
 
 function createRemoteBackupFailureResponse(
@@ -240,12 +284,12 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
             return createRestorePreconditionRequiredResponse();
         }
 
-        const payload = await downloadLatestBackupPayloadFromR2();
-        const data = parseEditorBackupDataOrThrow(payload);
+        const remoteRestore = await materializeLatestRemoteBackupData();
+        const data = remoteRestore.data;
+
         assertEditorBackupRestoreCurrentManifest(currentManifest, {
             includeMedia: Boolean(data.media),
         });
-        const mediaRestore = await materializeEditorMediaRestoreDataFromR2(data.media?.manifest);
         const preRestoreBackup = await syncCurrentBackupToRemote({
             reason: 'pre-remote-restore',
             writeSnapshot: true,
@@ -256,13 +300,7 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
             return createRemoteBackupFailureResponse(preRestoreBackup);
         }
 
-        const result = await restoreEditorBackupData(
-            {
-                ...data,
-                ...(mediaRestore.media ? { media: mediaRestore.media } : {}),
-            },
-            { currentManifest }
-        );
+        const result = await restoreEditorBackupData(data, { currentManifest });
 
         const remoteBackup = await syncCurrentBackupToRemote({
             reason: 'remote-restore',
@@ -285,7 +323,8 @@ export async function createRemoteBackupRestoreResponse(currentManifestValue: un
                 settings: result.settings,
                 media: result.media,
             },
-            mediaRestore: mediaRestore.result,
+            mediaRestore: remoteRestore.mediaRestore,
+            format: remoteRestore.format,
             warnings: [],
             remoteBackup,
             ...queueSnapshot,

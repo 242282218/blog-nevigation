@@ -178,7 +178,7 @@ function normalizePrefix(value: string): string {
         .replace(/\/+/g, '/') || DEFAULT_R2_PREFIX;
 }
 
-function joinR2Key(...parts: string[]): string {
+export function joinR2Key(...parts: string[]): string {
     return parts
         .map((part) => part.trim().replace(/^\/+|\/+$/g, ''))
         .filter(Boolean)
@@ -395,7 +395,7 @@ export function getR2BackupStatus(): R2BackupStatus {
 let cachedR2Client: S3Client | null = null;
 let cachedR2ClientKey: string | null = null;
 
-function createR2Client(config: R2BackupConfig): S3Client {
+export function createR2Client(config: R2BackupConfig): S3Client {
     const secretHash = createHash('sha256').update(config.secretAccessKey).digest('hex').slice(0, 16);
     const cacheKey = `${config.endpoint}|${config.accessKeyId}|${secretHash}`;
 
@@ -475,7 +475,7 @@ function assertR2BackupDownloadBodyTextSize(value: string): void {
     assertR2BackupDownloadBodySize(Buffer.byteLength(value, 'utf8'));
 }
 
-async function bodyToString(body: unknown): Promise<string> {
+export async function bodyToString(body: unknown): Promise<string> {
     if (!body) {
         return '';
     }
@@ -515,7 +515,7 @@ async function bodyToString(body: unknown): Promise<string> {
     return value;
 }
 
-async function bodyToBytes(body: unknown, limitBytes: number): Promise<Uint8Array> {
+export async function bodyToBytes(body: unknown, limitBytes: number): Promise<Uint8Array> {
     if (!body) {
         return new Uint8Array();
     }

@@ -22,6 +22,10 @@ import {
     uploadBackupPayloadToR2,
     uploadMediaAssetToR2,
 } from '@/lib/r2-backup-storage';
+import {
+    uploadChunkedBackupToR2,
+    type R2ChunkedUploadResult,
+} from '@/lib/r2-chunked-backup-storage';
 import { EditorDataRootUnavailableError } from '@/lib/editor-data-storage';
 
 export type RemoteBackupResult =
@@ -33,8 +37,11 @@ export type RemoteBackupResult =
     | {
         enabled: true;
         success: true;
+        format?: R2ChunkedUploadResult['format'];
         latestKey: string | null;
         snapshotKey: string | null;
+        counts?: R2ChunkedUploadResult['counts'];
+        warnings?: string[];
     }
     | {
         enabled: true;
@@ -63,6 +70,7 @@ export type QueuedRemoteBackupResult =
         success: false;
         message: string;
         invalidConfiguration?: boolean;
+        queueStateInvalid?: boolean;
     };
 
 type RemoteBackupOptions = {
@@ -92,6 +100,16 @@ function createQueuedResult(): QueuedRemoteBackupResult {
         success: null,
         message: 'R2 backup sync has been queued.',
     };
+}
+
+function getQueueStateInvalidMessage(_error: BackupCoordinatorStateInvalidError): string {
+    return '云端备份队列状态文件损坏，请检查并修复。';
+}
+
+function createLegacyWarning(error: unknown): string {
+    const message = error instanceof Error && error.message ? error.message : 'legacy v1 backup failed.';
+
+    return `v1 兼容备份写入失败：${message}`;
 }
 
 export function queueCurrentBackupToRemote(options: {
@@ -136,6 +154,16 @@ export function queueCurrentBackupToRemote(options: {
                 success: false,
                 invalidConfiguration: true,
                 message: 'Cloudflare R2 配置文件损坏，请修复或删除后重试。',
+            };
+        }
+
+        if (error instanceof BackupCoordinatorStateInvalidError) {
+            return {
+                queued: false,
+                enabled: true,
+                success: false,
+                queueStateInvalid: true,
+                message: getQueueStateInvalidMessage(error),
             };
         }
 
@@ -286,26 +314,41 @@ export async function syncCurrentBackupToRemote(options: RemoteBackupOptions): P
             }
         }
 
-        for (const mediaAsset of backupPackage.mediaAssets) {
-            const mediaUpload = await uploadMediaAssetToR2(mediaAsset.asset, mediaAsset.bytes);
-
-            if (!mediaUpload.success) {
-                throw new Error(mediaUpload.message);
-            }
-        }
-
-        const result = await uploadBackupPayloadToR2(payload, {
+        const chunkedResult = await uploadChunkedBackupToR2(backupPackage, {
             reason: options.reason,
             writeSnapshot: options.writeSnapshot ?? config.snapshotOnWrite,
             writeLatest: options.writeLatest,
-            manifestHash: options.expectedSnapshotManifestHash,
         });
+        const warnings: string[] = [];
+
+        try {
+            for (const mediaAsset of backupPackage.mediaAssets) {
+                const mediaUpload = await uploadMediaAssetToR2(mediaAsset.asset, mediaAsset.bytes);
+
+                if (!mediaUpload.success) {
+                    throw new Error(mediaUpload.message);
+                }
+            }
+
+            await uploadBackupPayloadToR2(payload, {
+                reason: options.reason,
+                writeSnapshot: options.writeSnapshot ?? config.snapshotOnWrite,
+                writeLatest: options.writeLatest,
+                manifestHash: options.expectedSnapshotManifestHash,
+            });
+        } catch (error) {
+            warnings.push(createLegacyWarning(error));
+            console.warn('[editor-remote-backup] Failed to write v1 compatibility backup:', error);
+        }
 
         return {
             enabled: true,
             success: true,
-            latestKey: result.latestKey,
-            snapshotKey: result.snapshotKey,
+            format: chunkedResult.format,
+            latestKey: chunkedResult.latestKey,
+            snapshotKey: chunkedResult.snapshotKey,
+            counts: chunkedResult.counts,
+            warnings,
         };
     } catch (error) {
         console.error('[editor-remote-backup] Failed to sync backup to R2:', error);

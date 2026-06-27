@@ -26,6 +26,10 @@ import {
   uploadMediaAssetToR2,
   type R2UploadResult,
 } from '@/lib/r2-backup-storage';
+import {
+  uploadChunkedBackupToR2,
+  type R2ChunkedUploadResult,
+} from '@/lib/r2-chunked-backup-storage';
 
 vi.mock('@/lib/editor-data-backup', () => {
   const createEditorDataManifestHash = vi.fn((manifest: unknown) =>
@@ -70,6 +74,10 @@ vi.mock('@/lib/r2-backup-storage', () => {
   };
 });
 
+vi.mock('@/lib/r2-chunked-backup-storage', () => ({
+  uploadChunkedBackupToR2: vi.fn(),
+}));
+
 const mockedCreateCurrentEditorManifestSnapshotReference = vi.mocked(createCurrentEditorManifestSnapshotReference);
 const mockedCreateCurrentEditorRemoteBackupPackage = vi.mocked(createCurrentEditorRemoteBackupPackage);
 const mockedCreateEditorDataManifestHash = vi.mocked(createEditorDataManifestHash);
@@ -78,6 +86,7 @@ const mockedGetR2BackupConfig = vi.mocked(getR2BackupConfig);
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedUploadBackupPayloadToR2 = vi.mocked(uploadBackupPayloadToR2);
 const mockedUploadMediaAssetToR2 = vi.mocked(uploadMediaAssetToR2);
+const mockedUploadChunkedBackupToR2 = vi.mocked(uploadChunkedBackupToR2);
 const ORIGINAL_BLOG_DATA_ROOT = process.env.BLOG_DATA_ROOT;
 const tempDirectories: string[] = [];
 
@@ -151,12 +160,27 @@ function createDeferred<T = R2UploadResult>() {
   };
 }
 
+function createChunkedUploadResult(snapshotId = 'snapshot-1'): R2ChunkedUploadResult {
+  return {
+    format: 'v2-chunked',
+    latestKey: 'blog-navigation/v2/latest.json',
+    snapshotKey: `blog-navigation/v2/snapshots/${snapshotId}/manifest.json`,
+    snapshotId,
+    counts: {
+      articles: 0,
+      categories: 0,
+      media: 0,
+    },
+  };
+}
+
 describe('remote backup sync', () => {
   beforeEach(() => {
     createTempDataRoot();
     vi.clearAllMocks();
     resetRemoteBackupQueueForTests();
     mockedCreateCurrentEditorRemoteBackupPackage.mockResolvedValue(createRemoteBackupPackage('default'));
+    mockedUploadChunkedBackupToR2.mockResolvedValue(createChunkedUploadResult());
     mockedUploadMediaAssetToR2.mockResolvedValue({
       enabled: true,
       success: true,
@@ -191,6 +215,35 @@ describe('remote backup sync', () => {
     });
     expect(mockedGetR2BackupStatus).not.toHaveBeenCalled();
     expect(mockedCreateCurrentEditorRemoteBackupPackage).not.toHaveBeenCalled();
+    expect(mockedUploadChunkedBackupToR2).not.toHaveBeenCalled();
+    expect(mockedUploadMediaAssetToR2).not.toHaveBeenCalled();
+    expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
+  });
+
+  it('returns a structured failure when the persisted backup queue state is corrupt', () => {
+    const dataRoot = process.env.BLOG_DATA_ROOT as string;
+
+    mockedGetR2BackupConfig.mockReturnValue({
+      bucket: 'blog-data',
+      endpoint: 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com',
+      accessKeyId: 'access-key',
+      secretAccessKey: 'secret-key',
+      prefix: 'blog-navigation',
+      snapshotOnWrite: false,
+    });
+    mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
+    fs.writeFileSync(getPendingBackupFilePath(dataRoot), '{', 'utf8');
+
+    expect(queueCurrentBackupToRemote({ reason: 'articles-write' })).toEqual({
+      queued: false,
+      enabled: true,
+      success: false,
+      queueStateInvalid: true,
+      message: '云端备份队列状态文件损坏，请检查并修复。',
+    });
+    expect(mockedCreateCurrentEditorManifestSnapshotReference).not.toHaveBeenCalled();
+    expect(mockedCreateCurrentEditorRemoteBackupPackage).not.toHaveBeenCalled();
+    expect(mockedUploadChunkedBackupToR2).not.toHaveBeenCalled();
     expect(mockedUploadMediaAssetToR2).not.toHaveBeenCalled();
     expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
   });
@@ -233,8 +286,20 @@ describe('remote backup sync', () => {
     await expect(syncCurrentBackupToRemote({ reason: 'articles-write' })).resolves.toEqual({
       enabled: true,
       success: true,
-      latestKey: 'blog-navigation/latest/backup.json',
-      snapshotKey: null,
+      format: 'v2-chunked',
+      latestKey: 'blog-navigation/v2/latest.json',
+      snapshotKey: 'blog-navigation/v2/snapshots/snapshot-1/manifest.json',
+      counts: {
+        articles: 0,
+        categories: 0,
+        media: 0,
+      },
+      warnings: [],
+    });
+    expect(mockedUploadChunkedBackupToR2).toHaveBeenCalledWith(mediaPackage, {
+      reason: 'articles-write',
+      writeSnapshot: false,
+      writeLatest: undefined,
     });
     expect(mockedUploadMediaAssetToR2).toHaveBeenCalledWith(
       mediaPackage.mediaAssets[0].asset,
@@ -245,7 +310,7 @@ describe('remote backup sync', () => {
     );
   });
 
-  it('fails the remote backup before writing JSON when a media object upload fails', async () => {
+  it('keeps the v2 backup successful when the v1 compatibility media upload fails', async () => {
     const mediaPackage = {
       payload: createBackupPayload('media-upload-failure'),
       mediaAssets: [
@@ -279,8 +344,16 @@ describe('remote backup sync', () => {
 
     await expect(syncCurrentBackupToRemote({ reason: 'articles-write' })).resolves.toEqual({
       enabled: true,
-      success: false,
-      message: 'Media upload failed.',
+      success: true,
+      format: 'v2-chunked',
+      latestKey: 'blog-navigation/v2/latest.json',
+      snapshotKey: 'blog-navigation/v2/snapshots/snapshot-1/manifest.json',
+      counts: {
+        articles: 0,
+        categories: 0,
+        media: 0,
+      },
+      warnings: ['v1 兼容备份写入失败：Media upload failed.'],
     });
     expect(mockedUploadBackupPayloadToR2).not.toHaveBeenCalled();
   });
@@ -391,14 +464,11 @@ describe('remote backup sync', () => {
     });
     mockedGetR2BackupStatus.mockReturnValue(createConfiguredStatus());
     mockedCreateCurrentEditorRemoteBackupPackage.mockResolvedValue(createRemoteBackupPackage('failed'));
-    mockedUploadBackupPayloadToR2
+    mockedUploadChunkedBackupToR2
       .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
       .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
       .mockRejectedValueOnce(new Error('R2 temporarily unavailable.'))
-      .mockResolvedValue({
-        latestKey: 'blog-navigation/latest/backup.json',
-        snapshotKey: null,
-      });
+      .mockResolvedValue(createChunkedUploadResult('retry-success'));
 
     expect(queueCurrentBackupToRemote({ reason: 'queued-write' })).toEqual(
       expect.objectContaining({

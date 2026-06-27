@@ -5,6 +5,7 @@ import {
     releaseEditorDataRootLock,
     runWithHeldEditorDataLockContext,
 } from '@/lib/editor-data-lock';
+import { recoverEditorDataRootState } from '@/lib/editor-data-storage';
 import { getRuntimeDataRootPath } from '@/lib/runtime-config';
 
 export async function withRuntimeDataRootLock<T>(operation: () => T | Promise<T>): Promise<T> {
@@ -19,6 +20,7 @@ export async function withRuntimeDataRootLock<T>(operation: () => T | Promise<T>
 
     return await runWithHeldEditorDataLockContext(resolvedRoot, async () => {
         try {
+            recoverEditorDataRootState(resolvedRoot);
             return await operation();
         } finally {
             releaseEditorDataRootLock(lock);

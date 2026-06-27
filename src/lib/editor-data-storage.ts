@@ -152,8 +152,7 @@ export async function withEditorDataRootLock<T>(operation: () => T | Promise<T>)
 
     return await runWithHeldEditorDataLockContext(resolvedRoot, async () => {
         try {
-            recoverIncompleteRestore(resolvedRoot);
-            recoverIncompleteManifestTransaction(resolvedRoot);
+            recoverEditorDataRootState(resolvedRoot);
             return await operation();
         } finally {
             releaseEditorDataRootLock(lock);
@@ -609,6 +608,11 @@ function recoverIncompleteRestore(root: string): void {
     fs.rmSync(state.backupDirectory, { recursive: true, force: true });
     removeRestoreState(root);
     clearEditorDataCache();
+}
+
+export function recoverEditorDataRootState(root: string): void {
+    recoverIncompleteRestore(root);
+    recoverIncompleteManifestTransaction(root);
 }
 
 function getEditorDataFiles(root: string): string[] {

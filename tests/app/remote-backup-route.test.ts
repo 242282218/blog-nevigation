@@ -14,6 +14,10 @@ import {
   R2BackupSettingsInvalidError,
 } from '@/lib/r2-backup-storage';
 import {
+  materializeLatestChunkedBackupFromR2,
+  R2ChunkedBackupNotFoundError,
+} from '@/lib/r2-chunked-backup-storage';
+import {
   EditorMediaRestoreDownloadError,
   materializeEditorMediaRestoreDataFromR2,
 } from '@/lib/editor-media-remote';
@@ -64,6 +68,23 @@ vi.mock('@/lib/r2-backup-storage', () => {
   };
 });
 
+vi.mock('@/lib/r2-chunked-backup-storage', () => {
+  class R2ChunkedBackupNotFoundError extends Error {
+    constructor(message = 'R2 chunked backup was not found.') {
+      super(message);
+      this.name = 'R2ChunkedBackupNotFoundError';
+    }
+  }
+
+  return {
+    R2ChunkedBackupNotFoundError,
+    R2ChunkedBackupFormatError: class R2ChunkedBackupFormatError extends Error {},
+    R2ChunkedBackupIntegrityError: class R2ChunkedBackupIntegrityError extends Error {},
+    R2ChunkedBackupObjectMissingError: class R2ChunkedBackupObjectMissingError extends Error {},
+    materializeLatestChunkedBackupFromR2: vi.fn(),
+  };
+});
+
 vi.mock('@/lib/editor-media-remote', () => {
   class EditorMediaRestoreDownloadError extends Error {
     constructor(public readonly result: {
@@ -98,6 +119,7 @@ vi.mock('@/lib/public-cache-invalidation', () => ({
 
 const mockedGetR2BackupStatus = vi.mocked(getR2BackupStatus);
 const mockedDownloadLatestBackupPayloadFromR2 = vi.mocked(downloadLatestBackupPayloadFromR2);
+const mockedMaterializeLatestChunkedBackupFromR2 = vi.mocked(materializeLatestChunkedBackupFromR2);
 const mockedMaterializeEditorMediaRestoreDataFromR2 = vi.mocked(materializeEditorMediaRestoreDataFromR2);
 const mockedGetRemoteBackupQueueSnapshot = vi.mocked(getRemoteBackupQueueSnapshot);
 const mockedQueueCurrentBackupToRemote = vi.mocked(queueCurrentBackupToRemote);
@@ -162,6 +184,7 @@ beforeEach(() => {
     },
     backupQueueMessage: null,
   });
+  mockedMaterializeLatestChunkedBackupFromR2.mockRejectedValue(new R2ChunkedBackupNotFoundError());
   mockedQueueCurrentBackupToRemote.mockReturnValue({
     queued: true,
     enabled: true,
@@ -1074,6 +1097,114 @@ describe('remote backup API', () => {
     });
     expect(mockedInvalidatePublicContentCache).toHaveBeenCalledWith('remote-restore');
     expect(mockedMaterializeEditorMediaRestoreDataFromR2).toHaveBeenCalledWith(mediaManifest);
+  });
+
+  it('prefers the v2 chunked R2 backup when it exists', async () => {
+    const dataRoot = createTempDataRoot();
+    const remoteArticle = {
+      id: 'remote-v2-article-1',
+      title: 'Remote V2 Article',
+      date: '2026-05-24',
+      description: 'Remote v2 data',
+      tags: [],
+      content: '# Remote V2',
+      slug: 'remote-v2-article',
+      createdAt: 1,
+      updatedAt: 2,
+      kind: 'essay' as const,
+      status: 'published' as const,
+      featured: false,
+      sourceLinks: [],
+      revisionNotes: [],
+    };
+
+    process.env.EDITOR_ACCESS_TOKEN = 'test-editor-token';
+    process.env.BLOG_DATA_ROOT = dataRoot;
+    writeJson(path.join(dataRoot, 'articles', 'articles.json'), []);
+    writeJson(path.join(dataRoot, 'navigation', 'tools.json'), []);
+    writeJson(path.join(dataRoot, 'settings', 'site.json'), {
+      siteName: 'Existing Site',
+      siteDescription: 'Existing settings',
+      workspaceLabel: 'workspace / existing',
+      heroTitleLineOne: 'Existing',
+      heroTitleLineTwo: 'Data',
+      heroDescription: 'Existing data.',
+    });
+    const currentManifest = await readCurrentManifest();
+
+    mockedMaterializeLatestChunkedBackupFromR2.mockResolvedValue({
+      format: 'v2-chunked',
+      snapshotId: 'snapshot-v2',
+      data: {
+        articles: [remoteArticle],
+        navigation: [],
+        settings: {
+          siteName: 'Remote V2 Site',
+          siteDescription: 'Remote v2 settings',
+          workspaceLabel: 'workspace / remote-v2',
+          heroTitleLineOne: 'Remote',
+          heroTitleLineTwo: 'V2',
+          heroDescription: 'Restored from v2.',
+          showIntroCard: true,
+          introCardEyebrow: 'about',
+          introCardTitle: 'Remote',
+          introCardDescription: 'Remote intro',
+          introCardMetaOneLabel: 'one',
+          introCardMetaOneValue: '1',
+          introCardMetaTwoLabel: 'two',
+          introCardMetaTwoValue: '2',
+          introCardMetaThreeLabel: 'three',
+          introCardMetaThreeValue: '3',
+          introCardStartLabel: 'start',
+        },
+      },
+      mediaRestore: {
+        total: 0,
+        restored: 0,
+        skipped: 0,
+        failed: 0,
+        failures: [],
+      },
+    });
+    mockedSyncCurrentBackupToRemote.mockResolvedValue({
+      enabled: true,
+      success: true,
+      format: 'v2-chunked',
+      latestKey: 'blog-navigation/v2/latest.json',
+      snapshotKey: 'blog-navigation/v2/snapshots/snapshot-v2/manifest.json',
+      counts: {
+        articles: 1,
+        categories: 0,
+        media: 0,
+      },
+      warnings: [],
+    });
+
+    const response = await POST_RESTORE(
+      await createAuthedEditorRequest('http://localhost/api/data/backup/remote/restore', {
+        method: 'POST',
+        body: JSON.stringify({ currentManifest }),
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        success: true,
+        format: 'v2-chunked',
+        counts: expect.objectContaining({
+          articles: 1,
+        }),
+      })
+    );
+    expect(mockedDownloadLatestBackupPayloadFromR2).not.toHaveBeenCalled();
+    expect(mockedMaterializeEditorMediaRestoreDataFromR2).not.toHaveBeenCalled();
+    expect(JSON.parse(fs.readFileSync(path.join(dataRoot, 'articles', 'articles.json'), 'utf8'))).toEqual([
+      expect.objectContaining({
+        id: 'remote-v2-article-1',
+      }),
+    ]);
   });
 
   it('queues a retryable remote snapshot sync when the follow-up remote restore backup fails', async () => {
