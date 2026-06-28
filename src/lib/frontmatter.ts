@@ -9,6 +9,37 @@ interface ParsedFrontmatterResult {
     hasFrontmatter: boolean;
 }
 
+export const MAX_MARKDOWN_IMPORT_LENGTH = 1024 * 1024;
+export const MAX_FRONTMATTER_IMPORT_LENGTH = 64 * 1024;
+
+function getFrontmatterBlockLength(markdown: string): number | null {
+    const openMatch = /^---\r?\n/.exec(markdown);
+
+    if (!openMatch) {
+        return null;
+    }
+
+    const frontmatterStart = openMatch[0].length;
+    const remaining = markdown.slice(frontmatterStart);
+    const closeMatch = /\r?\n---(?:\r?\n|$)/.exec(remaining);
+
+    return closeMatch ? closeMatch.index : remaining.length;
+}
+
+function assertMarkdownWithinImportLimit(markdown: string): void {
+    if (markdown.length <= MAX_MARKDOWN_IMPORT_LENGTH) {
+        const frontmatterLength = getFrontmatterBlockLength(markdown);
+
+        if (frontmatterLength === null || frontmatterLength <= MAX_FRONTMATTER_IMPORT_LENGTH) {
+            return;
+        }
+
+        throw new RangeError('Markdown frontmatter is too large.');
+    }
+
+    throw new RangeError('Markdown import is too large.');
+}
+
 function asString(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
 }
@@ -88,6 +119,8 @@ function createOrderedFrontmatter(article: Frontmatter): Record<string, unknown>
 }
 
 export function parseMarkdownWithFrontmatter(markdown: string): ParsedFrontmatterResult {
+    assertMarkdownWithinImportLimit(markdown);
+
     const hasFrontmatter = /^---\r?\n/.test(markdown);
     const parsed = matter(markdown);
 

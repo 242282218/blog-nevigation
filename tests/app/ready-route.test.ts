@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GET } from '@/app/api/health/route';
+import { GET } from '@/app/api/ready/route';
 import {
   cleanupTempDirectories,
   createTempDirectory,
@@ -19,7 +19,7 @@ const ORIGINAL_ENV = {
 const tempDirectories: string[] = [];
 
 function createDataRoot(): string {
-  const root = createTempDirectory('blog-navigation-health-');
+  const root = createTempDirectory('blog-navigation-ready-');
   tempDirectories.push(root);
   return root;
 }
@@ -42,8 +42,8 @@ afterEach(() => {
   cleanupTempDirectories(tempDirectories);
 });
 
-describe('health API', () => {
-  it('reports version and writable data root status', async () => {
+describe('ready API', () => {
+  it('reports version, writable data root, manifest, and backup queue status', async () => {
     process.env.BLOG_DATA_ROOT = createDataRoot();
     process.env.BLOG_NAVIGATION_DOCKER = 'true';
     process.env.BLOG_NAVIGATION_VERSION = '9.8.7';
@@ -68,26 +68,13 @@ describe('health API', () => {
           source: 'env',
           writable: true,
         },
-      })
-    );
-    expect(payload).not.toHaveProperty('manifest');
-    expect(payload).not.toHaveProperty('backupQueue');
-  });
-
-  it('reports writable when the configured data root does not exist yet but can be created', async () => {
-    const parent = createDataRoot();
-    process.env.BLOG_DATA_ROOT = path.join(parent, 'missing');
-
-    const response = await GET();
-    const payload = await response.json();
-
-    expect(fs.existsSync(process.env.BLOG_DATA_ROOT)).toBe(false);
-    expect(response.status).toBe(200);
-    expect(payload).toEqual(
-      expect.objectContaining({
-        status: 'ok',
-        dataRoot: expect.objectContaining({
-          writable: true,
+        manifest: expect.objectContaining({
+          valid: true,
+          path: path.join(process.env.BLOG_DATA_ROOT, 'manifest.json'),
+        }),
+        backupQueue: expect.objectContaining({
+          pending: 0,
+          failed: 0,
         }),
       })
     );
@@ -110,7 +97,7 @@ describe('health API', () => {
     );
   });
 
-  it('does not fail liveness when only remote backup queue has failed tasks', async () => {
+  it('returns degraded when remote backup queue has failed tasks', async () => {
     process.env.BLOG_DATA_ROOT = createDataRoot();
     writeJson(path.join(process.env.BLOG_DATA_ROOT, '.backup-pending.json'), {
       version: 2,
@@ -132,8 +119,45 @@ describe('health API', () => {
     const response = await GET();
     const payload = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(payload.status).toBe('ok');
-    expect(payload).not.toHaveProperty('backupQueue');
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        backupQueue: {
+          pending: 0,
+          failed: 1,
+          failedTasks: [
+            {
+              id: 'failed-task-1',
+              reason: 'remote-restore',
+              attempts: 3,
+              lastAttemptAt: '2026-06-19T00:10:00.000Z',
+              lastError: 'R2 upload failed.',
+            },
+          ],
+        },
+      })
+    );
+  });
+
+  it('returns degraded when remote backup queue state is unreadable', async () => {
+    process.env.BLOG_DATA_ROOT = createDataRoot();
+    fs.writeFileSync(path.join(process.env.BLOG_DATA_ROOT, '.backup-pending.json'), '{', 'utf8');
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual(
+      expect.objectContaining({
+        status: 'degraded',
+        backupQueue: {
+          pending: null,
+          failed: null,
+          failedTasks: [],
+          message: 'Pending backup queue state is invalid.',
+        },
+      })
+    );
   });
 });

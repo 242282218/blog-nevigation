@@ -12,7 +12,7 @@ function getSearchParam(url: string, key: string, fallback: string): string {
 }
 
 function limitText(value: string, maxLength: number): string {
-    return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
+    return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
 export function GET(request: Request) {

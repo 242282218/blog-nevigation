@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_FRONTMATTER_IMPORT_LENGTH,
+  MAX_MARKDOWN_IMPORT_LENGTH,
   parseMarkdownWithFrontmatter,
   serializeMarkdownWithFrontmatter,
 } from '@/lib/frontmatter';
@@ -91,6 +93,18 @@ Body`);
 
     expect(parsed.frontmatter.date).toBe('2026-05-25');
     expect(parsed.frontmatter.updatedDate).toBe('2026-05-26');
+  });
+
+  it('rejects oversized markdown imports before parsing frontmatter', () => {
+    expect(() => parseMarkdownWithFrontmatter('x'.repeat(MAX_MARKDOWN_IMPORT_LENGTH + 1))).toThrow(
+      'Markdown import is too large.'
+    );
+  });
+
+  it('rejects oversized frontmatter blocks before parsing YAML', () => {
+    const markdown = `---\n${'alias: value\n'.repeat(Math.ceil(MAX_FRONTMATTER_IMPORT_LENGTH / 13) + 1)}---\nBody`;
+
+    expect(() => parseMarkdownWithFrontmatter(markdown)).toThrow('Markdown frontmatter is too large.');
   });
 
   it('serializes fields in a stable order', () => {

@@ -24,6 +24,7 @@ describe('repository structure migration', () => {
     it('moves application source into src and publishes runtime assets from stable paths', () => {
         const requiredPaths = [
             resolveRepoPath('src', 'app', 'page.tsx'),
+            resolveRepoPath('src', 'app', 'api', 'ready', 'route.ts'),
             resolveRepoPath('src', 'app', 'layout.tsx'),
             resolveRepoPath('src', 'lib', 'markdown.ts'),
             resolveRepoPath('src', 'middleware.ts'),
@@ -117,6 +118,7 @@ describe('repository structure migration', () => {
         const deployWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'docker-deploy.yml'), 'utf8');
         const uiSmokeWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'ui-smoke.yml'), 'utf8');
         const quickTestWorkflow = fs.readFileSync(resolveRepoPath('.github', 'workflows', 'quick-tests.yml'), 'utf8');
+        const localUiSmokeScript = fs.readFileSync(resolveRepoPath('scripts', 'test', 'run-local-ui-smoke.ps1'), 'utf8');
         const readme = fs.readFileSync(resolveRepoPath('README.md'), 'utf8');
 
         expect(dockerIgnore).toMatch(/^data$/m);
@@ -273,6 +275,11 @@ describe('repository structure migration', () => {
         expect(uiSmokeWorkflow).toContain('run: npm ci');
         expect(uiSmokeWorkflow).toContain('npm run start');
         expect(uiSmokeWorkflow).not.toContain('next start');
+        expect(localUiSmokeScript).toContain('[System.Text.UTF8Encoding]::new($false)');
+        expect(localUiSmokeScript).toContain("$BaseUrl = 'http://127.0.0.1:3210'");
+        expect(localUiSmokeScript).toContain("[Environment]::SetEnvironmentVariable('BASE_URL', $BaseUrl, 'Process')");
+        expect(localUiSmokeScript).toContain('& $Npm.Source run smoke:ui');
+        expect(localUiSmokeScript).toContain('Remove-Item -LiteralPath $SmokeDataRoot -Recurse -Force');
         expect(readme).toContain('tar -C /opt/blog-nevigation -czf blog-navigation-data.tgz data .env');
         expect(readme).not.toContain('docker rm -f');
         expect(deployWorkflow).not.toContain('docker rm -f');
@@ -280,6 +287,10 @@ describe('repository structure migration', () => {
         expect(readme).toContain('data/settings/cloudflare-r2.json');
         expect(readme).toContain('完整优先于 `.env`');
         expect(readme).toContain('R2 备份是明文 JSON');
+        expect(readme).toContain('当前自动 R2 备份优先使用 v2 分块格式');
+        expect(readme).toContain('恢复链路仍兼容旧版 v1 `latest/backup.json`');
+        expect(readme).toContain('`/api/health` 是轻量存活检查');
+        expect(readme).toContain('`/api/ready` 是深度就绪检查');
         expect(readme).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
         expect(readme).not.toContain('backupEncryptionPassphrase');
         expect(envExample).not.toContain('R2_BACKUP_ENCRYPTION_PASSPHRASE');
